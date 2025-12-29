@@ -6,6 +6,7 @@ import fun.ai.studio.entity.FunAiApp;
 import fun.ai.studio.entity.response.FunAiAppDeployResponse;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.file.Path;
 import java.util.List;
 
 /**
@@ -68,6 +69,15 @@ public interface FunAiAppService extends IService<FunAiApp> {
      * @throws IllegalArgumentException 当文件格式不正确、应用不存在或无权限时抛出
      */
     String uploadAppFile(Long userId, Long appId, MultipartFile file) throws IllegalArgumentException;
+
+    /**
+     * 获取指定应用“最新上传”的 zip 代码包路径（按文件最后修改时间取最新）
+     * @param userId 用户ID
+     * @param appId 应用ID
+     * @return 最新 zip 文件路径
+     * @throws IllegalArgumentException 当应用不存在/无权限或未找到 zip 时抛出
+     */
+    Path getLatestUploadedZipPath(Long userId, Long appId) throws IllegalArgumentException;
 
     /**
      * 修改应用基础信息（appName/appDescription/appType）

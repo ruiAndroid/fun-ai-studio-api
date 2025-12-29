@@ -192,23 +192,7 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
         }
 
         // 1) 找到最新上传的 zip（兼容 upload_*.zip 或任意 .zip）
-        Path zipPath;
-        try (Stream<Path> stream = Files.list(appDir)) {
-            zipPath = stream
-                    .filter(Files::isRegularFile)
-                    .filter(p -> p.getFileName().toString().toLowerCase().endsWith(".zip"))
-                    .max(Comparator.comparingLong(p -> {
-                        try {
-                            return Files.getLastModifiedTime(p).toMillis();
-                        } catch (IOException e) {
-                            return 0L;
-                        }
-                    }))
-                    .orElse(null);
-        } catch (IOException e) {
-            logger.error("读取应用目录失败: {}", appDir, e);
-            throw new RuntimeException("读取应用目录失败: " + e.getMessage(), e);
-        }
+        Path zipPath = findLatestZipInAppDir(appDir);
 
         if (zipPath == null || Files.notExists(zipPath)) {
             throw new IllegalArgumentException("未找到已上传的zip包，请先上传");
@@ -294,6 +278,31 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
         resp.setZipFileName(zipPath.getFileName().toString());
         resp.setProjectPath(projectRoot.toString());
         return resp;
+    }
+
+    @Override
+    public Path getLatestUploadedZipPath(Long userId, Long appId) throws IllegalArgumentException {
+        if (userId == null || appId == null) {
+            throw new IllegalArgumentException("userId/appId 不能为空");
+        }
+        FunAiApp app = getAppByIdAndUserId(appId, userId);
+        if (app == null) {
+            throw new IllegalArgumentException("应用不存在或无权限操作");
+        }
+        String basePath = getUserPath();
+        if (basePath == null || basePath.isEmpty()) {
+            logger.error("用户路径配置为空");
+            throw new IllegalArgumentException("用户路径配置为空");
+        }
+        Path appDir = Paths.get(basePath, String.valueOf(userId), sanitizeFileName(app.getAppName()));
+        if (Files.notExists(appDir)) {
+            throw new IllegalArgumentException("应用目录不存在");
+        }
+        Path zipPath = findLatestZipInAppDir(appDir);
+        if (zipPath == null || Files.notExists(zipPath)) {
+            throw new IllegalArgumentException("未找到已上传的zip包，请先上传");
+        }
+        return zipPath;
     }
 
     @PreDestroy
@@ -401,6 +410,28 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
         } catch (IOException ignore) {
         }
         return deployDir;
+    }
+
+    /**
+     * 在应用目录下查找最新的 zip 文件（按 lastModifiedTime 取最大）
+     */
+    private Path findLatestZipInAppDir(Path appDir) {
+        try (Stream<Path> stream = Files.list(appDir)) {
+            return stream
+                    .filter(Files::isRegularFile)
+                    .filter(p -> p.getFileName().toString().toLowerCase().endsWith(".zip"))
+                    .max(Comparator.comparingLong(p -> {
+                        try {
+                            return Files.getLastModifiedTime(p).toMillis();
+                        } catch (IOException e) {
+                            return 0L;
+                        }
+                    }))
+                    .orElse(null);
+        } catch (IOException e) {
+            logger.error("读取应用目录失败: {}", appDir, e);
+            throw new RuntimeException("读取应用目录失败: " + e.getMessage(), e);
+        }
     }
 
     @Override

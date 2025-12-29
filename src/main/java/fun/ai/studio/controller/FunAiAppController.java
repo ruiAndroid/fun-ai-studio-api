@@ -14,10 +14,18 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 /**
@@ -196,6 +204,55 @@ public class FunAiAppController {
         } catch (Exception e) {
             logger.error("部署应用失败: req={}, error={}", req, e.getMessage(), e);
             return Result.error("部署应用失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 下载指定应用“最新的zip代码包”
+     */
+    @GetMapping("/download-app")
+    @Operation(summary = "下载应用最新zip代码包", description = "按最后修改时间返回该应用目录下最新的zip文件")
+    public ResponseEntity<Resource> downloadLatestZip(
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "应用ID", required = true) @RequestParam Long appId
+    ) {
+        try {
+            Path zipPath = funAiAppService.getLatestUploadedZipPath(userId, appId);
+            if (zipPath == null || Files.notExists(zipPath) || !Files.isRegularFile(zipPath)) {
+                return ResponseEntity.notFound().build();
+            }
+
+            FileSystemResource resource = new FileSystemResource(zipPath.toFile());
+            String filename = zipPath.getFileName().toString();
+
+            ContentDisposition disposition = ContentDisposition.attachment()
+                    .filename(filename) // Spring 会自动做安全处理；若需 RFC5987 可改 filename(filename, UTF_8)
+                    .build();
+
+            long contentLength = -1L;
+            try {
+                contentLength = Files.size(zipPath);
+            } catch (Exception ignore) {
+            }
+
+            ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
+                    .header(HttpHeaders.CACHE_CONTROL, "no-cache, no-store, must-revalidate")
+                    .header(HttpHeaders.PRAGMA, "no-cache")
+                    .header(HttpHeaders.EXPIRES, "0")
+                    .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                    .contentType(MediaType.parseMediaType("application/zip"));
+
+            if (contentLength >= 0) {
+                builder.contentLength(contentLength);
+            }
+
+            return builder.body(resource);
+        } catch (IllegalArgumentException e) {
+            // 业务类错误（无权限/不存在/未上传）
+            return ResponseEntity.badRequest().build();
+        } catch (Exception e) {
+            logger.error("下载zip失败: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
         }
     }
 }
