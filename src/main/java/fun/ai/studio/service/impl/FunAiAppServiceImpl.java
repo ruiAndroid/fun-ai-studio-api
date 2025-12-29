@@ -13,6 +13,7 @@ import fun.ai.studio.service.FunAiAppService;
 import fun.ai.studio.service.FunAiUserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -223,15 +224,11 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
             }
         } catch (IllegalArgumentException e) {
             // 业务校验失败：进入 FAILED，方便用户修复后重试
-            app.setAppStatus(FunAiAppStatus.FAILED.code());
-            app.setLastDeployError(truncateError(e.getMessage()));
-            updateById(app);
+            markDeployFailed(appId, e.getMessage());
             throw e;
         } catch (Exception e) {
             logger.error("部署解压失败: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
-            app.setAppStatus(FunAiAppStatus.FAILED.code());
-            app.setLastDeployError(truncateError(e.getMessage()));
-            updateById(app);
+            markDeployFailed(appId, e.getMessage());
             throw new RuntimeException("部署解压失败: " + e.getMessage(), e);
         }
 
@@ -348,15 +345,21 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
         }
     }
 
-    private String truncateError(String msg) {
+    private String truncateErrorTo(String msg, int maxLen) {
         if (msg == null) {
             return null;
         }
         String m = msg.trim();
-        if (m.length() <= 2000) {
+        if (m.isEmpty()) {
             return m;
         }
-        return m.substring(0, 2000);
+        if (maxLen <= 0) {
+            return "";
+        }
+        if (m.length() <= maxLen) {
+            return m;
+        }
+        return m.substring(0, maxLen);
     }
 
     /**
@@ -379,13 +382,37 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
      * 采用 UpdateWrapper 仅更新必要字段，避免覆盖其它字段
      */
     private void markDeployFailed(Long appId, String errMsg) {
-        UpdateWrapper<FunAiApp> uw = new UpdateWrapper<>();
-        uw.eq("id", appId)
-                .set("app_status", FunAiAppStatus.FAILED.code())
-                .set("last_deploy_error", truncateError(errMsg));
-        int rows = baseMapper.update(null, uw);
-        if (rows <= 0) {
-            logger.warn("回写部署失败状态未命中记录: appId={}", appId);
+        // 数据库列长度不确定（可能是 VARCHAR(255) 等），这里做“自动降级重试”确保状态一定回写成功
+        int[] limits = new int[]{2000, 1000, 500, 255, 200, 120, 80, 0};
+        Exception lastEx = null;
+        for (int limit : limits) {
+            try {
+                UpdateWrapper<FunAiApp> uw = new UpdateWrapper<>();
+                uw.eq("id", appId)
+                        .set("app_status", FunAiAppStatus.FAILED.code());
+                String truncated = truncateErrorTo(errMsg, limit);
+                if (limit > 0) {
+                    uw.set("last_deploy_error", truncated);
+                } else {
+                    // 最后兜底：不写错误，只写状态，避免因字段长度导致卡死
+                    uw.set("last_deploy_error", null);
+                }
+                int rows = baseMapper.update(null, uw);
+                if (rows <= 0) {
+                    logger.warn("回写部署失败状态未命中记录: appId={}", appId);
+                }
+                if (limit < 2000) {
+                    logger.warn("last_deploy_error 过长，已降级截断后回写（limit={}）: appId={}", limit, appId);
+                }
+                return;
+            } catch (DataIntegrityViolationException e) {
+                lastEx = e;
+            } catch (Exception e) {
+                lastEx = e;
+            }
+        }
+        if (lastEx != null) {
+            throw new RuntimeException(lastEx);
         }
     }
 
