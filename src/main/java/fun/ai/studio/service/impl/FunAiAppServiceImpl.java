@@ -1,6 +1,7 @@
 package fun.ai.studio.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 
 import fun.ai.studio.entity.FunAiApp;
@@ -239,7 +240,8 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
         deployExecutor.submit(() -> {
             try {
                 // 再次确认当前状态仍为 DEPLOYING，避免重复/并发部署导致状态错乱
-                FunAiApp latest = getAppByIdAndUserId(appId, userId);
+                // 注意：这里是服务端异步线程，前面已做过归属校验；此处按 appId 查询更稳健，避免因 userId 不一致导致拿不到记录从而无法回写状态
+                FunAiApp latest = getById(appId);
                 if (latest == null || latest.getAppStatus() == null || latest.getAppStatus() != FunAiAppStatus.DEPLOYING.code()) {
                     logger.info("跳过构建：应用状态已变化: userId={}, appId={}, appStatus={}",
                             userId, appId, latest == null ? null : latest.getAppStatus());
@@ -252,20 +254,15 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
                 executeCommandNoLog(finalProjectRoot, "npm run build -- --base=./");
 
                 // build 成功：进入 READY（dist 已生成，可访问）
-                latest.setAppStatus(FunAiAppStatus.READY.code());
-                latest.setLastDeployError(null);
-                updateById(latest);
+                markDeployReady(appId);
                 logger.info("部署构建完成: userId={}, appId={}, status=READY", userId, appId);
             } catch (Exception e) {
                 logger.error("部署构建失败: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
+                // 无论如何都要把状态落库为 FAILED，避免一直卡在 DEPLOYING 导致无法继续部署
                 try {
-                    FunAiApp latest = getAppByIdAndUserId(appId, userId);
-                    if (latest != null) {
-                        latest.setAppStatus(FunAiAppStatus.FAILED.code());
-                        latest.setLastDeployError(truncateError(e.getMessage()));
-                        updateById(latest);
-                    }
-                } catch (Exception ignore) {
+                    markDeployFailed(appId, e.getMessage());
+                } catch (Exception markEx) {
+                    logger.error("回写部署失败状态异常: userId={}, appId={}, error={}", userId, appId, markEx.getMessage(), markEx);
                 }
             }
         });
@@ -360,6 +357,36 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
             return m;
         }
         return m.substring(0, 2000);
+    }
+
+    /**
+     * 标记部署构建成功：app_status=READY，清空 last_deploy_error
+     * 采用 UpdateWrapper 仅更新必要字段，避免覆盖其它字段
+     */
+    private void markDeployReady(Long appId) {
+        UpdateWrapper<FunAiApp> uw = new UpdateWrapper<>();
+        uw.eq("id", appId)
+                .set("app_status", FunAiAppStatus.READY.code())
+                .set("last_deploy_error", null);
+        int rows = baseMapper.update(null, uw);
+        if (rows <= 0) {
+            logger.warn("回写部署成功状态未命中记录: appId={}", appId);
+        }
+    }
+
+    /**
+     * 标记部署构建失败：app_status=FAILED，写 last_deploy_error（截断）
+     * 采用 UpdateWrapper 仅更新必要字段，避免覆盖其它字段
+     */
+    private void markDeployFailed(Long appId, String errMsg) {
+        UpdateWrapper<FunAiApp> uw = new UpdateWrapper<>();
+        uw.eq("id", appId)
+                .set("app_status", FunAiAppStatus.FAILED.code())
+                .set("last_deploy_error", truncateError(errMsg));
+        int rows = baseMapper.update(null, uw);
+        if (rows <= 0) {
+            logger.warn("回写部署失败状态未命中记录: appId={}", appId);
+        }
     }
 
     /**
