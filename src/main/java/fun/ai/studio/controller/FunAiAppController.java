@@ -208,6 +208,49 @@ public class FunAiAppController {
     }
 
     /**
+     * 手动修正应用状态（用于服务器异常导致状态不正确时的兜底操作）
+     */
+    @PostMapping("/update-status")
+    @Operation(summary = "手动修改应用状态", description = "仅用于异常兜底：强制修改指定应用的 appStatus（会校验应用归属；非失败状态会清空 lastDeployError）")
+    public Result<FunAiApp> updateAppStatus(
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
+            @Parameter(description = "应用状态（0=空壳/草稿；1=已上传；2=部署中；3=可访问；4=部署失败；5=禁用）", required = true)
+            @RequestParam Integer appStatus
+    ) {
+        try {
+            if (userId == null || appId == null || appStatus == null) {
+                return Result.error("userId/appId/appStatus 不能为空");
+            }
+            // 简单合法性校验：当前枚举定义为 0..5
+            if (appStatus < FunAiAppStatus.CREATED.code() || appStatus > FunAiAppStatus.DISABLED.code()) {
+                return Result.error("appStatus 非法");
+            }
+
+            FunAiApp app = funAiAppService.getAppByIdAndUserId(appId, userId);
+            if (app == null) {
+                return Result.error("应用不存在或无权限操作");
+            }
+
+            app.setAppStatus(appStatus);
+            // 非失败状态下清空上次失败原因，避免前端一直显示旧错误
+            if (appStatus != FunAiAppStatus.FAILED.code()) {
+                app.setLastDeployError(null);
+            }
+
+            boolean ok = funAiAppService.updateById(app);
+            if (!ok) {
+                return Result.error("修改应用状态失败");
+            }
+            FunAiApp latest = funAiAppService.getAppByIdAndUserId(appId, userId);
+            return Result.success("修改成功", latest == null ? app : latest);
+        } catch (Exception e) {
+            logger.error("手动修改应用状态失败: userId={}, appId={}, appStatus={}, error={}", userId, appId, appStatus, e.getMessage(), e);
+            return Result.error("修改应用状态失败: " + e.getMessage());
+        }
+    }
+
+    /**
      * 下载指定应用“最新的zip代码包”
      */
     @GetMapping("/download-app")
