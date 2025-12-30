@@ -131,25 +131,7 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
             if (duplicate != null) {
                 throw new IllegalArgumentException("应用名称已存在，请换一个名称");
             }
-            // 如果名称变化，尝试重命名应用目录（目录名目前依赖 appName）
-            String oldName = existingApp.getAppName();
-            if (oldName != null && !oldName.equals(trimmedName)) {
-                String basePath = getUserPath();
-                if (basePath != null && !basePath.isEmpty()) {
-                    Path userDir = Paths.get(basePath, String.valueOf(userId));
-                    Path oldDir = userDir.resolve(sanitizeFileName(oldName));
-                    Path newDir = userDir.resolve(sanitizeFileName(trimmedName));
-                    try {
-                        if (Files.exists(oldDir) && Files.notExists(newDir)) {
-                            Files.move(oldDir, newDir);
-                            logger.info("应用目录重命名成功: {} -> {}", oldDir, newDir);
-                        }
-                    } catch (Exception e) {
-                        logger.error("应用目录重命名失败: {} -> {}, error={}", oldDir, newDir, e.getMessage(), e);
-                        throw new IllegalArgumentException("应用目录重命名失败，请稍后重试");
-                    }
-                }
-            }
+            // 目录结构已改为按 appId 命名，appName 变化不再影响磁盘路径
             existingApp.setAppName(trimmedName);
         }
 
@@ -186,9 +168,7 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
             throw new IllegalArgumentException("用户路径配置为空");
         }
 
-        String userDirPath = basePath + File.separator + userId;
-        String appDirName = sanitizeFileName(app.getAppName());
-        Path appDir = Paths.get(userDirPath, appDirName);
+        Path appDir = resolveAppDir(basePath, userId, appId, false);
         if (Files.notExists(appDir)) {
             throw new IllegalArgumentException("应用目录不存在，请先创建应用或重新上传");
         }
@@ -288,7 +268,7 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
             logger.error("用户路径配置为空");
             throw new IllegalArgumentException("用户路径配置为空");
         }
-        Path appDir = Paths.get(basePath, String.valueOf(userId), sanitizeFileName(app.getAppName()));
+        Path appDir = resolveAppDir(basePath, userId, appId, false);
         if (Files.notExists(appDir)) {
             throw new IllegalArgumentException("应用目录不存在");
         }
@@ -506,7 +486,7 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
         
         // 删除应用文件夹
         try {
-            deleteAppFolder(userId, existingApp.getAppName());
+            deleteAppFolder(userId, appId);
         } catch (Exception e) {
             logger.error("删除应用文件夹失败: appId={}, userId={}, appName={}, error={}", 
                 appId, userId, existingApp.getAppName(), e.getMessage(), e);
@@ -600,11 +580,9 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
         // 5. 保存到数据库（会自动生成id）
         FunAiApp createdApp = createApp(app);
 
-        // 6. 使用应用名称创建应用文件夹（处理特殊字符）
+        // 6. 创建应用文件夹（按 appId 命名，避免 appName 变化影响磁盘路径）
         try {
-            // 将应用名称中的特殊字符替换为下划线，确保文件夹名称合法
-            String appDirName = sanitizeFileName(appName);
-            String appDirPath = userDirPath + File.separator + appDirName;
+            String appDirPath = userDirPath + File.separator + createdApp.getId();
             Path appDir = Paths.get(appDirPath);
             Files.createDirectories(appDir);
             logger.info("创建应用文件夹: {}", appDirPath);
@@ -683,46 +661,27 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
     }
 
     /**
-     * 清理文件名，将特殊字符替换为下划线，确保文件夹名称合法
-     * @param fileName 原始文件名
-     * @return 清理后的文件名
-     */
-    private String sanitizeFileName(String fileName) {
-        if (fileName == null) {
-            return "unnamed";
-        }
-        // 替换 Windows 和 Linux 文件系统不支持的字符
-        return fileName.replaceAll("[<>:\"/\\\\|?*]", "_");
-    }
-
-    /**
      * 删除应用文件夹
      * @param userId 用户ID
-     * @param appName 应用名称
+     * @param appId 应用ID
      * @throws IOException IO异常
      */
-    private void deleteAppFolder(Long userId, String appName) throws IOException {
+    private void deleteAppFolder(Long userId, Long appId) throws IOException {
         String basePath = getUserPath();
         if (basePath == null || basePath.isEmpty()) {
             logger.warn("用户路径配置为空，跳过删除应用文件夹");
             return;
         }
-        
-        // 构建应用文件夹路径：basePath/userId/sanitizeFileName(appName)
-        String userDirPath = basePath + File.separator + userId;
-        String appDirName = sanitizeFileName(appName);
-        String appDirPath = userDirPath + File.separator + appDirName;
-        Path appDir = Paths.get(appDirPath);
-        
-        // 如果文件夹不存在，直接返回
-        if (!Files.exists(appDir)) {
-            logger.info("应用文件夹不存在，跳过删除: {}", appDirPath);
-            return;
+
+        Path userDir = Paths.get(basePath, String.valueOf(userId));
+        // 优先删除新目录：{userId}/{appId}
+        if (appId != null) {
+            Path newDir = userDir.resolve(String.valueOf(appId));
+            if (Files.exists(newDir)) {
+                deleteDirectoryRecursively(newDir);
+                logger.info("成功删除应用文件夹(按appId): {}", newDir);
+            }
         }
-        
-        // 递归删除文件夹
-        deleteDirectoryRecursively(appDir);
-        logger.info("成功删除应用文件夹: {}", appDirPath);
     }
 
     /**
@@ -799,10 +758,8 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
             throw new IllegalArgumentException("用户路径配置为空");
         }
 
-        String userDirPath = basePath + File.separator + userId;
-        String appDirName = sanitizeFileName(app.getAppName());
-        String appDirPath = userDirPath + File.separator + appDirName;
-        Path appDir = Paths.get(appDirPath);
+        Path appDir = resolveAppDir(basePath, userId, appId, true);
+        String appDirPath = appDir.toString();
 
         // 5. 确保应用文件夹存在
         try {
@@ -869,5 +826,37 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
 
         // 10. 返回保存的文件路径（相对路径）
         return appDirPath + File.separator + savedFileName;
+    }
+
+    /**
+     * 解析应用目录（只认新目录结构）：{basePath}/{userId}/{appId}
+     */
+    private Path resolveAppDir(String basePath,
+                               Long userId,
+                               Long appId,
+                               boolean createIfMissing) {
+        if (basePath == null || basePath.isEmpty()) {
+            throw new IllegalArgumentException("用户路径配置为空");
+        }
+        if (userId == null || appId == null) {
+            throw new IllegalArgumentException("userId/appId 不能为空");
+        }
+
+        Path userDir = Paths.get(basePath, String.valueOf(userId));
+        Path newDir = userDir.resolve(String.valueOf(appId));
+
+        if (Files.exists(newDir)) {
+            return newDir;
+        }
+
+        // 按需创建新目录
+        if (createIfMissing) {
+            try {
+                Files.createDirectories(newDir);
+            } catch (IOException e) {
+                throw new RuntimeException("创建应用目录失败: " + newDir + ", error=" + e.getMessage(), e);
+            }
+        }
+        return newDir;
     }
 }

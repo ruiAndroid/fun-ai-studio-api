@@ -101,8 +101,8 @@ public class FunAiAppSiteController {
                     return ResponseEntity.notFound().build();
                 }
 
-                // 1.2) 计算 dist 目录：{userPath}/{userId}/{sanitize(appName)}/deploy/{root}/dist
-                Path appDir = Paths.get(basePath, String.valueOf(userId), sanitizeFileName(app.getAppName()));
+                // 1.2) 计算 dist 目录：{userPath}/{userId}/{appId}/deploy/{root}/dist
+                Path appDir = resolveAppDir(basePath, userId, appId);
                 Path deployDir = appDir.resolve("deploy");
                 Path projectRoot = detectProjectRoot(deployDir);
                 Path distDir = projectRoot.resolve("dist");
@@ -163,9 +163,8 @@ public class FunAiAppSiteController {
         return p.trim().replaceAll("^[\"']|[\"']$", "");
     }
 
-    private String sanitizeFileName(String fileName) {
-        if (fileName == null) return "unnamed";
-        return fileName.replaceAll("[<>:\"/\\\\|?*]", "_");
+    private Path resolveAppDir(String basePath, Long userId, Long appId) {
+        return Paths.get(basePath, String.valueOf(userId), String.valueOf(appId));
     }
 
     private Path detectProjectRoot(Path deployDir) {
