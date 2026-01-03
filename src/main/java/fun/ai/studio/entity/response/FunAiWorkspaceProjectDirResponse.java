@@ -5,10 +5,10 @@ import lombok.Data;
 @Data
 public class FunAiWorkspaceProjectDirResponse {
     private Long userId;
-    private String projectId;
+    private Long appId;
 
-    private String hostProjectDir;
-    private String containerProjectDir;
+    private String hostAppDir;
+    private String containerAppDir;
 }
 
 

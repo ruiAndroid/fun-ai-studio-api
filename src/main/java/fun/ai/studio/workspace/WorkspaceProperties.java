@@ -16,7 +16,7 @@ public class WorkspaceProperties {
     private boolean enabled = false;
 
     /**
-     * workspace 宿主机持久化根目录：{hostRoot}/{userId}/projects/{projectId}
+     * workspace 宿主机持久化根目录：{hostRoot}/{userId}/apps/{appId}
      */
     private String hostRoot;
 

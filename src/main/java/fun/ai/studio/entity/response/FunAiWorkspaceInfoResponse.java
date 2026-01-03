@@ -14,10 +14,10 @@ public class FunAiWorkspaceInfoResponse {
     private Integer containerPort;
 
     private String hostWorkspaceDir;
-    private String hostProjectsDir;
+    private String hostAppsDir;
 
     private String containerWorkspaceDir;
-    private String containerProjectsDir;
+    private String containerAppsDir;
 }
 
 

@@ -2,6 +2,7 @@ package fun.ai.studio.service;
 
 import fun.ai.studio.entity.response.FunAiWorkspaceInfoResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceProjectDirResponse;
+import fun.ai.studio.entity.response.FunAiWorkspaceRunStatusResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceStatusResponse;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -11,14 +12,29 @@ public interface FunAiWorkspaceService {
 
     FunAiWorkspaceStatusResponse getStatus(Long userId);
 
-    FunAiWorkspaceProjectDirResponse ensureProjectDir(Long userId, String projectId);
+    FunAiWorkspaceProjectDirResponse ensureAppDir(Long userId, Long appId);
 
     /**
-     * 上传 zip 并解压到指定 project 目录：
-     * 宿主机：{hostRoot}/{userId}/projects/{projectId}
-     * 容器内：/workspace/projects/{projectId}
+     * 上传 zip 并解压到指定 app 目录：
+     * 宿主机：{hostRoot}/{userId}/apps/{appId}
+     * 容器内：/workspace/apps/{appId}
      */
-    FunAiWorkspaceProjectDirResponse uploadProjectZip(Long userId, String projectId, MultipartFile file, boolean overwrite);
+    FunAiWorkspaceProjectDirResponse uploadAppZip(Long userId, Long appId, MultipartFile file, boolean overwrite);
+
+    /**
+     * 启动 dev server（当前阶段：同一用户同时只能运行一个应用）
+     */
+    FunAiWorkspaceRunStatusResponse startDev(Long userId, Long appId);
+
+    /**
+     * 停止当前运行任务（如果存在）
+     */
+    FunAiWorkspaceRunStatusResponse stopRun(Long userId);
+
+    /**
+     * 查询当前运行状态
+     */
+    FunAiWorkspaceRunStatusResponse getRunStatus(Long userId);
 }
 
 

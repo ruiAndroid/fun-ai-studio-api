@@ -3,6 +3,8 @@ package fun.ai.studio.service.impl;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fun.ai.studio.entity.response.FunAiWorkspaceInfoResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceProjectDirResponse;
+import fun.ai.studio.entity.response.FunAiWorkspaceRunMeta;
+import fun.ai.studio.entity.response.FunAiWorkspaceRunStatusResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceStatusResponse;
 import fun.ai.studio.service.FunAiWorkspaceService;
 import fun.ai.studio.workspace.CommandResult;
@@ -17,6 +19,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.nio.file.Files;
@@ -56,10 +59,10 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         }
 
         Path hostUserDir = resolveHostWorkspaceDir(userId);
-        Path projectsDir = hostUserDir.resolve("projects");
+        Path appsDir = hostUserDir.resolve("apps");
         Path runDir = hostUserDir.resolve("run");
         ensureDir(hostUserDir);
-        ensureDir(projectsDir);
+        ensureDir(appsDir);
         ensureDir(runDir);
 
         WorkspaceMeta meta = loadOrInitMeta(userId, hostUserDir);
@@ -72,9 +75,9 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         resp.setHostPort(meta.getHostPort());
         resp.setContainerPort(meta.getContainerPort());
         resp.setHostWorkspaceDir(hostUserDir.toString());
-        resp.setHostProjectsDir(projectsDir.toString());
+        resp.setHostAppsDir(appsDir.toString());
         resp.setContainerWorkspaceDir(props.getContainerWorkdir());
-        resp.setContainerProjectsDir(Paths.get(props.getContainerWorkdir(), "projects").toString().replace("\\", "/"));
+        resp.setContainerAppsDir(Paths.get(props.getContainerWorkdir(), "apps").toString().replace("\\", "/"));
         return resp;
     }
 
@@ -101,24 +104,24 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
     }
 
     @Override
-    public FunAiWorkspaceProjectDirResponse ensureProjectDir(Long userId, String projectId) {
+    public FunAiWorkspaceProjectDirResponse ensureAppDir(Long userId, Long appId) {
         FunAiWorkspaceInfoResponse ws = ensureWorkspace(userId);
-        if (!StringUtils.hasText(projectId)) {
-            throw new IllegalArgumentException("projectId 不能为空");
+        if (appId == null) {
+            throw new IllegalArgumentException("appId 不能为空");
         }
-        Path hostProjectDir = resolveHostWorkspaceDir(userId).resolve("projects").resolve(projectId);
-        ensureDir(hostProjectDir);
+        Path hostAppDir = resolveHostWorkspaceDir(userId).resolve("apps").resolve(String.valueOf(appId));
+        ensureDir(hostAppDir);
 
         FunAiWorkspaceProjectDirResponse resp = new FunAiWorkspaceProjectDirResponse();
         resp.setUserId(userId);
-        resp.setProjectId(projectId);
-        resp.setHostProjectDir(hostProjectDir.toString());
-        resp.setContainerProjectDir(Paths.get(ws.getContainerProjectsDir(), projectId).toString().replace("\\", "/"));
+        resp.setAppId(appId);
+        resp.setHostAppDir(hostAppDir.toString());
+        resp.setContainerAppDir(Paths.get(ws.getContainerAppsDir(), String.valueOf(appId)).toString().replace("\\", "/"));
         return resp;
     }
 
     @Override
-    public FunAiWorkspaceProjectDirResponse uploadProjectZip(Long userId, String projectId, MultipartFile file, boolean overwrite) {
+    public FunAiWorkspaceProjectDirResponse uploadAppZip(Long userId, Long appId, MultipartFile file, boolean overwrite) {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("zip文件不能为空");
         }
@@ -127,13 +130,13 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             throw new IllegalArgumentException("仅支持上传 .zip 文件");
         }
 
-        FunAiWorkspaceProjectDirResponse dir = ensureProjectDir(userId, projectId);
-        Path hostProjectDir = Paths.get(dir.getHostProjectDir());
+        FunAiWorkspaceProjectDirResponse dir = ensureAppDir(userId, appId);
+        Path hostAppDir = Paths.get(dir.getHostAppDir());
 
         try {
-            if (overwrite && Files.exists(hostProjectDir)) {
-                // 保留项目目录本身，清空内容
-                try (var stream = Files.list(hostProjectDir)) {
+            if (overwrite && Files.exists(hostAppDir)) {
+                // 保留应用目录本身，清空内容
+                try (var stream = Files.list(hostAppDir)) {
                     stream.forEach(p -> {
                         try {
                             ZipUtils.deleteDirectoryRecursively(p);
@@ -142,14 +145,156 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     });
                 }
             } else {
-                ensureDir(hostProjectDir);
+                ensureDir(hostAppDir);
             }
 
-            ZipUtils.unzipSafely(file.getInputStream(), hostProjectDir);
+            ZipUtils.unzipSafely(file.getInputStream(), hostAppDir);
             return dir;
         } catch (Exception e) {
-            log.error("upload project zip failed: userId={}, projectId={}, error={}", userId, projectId, e.getMessage(), e);
+            log.error("upload app zip failed: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
             throw new RuntimeException("上传并解压失败: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public FunAiWorkspaceRunStatusResponse startDev(Long userId, Long appId) {
+        assertEnabled();
+        if (userId == null) {
+            throw new IllegalArgumentException("userId 不能为空");
+        }
+        if (appId == null) {
+            throw new IllegalArgumentException("appId 不能为空");
+        }
+
+        FunAiWorkspaceInfoResponse ws = ensureWorkspace(userId);
+        // 确保应用目录存在
+        ensureAppDir(userId, appId);
+
+        String containerName = ws.getContainerName();
+        String containerAppDir = Paths.get(props.getContainerWorkdir(), "apps", String.valueOf(appId)).toString().replace("\\", "/");
+        String runDir = Paths.get(props.getContainerWorkdir(), "run").toString().replace("\\", "/");
+        String pidFile = runDir + "/dev.pid";
+        String metaFile = runDir + "/current.json";
+        String logFile = runDir + "/dev.log";
+
+        // 在容器内启动（只允许一个项目运行：若 pid 仍存活则拒绝）
+        String script = ""
+                + "set -e\n"
+                + "RUN_DIR='" + runDir + "'\n"
+                + "PID_FILE='" + pidFile + "'\n"
+                + "META_FILE='" + metaFile + "'\n"
+                + "LOG_FILE='" + logFile + "'\n"
+                + "mkdir -p \"$RUN_DIR\"\n"
+                + "if [ -f \"$PID_FILE\" ]; then\n"
+                + "  pid=$(cat \"$PID_FILE\" 2>/dev/null || true)\n"
+                + "  if [ -n \"$pid\" ] && kill -0 \"$pid\" 2>/dev/null; then\n"
+                + "    echo \"ALREADY_RUNNING:$pid\"\n"
+                + "    exit 42\n"
+                + "  fi\n"
+                + "fi\n"
+                + "cd '" + containerAppDir + "'\n"
+                + "if [ ! -f package.json ]; then echo \"package.json not found\"; exit 2; fi\n"
+                + "npm config set registry https://registry.npmmirror.com >/dev/null 2>&1 || true\n"
+                + "if [ ! -d node_modules ]; then npm install; fi\n"
+                + "setsid sh -c \"npm run dev -- --host 0.0.0.0 --port " + ws.getContainerPort() + "\" >\"$LOG_FILE\" 2>&1 < /dev/null &\n"
+                + "pid=$!\n"
+                + "echo \"$pid\" > \"$PID_FILE\"\n"
+                + "echo '{\"appId\":" + appId + ",\"type\":\"DEV\",\"pid\":'\"$pid\"',\"startedAt\":'\"$(date +%s)\"',\"logPath\":\"" + logFile + "\"}' > \"$META_FILE\"\n"
+                + "echo \"STARTED:$pid\"\n";
+
+        CommandResult r = docker("exec", containerName, "bash", "-lc", script);
+        if (r.getExitCode() == 42) {
+            FunAiWorkspaceRunStatusResponse status = getRunStatus(userId);
+            status.setMessage("已在运行中，当前仅允许同时运行一个应用");
+            return status;
+        }
+        if (!r.isSuccess()) {
+            throw new RuntimeException("启动 dev 失败: " + r.getOutput());
+        }
+        return getRunStatus(userId);
+    }
+
+    @Override
+    public FunAiWorkspaceRunStatusResponse stopRun(Long userId) {
+        assertEnabled();
+        if (userId == null) {
+            throw new IllegalArgumentException("userId 不能为空");
+        }
+        FunAiWorkspaceInfoResponse ws = ensureWorkspace(userId);
+
+        String runDir = Paths.get(props.getContainerWorkdir(), "run").toString().replace("\\", "/");
+        String pidFile = runDir + "/dev.pid";
+        String metaFile = runDir + "/current.json";
+
+        String script = ""
+                + "set -e\n"
+                + "RUN_DIR='" + runDir + "'\n"
+                + "PID_FILE='" + pidFile + "'\n"
+                + "META_FILE='" + metaFile + "'\n"
+                + "if [ -f \"$PID_FILE\" ]; then\n"
+                + "  pid=$(cat \"$PID_FILE\" 2>/dev/null || true)\n"
+                + "  if [ -n \"$pid\" ]; then\n"
+                + "    kill -TERM -- -\"$pid\" 2>/dev/null || true\n"
+                + "    sleep 1\n"
+                + "    kill -KILL -- -\"$pid\" 2>/dev/null || true\n"
+                + "  fi\n"
+                + "fi\n"
+                + "rm -f \"$PID_FILE\" \"$META_FILE\" || true\n"
+                + "echo STOPPED\n";
+
+        CommandResult r = docker("exec", ws.getContainerName(), "bash", "-lc", script);
+        if (!r.isSuccess()) {
+            log.warn("stop run failed: userId={}, out={}", userId, r.getOutput());
+        }
+        return getRunStatus(userId);
+    }
+
+    @Override
+    public FunAiWorkspaceRunStatusResponse getRunStatus(Long userId) {
+        assertEnabled();
+        if (userId == null) {
+            throw new IllegalArgumentException("userId 不能为空");
+        }
+        FunAiWorkspaceInfoResponse ws = ensureWorkspace(userId);
+        Path hostRunDir = resolveHostWorkspaceDir(userId).resolve("run");
+        Path metaPath = hostRunDir.resolve("current.json");
+
+        FunAiWorkspaceRunStatusResponse resp = new FunAiWorkspaceRunStatusResponse();
+        resp.setUserId(userId);
+        resp.setHostPort(ws.getHostPort());
+        resp.setContainerPort(ws.getContainerPort());
+
+        if (Files.notExists(metaPath)) {
+            resp.setState("IDLE");
+            return resp;
+        }
+
+        try {
+            FunAiWorkspaceRunMeta meta = objectMapper.readValue(Files.readString(metaPath, StandardCharsets.UTF_8), FunAiWorkspaceRunMeta.class);
+            resp.setAppId(meta.getAppId());
+            resp.setPid(meta.getPid());
+            resp.setLogPath(meta.getLogPath());
+
+            if (meta.getPid() == null) {
+                resp.setState("DEAD");
+                return resp;
+            }
+
+            // 进程存活校验（容器内）
+            CommandResult alive = docker("exec", ws.getContainerName(), "bash", "-lc",
+                    "kill -0 " + meta.getPid() + " 2>/dev/null && echo RUNNING || echo DEAD");
+            String s = alive.getOutput() == null ? "" : alive.getOutput().trim();
+            if (s.contains("RUNNING")) {
+                resp.setState("RUNNING");
+            } else {
+                resp.setState("DEAD");
+            }
+            return resp;
+        } catch (Exception e) {
+            log.warn("read run meta failed: userId={}, error={}", userId, e.getMessage());
+            resp.setState("UNKNOWN");
+            resp.setMessage("读取运行状态失败: " + e.getMessage());
+            return resp;
         }
     }
 
