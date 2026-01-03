@@ -235,7 +235,7 @@ public class FunAiAppController {
             app.setAppStatus(appStatus);
             // 非失败状态下清空上次失败原因，避免前端一直显示旧错误
             if (appStatus != FunAiAppStatus.FAILED.code()) {
-                app.setLastDeployError(null);
+                app.setLastDeployError(null);   
             }
 
             boolean ok = funAiAppService.updateById(app);

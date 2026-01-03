@@ -672,7 +672,7 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
             logger.warn("用户路径配置为空，跳过删除应用文件夹");
             return;
         }
-
+        
         Path userDir = Paths.get(basePath, String.valueOf(userId));
         // 优先删除新目录：{userId}/{appId}
         if (appId != null) {
