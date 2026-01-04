@@ -5,6 +5,7 @@ import java.io.OutputStream;
 import java.io.InputStream;
 import java.nio.file.*;
 import java.util.Comparator;
+import java.util.Set;
 import java.util.zip.ZipOutputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -64,12 +65,21 @@ public final class ZipUtils {
      * 将目录打包为 zip（相对路径写入 zip，避免路径穿越；不跟随软链）。
      */
     public static void zipDirectory(Path sourceDir, OutputStream out) throws IOException {
+        zipDirectory(sourceDir, out, Set.of());
+    }
+
+    /**
+     * 将目录打包为 zip（相对路径写入 zip，避免路径穿越；不跟随软链）。
+     * @param excludeNames 排除的目录/文件名（若相对路径任一 segment 命中则跳过）
+     */
+    public static void zipDirectory(Path sourceDir, OutputStream out, Set<String> excludeNames) throws IOException {
         if (sourceDir == null || Files.notExists(sourceDir) || !Files.isDirectory(sourceDir)) {
             throw new IOException("sourceDir 不存在或不是目录: " + sourceDir);
         }
         if (out == null) {
             throw new IllegalArgumentException("out 不能为空");
         }
+        Set<String> excludes = (excludeNames == null) ? Set.of() : excludeNames;
         try (ZipOutputStream zos = new ZipOutputStream(out)) {
             try (var walk = Files.walk(sourceDir)) {
                 walk.forEach(p -> {
@@ -82,6 +92,9 @@ public final class ZipUtils {
                             return;
                         }
                         Path rel = sourceDir.relativize(p);
+                        if (shouldExclude(rel, excludes)) {
+                            return;
+                        }
                         String entryName = rel.toString().replace("\\", "/");
                         if (entryName.isBlank()) return;
                         ZipEntry entry = new ZipEntry(entryName);
@@ -100,6 +113,17 @@ public final class ZipUtils {
             }
             zos.finish();
         }
+    }
+
+    private static boolean shouldExclude(Path rel, Set<String> excludes) {
+        if (rel == null || excludes == null || excludes.isEmpty()) return false;
+        for (Path part : rel) {
+            String n = part == null ? null : part.toString();
+            if (n != null && excludes.contains(n)) {
+                return true;
+            }
+        }
+        return false;
     }
 }
 

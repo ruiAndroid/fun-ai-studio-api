@@ -11,15 +11,17 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.core.io.FileSystemResource;
-import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.bind.annotation.*;
 
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Set;
 
 /**
  * Workspace 控制器（阶段B：先打通持久化目录 + 容器挂载）
@@ -148,20 +150,39 @@ public class FunAiWorkspaceController {
     }
 
     @GetMapping("/apps/download")
-    @Operation(summary = "下载应用目录（zip）", description = "将 {hostRoot}/{userId}/apps/{appId} 打包为 zip 并下载")
-    public ResponseEntity<Resource> downloadAppZip(
+    @Operation(summary = "下载应用目录（zip）", description = "将 {hostRoot}/{userId}/apps/{appId} 打包为 zip 并下载（默认排除 node_modules/.git/dist 等）")
+    public ResponseEntity<StreamingResponseBody> downloadAppZip(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
-            @Parameter(description = "应用ID", required = true) @RequestParam Long appId
+            @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
+            @Parameter(description = "是否包含 node_modules（默认 false）") @RequestParam(defaultValue = "false") boolean includeNodeModules
     ) {
         try {
-            Path zipPath = funAiWorkspaceService.exportAppAsZip(userId, appId);
-            FileSystemResource resource = new FileSystemResource(zipPath.toFile());
-
             String filename = "app_" + appId + ".zip";
+
+            // 通过 ensureAppDir 拿到宿主机路径（不额外落临时 zip，避免卡住/堆积）
+            Path hostAppDir = Paths.get(funAiWorkspaceService.ensureAppDir(userId, appId).getHostAppDir());
+
+            Set<String> excludes = includeNodeModules
+                    ? Set.of(".git", "dist", "build", ".next", "target")
+                    : Set.of("node_modules", ".git", "dist", "build", ".next", "target");
+
+            StreamingResponseBody body = outputStream -> {
+                // 边打包边输出，客户端会立即收到数据（体验比“先打包再返回”好）
+                fun.ai.studio.workspace.ZipUtils.zipDirectory(hostAppDir, outputStream, excludes);
+                outputStream.flush();
+            };
+
+            ContentDisposition disposition = ContentDisposition.attachment()
+                    .filename(filename)
+                    .build();
+
             return ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
-                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                    .body(resource);
+                    .header(HttpHeaders.CACHE_CONTROL, "no-cache, no-store, must-revalidate")
+                    .header(HttpHeaders.PRAGMA, "no-cache")
+                    .header(HttpHeaders.EXPIRES, "0")
+                    .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                    .contentType(MediaType.parseMediaType("application/zip"))
+                    .body(body);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().build();
         } catch (Exception e) {
