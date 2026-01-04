@@ -312,6 +312,14 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
 
             // pid 为空：说明 start 已触发，但后台脚本尚未写入 pid（npm install 进行中）
             if (meta.getPid() == null) {
+                // 先确认容器是否真的在跑：否则会出现“容器已 EXITED，但 run/status 仍一直 STARTING”的假象
+                String cStatus = queryContainerStatus(ws.getContainerName());
+                if (!"RUNNING".equalsIgnoreCase(cStatus)) {
+                    resp.setState("DEAD");
+                    resp.setMessage("容器未运行（" + cStatus + "），请先 ensure 再 start；如频繁退出请检查 idle 回收或宿主机资源");
+                    return resp;
+                }
+
                 long nowSec = System.currentTimeMillis() / 1000L;
                 long startedAt = meta.getStartedAt() == null ? 0L : meta.getStartedAt();
                 int timeoutSec = Math.max(30, props.getRunStartingTimeoutSeconds());
@@ -320,6 +328,9 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     resp.setMessage("启动超时（" + timeoutSec + "s），请查看日志: " + (resp.getLogPath() == null ? "" : resp.getLogPath()));
                 } else {
                     resp.setState("STARTING");
+                    if (resp.getMessage() == null || resp.getMessage().isBlank()) {
+                        resp.setMessage("启动中（可能在 npm install），请稍后重试；可查看日志: " + (resp.getLogPath() == null ? "" : resp.getLogPath()));
+                    }
                 }
                 return resp;
             }
