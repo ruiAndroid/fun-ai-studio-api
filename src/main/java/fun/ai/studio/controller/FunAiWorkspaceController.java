@@ -26,6 +26,7 @@ import java.nio.file.Paths;
 import java.util.Set;
 
 import fun.ai.studio.workspace.WorkspaceActivityTracker;
+import jakarta.servlet.http.HttpServletRequest;
 
 /**
  * Workspace 控制器（阶段B：先打通持久化目录 + 容器挂载）
@@ -83,9 +84,15 @@ public class FunAiWorkspaceController {
     @GetMapping("/internal/nginx/port")
     @Operation(summary = "（内部）nginx 反代查询端口", description = "供 nginx auth_request 使用：根据 userId 返回 X-WS-Port 头。不做 ensure/start，避免副作用。")
     public ResponseEntity<Void> nginxPort(
-            @Parameter(description = "用户ID", required = true) @RequestParam Long userId
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            HttpServletRequest request
     ) {
         try {
+            // 仅允许同机 nginx（localhost）调用，避免暴露端口映射信息到公网
+            String remote = request == null ? null : request.getRemoteAddr();
+            if (remote == null || !(remote.equals("127.0.0.1") || remote.equals("::1") || remote.equals("0:0:0:0:0:0:0:1"))) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
             Integer port = workspaceServiceImpl.getHostPortForNginx(userId);
             if (port == null || port <= 0) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
