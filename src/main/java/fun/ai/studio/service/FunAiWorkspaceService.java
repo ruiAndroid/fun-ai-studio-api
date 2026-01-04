@@ -6,6 +6,8 @@ import fun.ai.studio.entity.response.FunAiWorkspaceRunStatusResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceStatusResponse;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.file.Path;
+
 public interface FunAiWorkspaceService {
 
     FunAiWorkspaceInfoResponse ensureWorkspace(Long userId);
@@ -35,6 +37,11 @@ public interface FunAiWorkspaceService {
      * 查询当前运行状态
      */
     FunAiWorkspaceRunStatusResponse getRunStatus(Long userId);
+
+    /**
+     * 将指定 app 目录打包为 zip 文件并返回 zipPath（位于 run/ 目录下的临时文件）
+     */
+    Path exportAppAsZip(Long userId, Long appId);
 }
 
 

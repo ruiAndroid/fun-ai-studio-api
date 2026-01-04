@@ -11,8 +11,15 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.bind.annotation.*;
+
+import java.nio.file.Path;
 
 /**
  * Workspace 控制器（阶段B：先打通持久化目录 + 容器挂载）
@@ -137,6 +144,29 @@ public class FunAiWorkspaceController {
         } catch (Exception e) {
             log.error("get run status failed: userId={}, error={}", userId, e.getMessage(), e);
             return Result.error("get run status failed: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/apps/download")
+    @Operation(summary = "下载应用目录（zip）", description = "将 {hostRoot}/{userId}/apps/{appId} 打包为 zip 并下载")
+    public ResponseEntity<Resource> downloadAppZip(
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "应用ID", required = true) @RequestParam Long appId
+    ) {
+        try {
+            Path zipPath = funAiWorkspaceService.exportAppAsZip(userId, appId);
+            FileSystemResource resource = new FileSystemResource(zipPath.toFile());
+
+            String filename = "app_" + appId + ".zip";
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                    .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                    .body(resource);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().build();
+        } catch (Exception e) {
+            log.error("download app zip failed: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
+            return ResponseEntity.internalServerError().build();
         }
     }
 }

@@ -19,12 +19,14 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -298,6 +300,42 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         }
     }
 
+    @Override
+    public Path exportAppAsZip(Long userId, Long appId) {
+        assertEnabled();
+        if (userId == null) {
+            throw new IllegalArgumentException("userId 不能为空");
+        }
+        if (appId == null) {
+            throw new IllegalArgumentException("appId 不能为空");
+        }
+
+        // 确保 workspace 与 app 目录存在
+        ensureWorkspace(userId);
+        FunAiWorkspaceProjectDirResponse dir = ensureAppDir(userId, appId);
+        Path hostAppDir = Paths.get(dir.getHostAppDir());
+        if (Files.notExists(hostAppDir) || !Files.isDirectory(hostAppDir)) {
+            throw new IllegalArgumentException("应用目录不存在: " + hostAppDir);
+        }
+
+        Path runDir = resolveHostWorkspaceDir(userId).resolve("run");
+        ensureDir(runDir);
+
+        String fileName = "app_" + appId + "_" + System.currentTimeMillis() + ".zip";
+        Path zipPath = runDir.resolve(fileName);
+
+        try (OutputStream os = Files.newOutputStream(zipPath, StandardOpenOption.CREATE_NEW)) {
+            ZipUtils.zipDirectory(hostAppDir, os);
+        } catch (Exception e) {
+            try {
+                Files.deleteIfExists(zipPath);
+            } catch (Exception ignore) {
+            }
+            throw new RuntimeException("打包失败: " + e.getMessage(), e);
+        }
+        return zipPath;
+    }
+
     private void assertEnabled() {
         if (!props.isEnabled()) {
             throw new IllegalStateException("workspace 功能未启用（funai.workspace.enabled=false）");
@@ -454,10 +492,27 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         if (!exist.isSuccess()) {
             return "NOT_CREATED";
         }
-        String s = exist.getOutput() == null ? "" : exist.getOutput().trim();
+        String s = normalizeDockerCliOutput(exist.getOutput());
         if (s.isEmpty()) return "UNKNOWN";
         if ("running".equalsIgnoreCase(s)) return "RUNNING";
         return s.toUpperCase();
+    }
+
+    /**
+     * podman-docker 会把告警打印到 stdout：
+     * "Emulate Docker CLI using podman. Create /etc/containers/nodocker to quiet msg."
+     * 这里做一次清洗，只取最后一个非空行，避免把告警返回给前端。
+     */
+    private String normalizeDockerCliOutput(String output) {
+        if (output == null) return "";
+        String[] lines = output.split("\\r?\\n");
+        for (int i = lines.length - 1; i >= 0; i--) {
+            String line = lines[i] == null ? "" : lines[i].trim();
+            if (!line.isEmpty()) {
+                return line;
+            }
+        }
+        return "";
     }
 
     private CommandResult docker(String... args) {
