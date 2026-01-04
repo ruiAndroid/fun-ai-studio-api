@@ -187,6 +187,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         String pidFile = runDir + "/dev.pid";
         String metaFile = runDir + "/current.json";
         String logFile = runDir + "/dev.log";
+        String startSh = runDir + "/dev-start.sh";
 
         // 在容器内启动（只允许一个项目运行：若 pid 仍存活则拒绝）
         // 设计：start 接口不阻塞（不等待 npm install）
@@ -198,6 +199,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                 + "PID_FILE='" + pidFile + "'\n"
                 + "META_FILE='" + metaFile + "'\n"
                 + "LOG_FILE='" + logFile + "'\n"
+                + "START_SH='" + startSh + "'\n"
                 + "mkdir -p \"$RUN_DIR\"\n"
                 + "if [ -f \"$PID_FILE\" ]; then\n"
                 + "  pid=$(cat \"$PID_FILE\" 2>/dev/null || true)\n"
@@ -207,22 +209,27 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                 + "  fi\n"
                 + "fi\n"
                 + "rm -f \"$PID_FILE\" || true\n"
-                + "printf '{\"appId\":%s,\"type\":\"DEV\",\"pid\":null,\"startedAt\":%s,\"logPath\":\"%s\"}' "
-                + appId + " \"$(date +%s)\" \"" + logFile + "\" > \"$META_FILE\"\n"
+                + "printf '{\"appId\":" + appId + ",\"type\":\"DEV\",\"pid\":null,\"startedAt\":'\"$(date +%s)\"',\"logPath\":\"" + logFile + "\"}' > \"$META_FILE\"\n"
+                + "cat > \"$START_SH\" <<EOS\n"
+                + "set -e\n"
                 + "APP_DIR='" + containerAppDir + "'\n"
                 + "PORT='" + ws.getContainerPort() + "'\n"
-                + "nohup bash -lc \"\n"
-                + "  set -e\n"
-                + "  cd \\\"$APP_DIR\\\"\\n"
-                + "  if [ ! -f package.json ]; then echo 'package.json not found' >>\\\"$LOG_FILE\\\"; exit 2; fi\\n"
-                + "  npm config set registry https://registry.npmmirror.com >/dev/null 2>&1 || true\\n"
-                + "  if [ ! -d node_modules ]; then npm install >>\\\"$LOG_FILE\\\" 2>&1; fi\\n"
-                + "  setsid sh -c \\\"npm run dev -- --host 0.0.0.0 --port $PORT\\\" >>\\\"$LOG_FILE\\\" 2>&1 < /dev/null &\\n"
-                + "  pid=\\$!\\n"
-                + "  echo \\\"\\$pid\\\" > \\\"$PID_FILE\\\"\\n"
-                + "  printf '{\\\\\\\"appId\\\\\\\":%s,\\\\\\\"type\\\\\\\":\\\\\\\"DEV\\\\\\\",\\\\\\\"pid\\\\\\\":%s,\\\\\\\"startedAt\\\\\\\":%s,\\\\\\\"logPath\\\\\\\":\\\\\\\"%s\\\\\\\"}' "
-                + appId + " \\\"\\$pid\\\" \\\"\\$(date +%s)\\\" \\\"" + logFile + "\\\" > \\\"$META_FILE\\\"\\n"
-                + "\" >/dev/null 2>&1 &\n"
+                + "PID_FILE='" + pidFile + "'\n"
+                + "META_FILE='" + metaFile + "'\n"
+                + "LOG_FILE='" + logFile + "'\n"
+                + "echo \"[dev-start] start at $(date -Is)\" >>\"$LOG_FILE\" 2>&1\n"
+                + "cd \"$APP_DIR\" >>\"$LOG_FILE\" 2>&1\n"
+                + "if [ ! -f package.json ]; then echo \"package.json not found: $APP_DIR\" >>\"$LOG_FILE\"; exit 2; fi\n"
+                + "npm config set registry https://registry.npmmirror.com >/dev/null 2>&1 || true\n"
+                + "if [ ! -d node_modules ]; then echo \"[dev-start] npm install...\" >>\"$LOG_FILE\"; npm install >>\"$LOG_FILE\" 2>&1; fi\n"
+                + "echo \"[dev-start] npm run dev on $PORT\" >>\"$LOG_FILE\" 2>&1\n"
+                + "setsid sh -c \"npm run dev -- --host 0.0.0.0 --port $PORT\" >>\"$LOG_FILE\" 2>&1 < /dev/null &\n"
+                + "pid=\\$!\n"
+                + "echo \"\\$pid\" > \"$PID_FILE\"\n"
+                + "printf '{\"appId\":" + appId + ",\"type\":\"DEV\",\"pid\":%s,\"startedAt\":%s,\"logPath\":\"" + logFile + "\"}' \"\\$pid\" \"$(date +%s)\" > \"$META_FILE\"\n"
+                + "EOS\n"
+                + "chmod +x \"$START_SH\" || true\n"
+                + "nohup bash \"$START_SH\" >>\"$LOG_FILE\" 2>&1 &\n"
                 + "echo \"LAUNCHED\"\n";
 
         CommandResult r = docker("exec", containerName, "bash", "-lc", script);
@@ -305,7 +312,15 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
 
             // pid 为空：说明 start 已触发，但后台脚本尚未写入 pid（npm install 进行中）
             if (meta.getPid() == null) {
-                resp.setState("STARTING");
+                long nowSec = System.currentTimeMillis() / 1000L;
+                long startedAt = meta.getStartedAt() == null ? 0L : meta.getStartedAt();
+                int timeoutSec = Math.max(30, props.getRunStartingTimeoutSeconds());
+                if (startedAt > 0 && nowSec - startedAt >= timeoutSec) {
+                    resp.setState("DEAD");
+                    resp.setMessage("启动超时（" + timeoutSec + "s），请查看日志: " + (resp.getLogPath() == null ? "" : resp.getLogPath()));
+                } else {
+                    resp.setState("STARTING");
+                }
                 return resp;
             }
 

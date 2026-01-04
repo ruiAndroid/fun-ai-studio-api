@@ -74,6 +74,11 @@ public class WorkspaceProperties {
      */
     private int idleStopContainerMinutes = 20;
 
+    /**
+     * run/status 中 STARTING 的超时秒数；超过后仍未拿到 pid，则认为启动失败（避免前端无限转圈）
+     */
+    private int runStartingTimeoutSeconds = 300;
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -184,6 +189,14 @@ public class WorkspaceProperties {
 
     public void setIdleStopContainerMinutes(int idleStopContainerMinutes) {
         this.idleStopContainerMinutes = idleStopContainerMinutes;
+    }
+
+    public int getRunStartingTimeoutSeconds() {
+        return runStartingTimeoutSeconds;
+    }
+
+    public void setRunStartingTimeoutSeconds(int runStartingTimeoutSeconds) {
+        this.runStartingTimeoutSeconds = runStartingTimeoutSeconds;
     }
 }
 
