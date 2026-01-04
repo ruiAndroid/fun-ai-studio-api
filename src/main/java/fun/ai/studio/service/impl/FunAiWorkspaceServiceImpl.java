@@ -384,7 +384,18 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         if (!base.contains("://")) {
             base = "http://" + base;
         }
-        return base + ":" + ws.getHostPort() + "/";
+        String prefix = props.getPreviewPathPrefix();
+        if (prefix == null || prefix.isBlank()) {
+            prefix = "/ws";
+        }
+        prefix = prefix.trim();
+        if (!prefix.startsWith("/")) {
+            prefix = "/" + prefix;
+        }
+        if (prefix.endsWith("/")) {
+            prefix = prefix.substring(0, prefix.length() - 1);
+        }
+        return base + prefix + "/" + ws.getUserId() + "/";
     }
 
     @Override
@@ -573,6 +584,17 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         m.setCreatedAt(System.currentTimeMillis());
         persistMeta(hostUserDir, m);
         return m;
+    }
+
+    /**
+     * 仅用于 nginx auth_request：读取 workspace-meta.json 中的 hostPort（不做 ensure/start，避免每个静态资源请求都触发副作用）
+     */
+    public Integer getHostPortForNginx(Long userId) {
+        if (userId == null) return null;
+        Path hostUserDir = resolveHostWorkspaceDir(userId);
+        WorkspaceMeta meta = tryLoadMeta(hostUserDir);
+        if (meta == null) return null;
+        return meta.getHostPort();
     }
 
     private void persistMeta(Path hostUserDir, WorkspaceMeta meta) {

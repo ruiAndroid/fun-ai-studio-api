@@ -31,14 +31,20 @@ public class WorkspaceProperties {
     private int containerPort = 5173;
 
     /**
-     * 预览地址的 baseUrl（不含端口），用于后端生成 previewUrl
+     * 预览地址的 baseUrl（建议配置为 nginx 的域名），用于后端生成 previewUrl
      * 示例：
-     * - http://47.118.27.59
      * - https://preview.example.com
      *
-     * 最终 previewUrl 会拼接为 {previewBaseUrl}:{hostPort}/
+     * 推荐配合 nginx 反代（只开 80/443）：最终 previewUrl 形如
+     * {previewBaseUrl}{previewPathPrefix}/{userId}/
      */
     private String previewBaseUrl;
+
+    /**
+     * nginx 反代预览的路径前缀（不以 / 结尾），默认 /ws
+     * 最终会拼接为 {previewBaseUrl}{previewPathPrefix}/{userId}/
+     */
+    private String previewPathPrefix = "/ws";
 
     /**
      * 宿主机端口分配起始值
@@ -117,6 +123,14 @@ public class WorkspaceProperties {
 
     public void setPreviewBaseUrl(String previewBaseUrl) {
         this.previewBaseUrl = previewBaseUrl;
+    }
+
+    public String getPreviewPathPrefix() {
+        return previewPathPrefix;
+    }
+
+    public void setPreviewPathPrefix(String previewPathPrefix) {
+        this.previewPathPrefix = previewPathPrefix;
     }
 
     public int getHostPortBase() {

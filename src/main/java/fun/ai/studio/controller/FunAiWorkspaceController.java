@@ -16,6 +16,7 @@ import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.bind.annotation.*;
@@ -38,10 +39,13 @@ public class FunAiWorkspaceController {
 
     private final FunAiWorkspaceService funAiWorkspaceService;
     private final WorkspaceActivityTracker activityTracker;
+    private final fun.ai.studio.service.impl.FunAiWorkspaceServiceImpl workspaceServiceImpl;
 
-    public FunAiWorkspaceController(FunAiWorkspaceService funAiWorkspaceService, WorkspaceActivityTracker activityTracker) {
+    public FunAiWorkspaceController(FunAiWorkspaceService funAiWorkspaceService, WorkspaceActivityTracker activityTracker,
+                                    fun.ai.studio.service.impl.FunAiWorkspaceServiceImpl workspaceServiceImpl) {
         this.funAiWorkspaceService = funAiWorkspaceService;
         this.activityTracker = activityTracker;
+        this.workspaceServiceImpl = workspaceServiceImpl;
     }
 
     @PostMapping("/ensure")
@@ -73,6 +77,25 @@ public class FunAiWorkspaceController {
         } catch (Exception e) {
             log.error("get workspace status failed: userId={}, error={}", userId, e.getMessage(), e);
             return Result.error("get workspace status failed: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/internal/nginx/port")
+    @Operation(summary = "（内部）nginx 反代查询端口", description = "供 nginx auth_request 使用：根据 userId 返回 X-WS-Port 头。不做 ensure/start，避免副作用。")
+    public ResponseEntity<Void> nginxPort(
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId
+    ) {
+        try {
+            Integer port = workspaceServiceImpl.getHostPortForNginx(userId);
+            if (port == null || port <= 0) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+            }
+            return ResponseEntity.noContent()
+                    .header("X-WS-Port", String.valueOf(port))
+                    .build();
+        } catch (Exception e) {
+            log.warn("nginx port lookup failed: userId={}, error={}", userId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 
