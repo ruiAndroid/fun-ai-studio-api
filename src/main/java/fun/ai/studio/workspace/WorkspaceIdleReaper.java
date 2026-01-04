@@ -34,8 +34,11 @@ public class WorkspaceIdleReaper {
         if (!props.isEnabled()) return;
 
         long now = System.currentTimeMillis();
-        long stopRunMs = props.getIdleStopRunMinutes() * 60_000L;
-        long stopContainerMs = props.getIdleStopContainerMinutes() * 60_000L;
+        int stopRunMin = props.getIdleStopRunMinutes();
+        int stopContainerMin = props.getIdleStopContainerMinutes();
+        // 约定：<=0 表示禁用（避免误配 0 导致“立刻回收”，容器看起来总是 EXITED）
+        long stopRunMs = stopRunMin > 0 ? stopRunMin * 60_000L : Long.MAX_VALUE;
+        long stopContainerMs = stopContainerMin > 0 ? stopContainerMin * 60_000L : Long.MAX_VALUE;
 
         Map<Long, Long> snap = tracker.snapshot();
         for (var e : snap.entrySet()) {
@@ -46,10 +49,12 @@ public class WorkspaceIdleReaper {
 
             try {
                 if (idle >= stopContainerMs) {
+                    log.info("idle reaper: stop container: userId={}, idleMs={}, thresholdMs={}", userId, idle, stopContainerMs);
                     // 先 stop run 再停容器（避免残留 pid/meta）
                     workspaceService.stopRunForIdle(userId);
                     workspaceService.stopContainerForIdle(userId);
                 } else if (idle >= stopRunMs) {
+                    log.info("idle reaper: stop run: userId={}, idleMs={}, thresholdMs={}", userId, idle, stopRunMs);
                     workspaceService.stopRunForIdle(userId);
                 }
             } catch (Exception ex) {

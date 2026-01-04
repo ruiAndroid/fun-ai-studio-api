@@ -14,18 +14,13 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
-import org.springframework.http.ContentDisposition;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 
 /**
@@ -143,15 +138,14 @@ public class FunAiAppController {
      * @return 上传结果，包含文件保存路径
      */
     @PostMapping("/upload")
-    @Operation(summary = "上传应用文件", description = "上传zip压缩包到指定应用文件夹")
+    @Deprecated
+    @Operation(summary = "[Deprecated] 上传应用文件（旧链路）", description = "旧链路：上传zip压缩包到指定应用文件夹。全量 workspace 场景请使用 /api/fun-ai/workspace/apps/upload", deprecated = true)
     public Result<String> uploadAppFile(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
             @Parameter(description = "zip文件", required = true) @RequestParam("file") MultipartFile file) {
         try {
-            String filePath = funAiAppService.uploadAppFile(userId, appId, file);
-            logger.info("文件上传成功: userId={}, appId={}, filePath={}", userId, appId, filePath);
-            return Result.success("文件上传成功", filePath);
+            return Result.error("该接口已废弃：请使用 /api/fun-ai/workspace/apps/upload");
         } catch (IllegalArgumentException e) {
             logger.warn("文件上传失败: userId={}, appId={}, error={}", userId, appId, e.getMessage());
             return Result.error(e.getMessage());
@@ -193,11 +187,11 @@ public class FunAiAppController {
      * - 仅当 appStatus == 1 时允许发布/部署
      */
     @PostMapping("/deploy")
-    @Operation(summary = "部署应用", description = "仅当 appStatus=1(已上传) 才允许部署；解压后立即返回并置为 2(部署中)；后端异步 npm install && npm run build 成功置 3(可访问)，失败置 4(部署失败) 并写 lastDeployError；前端轮询 appInfo 查看状态")
+    @Deprecated
+    @Operation(summary = "[Deprecated] 部署应用（旧链路）", description = "旧链路：解压 + npm build + /fun-ai-app 静态站点。全量 workspace 场景请使用 workspace run/start", deprecated = true)
     public Result<FunAiAppDeployResponse> deployApp(@RequestBody DeployFunAiAppRequest req) {
         try {
-            FunAiAppDeployResponse resp = funAiAppService.deployApp(req.getUserId(), req.getAppId());
-            return Result.success("部署已开始，请轮询 appInfo 查看状态", resp);
+            return Result.error("该接口已废弃：请使用 /api/fun-ai/workspace/run/start");
         } catch (IllegalArgumentException e) {
             logger.warn("部署应用失败: req={}, error={}", req, e.getMessage());
             return Result.error(e.getMessage());
@@ -254,42 +248,14 @@ public class FunAiAppController {
      * 下载指定应用“最新的zip代码包”
      */
     @GetMapping("/download-app")
-    @Operation(summary = "下载应用最新zip代码包", description = "按最后修改时间返回该应用目录下最新的zip文件")
+    @Deprecated
+    @Operation(summary = "[Deprecated] 下载应用最新zip代码包（旧链路）", description = "旧链路：下载应用目录下上传的 zip。全量 workspace 场景请使用 /api/fun-ai/workspace/apps/download", deprecated = true)
     public ResponseEntity<Resource> downloadLatestZip(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId
     ) {
         try {
-            Path zipPath = funAiAppService.getLatestUploadedZipPath(userId, appId);
-            if (zipPath == null || Files.notExists(zipPath) || !Files.isRegularFile(zipPath)) {
-                return ResponseEntity.notFound().build();
-            }
-
-            FileSystemResource resource = new FileSystemResource(zipPath.toFile());
-            String filename = zipPath.getFileName().toString();
-
-            ContentDisposition disposition = ContentDisposition.attachment()
-                    .filename(filename) // Spring 会自动做安全处理；若需 RFC5987 可改 filename(filename, UTF_8)
-                    .build();
-
-            long contentLength = -1L;
-            try {
-                contentLength = Files.size(zipPath);
-            } catch (Exception ignore) {
-            }
-
-            ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
-                    .header(HttpHeaders.CACHE_CONTROL, "no-cache, no-store, must-revalidate")
-                    .header(HttpHeaders.PRAGMA, "no-cache")
-                    .header(HttpHeaders.EXPIRES, "0")
-                    .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
-                    .contentType(MediaType.parseMediaType("application/zip"));
-
-            if (contentLength >= 0) {
-                builder.contentLength(contentLength);
-            }
-
-            return builder.body(resource);
+            return ResponseEntity.status(HttpStatus.GONE).build();
         } catch (IllegalArgumentException e) {
             // 业务类错误（无权限/不存在/未上传）
             return ResponseEntity.badRequest().build();

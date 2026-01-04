@@ -61,7 +61,7 @@ public class FunAiWorkspaceController {
     }
 
     @GetMapping("/status")
-    @Operation(summary = "查询 workspace 状态", description = "返回容器状态、端口、宿主机目录")
+    @Operation(summary = "查询 workspace 状态", description = "返回容器状态、端口、宿主机目录 容器状态值：NOT_CREATED / RUNNING / EXITED / UNKNOWN")
     public Result<FunAiWorkspaceStatusResponse> status(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId
     ) {
@@ -146,7 +146,7 @@ public class FunAiWorkspaceController {
     }
 
     @GetMapping("/run/status")
-    @Operation(summary = "查询当前运行状态", description = "读取 /workspace/run/current.json 并验证 pid 是否存活")
+    @Operation(summary = "查询当前运行状态", description = "读取 /workspace/run/current.json 并验证 pid/端口是否就绪 应用运行态：IDLE / STARTING / RUNNING / DEAD（RUNNING 时返回 previewUrl）")
     public Result<FunAiWorkspaceRunStatusResponse> runStatus(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId
     ) {

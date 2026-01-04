@@ -6,6 +6,7 @@ import fun.ai.studio.entity.response.FunAiWorkspaceProjectDirResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceRunMeta;
 import fun.ai.studio.entity.response.FunAiWorkspaceRunStatusResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceStatusResponse;
+import fun.ai.studio.service.FunAiAppService;
 import fun.ai.studio.service.FunAiWorkspaceService;
 import fun.ai.studio.workspace.CommandResult;
 import fun.ai.studio.workspace.CommandRunner;
@@ -38,13 +39,18 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
     private final WorkspaceProperties props;
     private final CommandRunner commandRunner;
     private final ObjectMapper objectMapper;
+    private final FunAiAppService funAiAppService;
 
     private static final Duration CMD_TIMEOUT = Duration.ofSeconds(10);
 
-    public FunAiWorkspaceServiceImpl(WorkspaceProperties props, CommandRunner commandRunner, ObjectMapper objectMapper) {
+    public FunAiWorkspaceServiceImpl(WorkspaceProperties props,
+                                     CommandRunner commandRunner,
+                                     ObjectMapper objectMapper,
+                                     FunAiAppService funAiAppService) {
         this.props = props;
         this.commandRunner = commandRunner;
         this.objectMapper = objectMapper;
+        this.funAiAppService = funAiAppService;
     }
 
     @Override
@@ -111,6 +117,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         if (appId == null) {
             throw new IllegalArgumentException("appId 不能为空");
         }
+        assertAppOwned(userId, appId);
         Path hostAppDir = resolveHostWorkspaceDir(userId).resolve("apps").resolve(String.valueOf(appId));
         ensureDir(hostAppDir);
 
@@ -132,6 +139,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             throw new IllegalArgumentException("仅支持上传 .zip 文件");
         }
 
+        assertAppOwned(userId, appId);
         FunAiWorkspaceProjectDirResponse dir = ensureAppDir(userId, appId);
         Path hostAppDir = Paths.get(dir.getHostAppDir());
 
@@ -167,6 +175,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         if (appId == null) {
             throw new IllegalArgumentException("appId 不能为空");
         }
+        assertAppOwned(userId, appId);
 
         FunAiWorkspaceInfoResponse ws = ensureWorkspace(userId);
         // 确保应用目录存在
@@ -180,6 +189,9 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         String logFile = runDir + "/dev.log";
 
         // 在容器内启动（只允许一个项目运行：若 pid 仍存活则拒绝）
+        // 设计：start 接口不阻塞（不等待 npm install）
+        // - 先写入 STARTING 的 meta（pid=null）
+        // - 再用后台脚本完成 npm install + 启动 vite，并更新 meta/pid
         String script = ""
                 + "set -e\n"
                 + "RUN_DIR='" + runDir + "'\n"
@@ -194,15 +206,24 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                 + "    exit 42\n"
                 + "  fi\n"
                 + "fi\n"
-                + "cd '" + containerAppDir + "'\n"
-                + "if [ ! -f package.json ]; then echo \"package.json not found\"; exit 2; fi\n"
-                + "npm config set registry https://registry.npmmirror.com >/dev/null 2>&1 || true\n"
-                + "if [ ! -d node_modules ]; then npm install; fi\n"
-                + "setsid sh -c \"npm run dev -- --host 0.0.0.0 --port " + ws.getContainerPort() + "\" >\"$LOG_FILE\" 2>&1 < /dev/null &\n"
-                + "pid=$!\n"
-                + "echo \"$pid\" > \"$PID_FILE\"\n"
-                + "echo '{\"appId\":" + appId + ",\"type\":\"DEV\",\"pid\":'\"$pid\"',\"startedAt\":'\"$(date +%s)\"',\"logPath\":\"" + logFile + "\"}' > \"$META_FILE\"\n"
-                + "echo \"STARTED:$pid\"\n";
+                + "rm -f \"$PID_FILE\" || true\n"
+                + "printf '{\"appId\":%s,\"type\":\"DEV\",\"pid\":null,\"startedAt\":%s,\"logPath\":\"%s\"}' "
+                + appId + " \"$(date +%s)\" \"" + logFile + "\" > \"$META_FILE\"\n"
+                + "APP_DIR='" + containerAppDir + "'\n"
+                + "PORT='" + ws.getContainerPort() + "'\n"
+                + "nohup bash -lc \"\n"
+                + "  set -e\n"
+                + "  cd \\\"$APP_DIR\\\"\\n"
+                + "  if [ ! -f package.json ]; then echo 'package.json not found' >>\\\"$LOG_FILE\\\"; exit 2; fi\\n"
+                + "  npm config set registry https://registry.npmmirror.com >/dev/null 2>&1 || true\\n"
+                + "  if [ ! -d node_modules ]; then npm install >>\\\"$LOG_FILE\\\" 2>&1; fi\\n"
+                + "  setsid sh -c \\\"npm run dev -- --host 0.0.0.0 --port $PORT\\\" >>\\\"$LOG_FILE\\\" 2>&1 < /dev/null &\\n"
+                + "  pid=\\$!\\n"
+                + "  echo \\\"\\$pid\\\" > \\\"$PID_FILE\\\"\\n"
+                + "  printf '{\\\\\\\"appId\\\\\\\":%s,\\\\\\\"type\\\\\\\":\\\\\\\"DEV\\\\\\\",\\\\\\\"pid\\\\\\\":%s,\\\\\\\"startedAt\\\\\\\":%s,\\\\\\\"logPath\\\\\\\":\\\\\\\"%s\\\\\\\"}' "
+                + appId + " \\\"\\$pid\\\" \\\"\\$(date +%s)\\\" \\\"" + logFile + "\\\" > \\\"$META_FILE\\\"\\n"
+                + "\" >/dev/null 2>&1 &\n"
+                + "echo \"LAUNCHED\"\n";
 
         CommandResult r = docker("exec", containerName, "bash", "-lc", script);
         if (r.getExitCode() == 42) {
@@ -213,7 +234,12 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         if (!r.isSuccess()) {
             throw new RuntimeException("启动 dev 失败: " + r.getOutput());
         }
-        return getRunStatus(userId);
+        FunAiWorkspaceRunStatusResponse status = getRunStatus(userId);
+        // start 接口立即返回（一般为 STARTING）
+        if (status.getMessage() == null || status.getMessage().isBlank()) {
+            status.setMessage("已触发启动，请轮询 /run/status 等待 RUNNING");
+        }
+        return status;
     }
 
     @Override
@@ -277,17 +303,28 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             resp.setPid(meta.getPid());
             resp.setLogPath(meta.getLogPath());
 
+            // pid 为空：说明 start 已触发，但后台脚本尚未写入 pid（npm install 进行中）
             if (meta.getPid() == null) {
-                resp.setState("DEAD");
+                resp.setState("STARTING");
                 return resp;
             }
 
-            // 进程存活校验（容器内）
-            CommandResult alive = docker("exec", ws.getContainerName(), "bash", "-lc",
-                    "kill -0 " + meta.getPid() + " 2>/dev/null && echo RUNNING || echo DEAD");
+            // 进程存活校验（容器内） + 端口就绪判定（/dev/tcp，无需依赖 curl/ss）
+            String check = ""
+                    + "pid=" + meta.getPid() + "\n"
+                    + "port=" + ws.getContainerPort() + "\n"
+                    + "if kill -0 \"$pid\" 2>/dev/null; then\n"
+                    + "  (echo > /dev/tcp/127.0.0.1/$port) >/dev/null 2>&1 && echo RUNNING || echo STARTING\n"
+                    + "else\n"
+                    + "  echo DEAD\n"
+                    + "fi\n";
+            CommandResult alive = docker("exec", ws.getContainerName(), "bash", "-lc", check);
             String s = alive.getOutput() == null ? "" : alive.getOutput().trim();
             if (s.contains("RUNNING")) {
                 resp.setState("RUNNING");
+                resp.setPreviewUrl(buildPreviewUrl(ws));
+            } else if (s.contains("STARTING")) {
+                resp.setState("STARTING");
             } else {
                 resp.setState("DEAD");
             }
@@ -300,6 +337,20 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         }
     }
 
+    private String buildPreviewUrl(FunAiWorkspaceInfoResponse ws) {
+        String base = props.getPreviewBaseUrl();
+        if (base == null) return null;
+        base = base.trim();
+        if (base.isEmpty()) return null;
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        if (!base.contains("://")) {
+            base = "http://" + base;
+        }
+        return base + ":" + ws.getHostPort() + "/";
+    }
+
     @Override
     public Path exportAppAsZip(Long userId, Long appId) {
         assertEnabled();
@@ -309,6 +360,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         if (appId == null) {
             throw new IllegalArgumentException("appId 不能为空");
         }
+        assertAppOwned(userId, appId);
 
         // 确保 workspace 与 app 目录存在
         ensureWorkspace(userId);
@@ -390,6 +442,16 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
     private void assertEnabled() {
         if (!props.isEnabled()) {
             throw new IllegalStateException("workspace 功能未启用（funai.workspace.enabled=false）");
+        }
+    }
+
+    private void assertAppOwned(Long userId, Long appId) {
+        if (userId == null || appId == null) {
+            throw new IllegalArgumentException("userId/appId 不能为空");
+        }
+        // 归属校验：appId 必须属于 userId
+        if (funAiAppService.getAppByIdAndUserId(appId, userId) == null) {
+            throw new IllegalArgumentException("应用不存在或无权限操作");
         }
     }
 
@@ -563,7 +625,9 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         // keep-alive
         cmd.add("bash");
         cmd.add("-lc");
-        cmd.add("sleep infinity");
+        // 某些基础镜像/BusyBox 可能不支持 `sleep infinity`，会导致容器立刻退出，status 永远 EXITED
+        // 用更通用的方式保持容器常驻
+        cmd.add("while true; do sleep 3600; done");
 
         CommandResult r = commandRunner.run(Duration.ofSeconds(30), cmd);
         if (!r.isSuccess()) {

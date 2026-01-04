@@ -31,6 +31,16 @@ public class WorkspaceProperties {
     private int containerPort = 5173;
 
     /**
+     * 预览地址的 baseUrl（不含端口），用于后端生成 previewUrl
+     * 示例：
+     * - http://47.118.27.59
+     * - https://preview.example.com
+     *
+     * 最终 previewUrl 会拼接为 {previewBaseUrl}:{hostPort}/
+     */
+    private String previewBaseUrl;
+
+    /**
      * 宿主机端口分配起始值
      */
     private int hostPortBase = 20000;
@@ -94,6 +104,14 @@ public class WorkspaceProperties {
 
     public void setContainerPort(int containerPort) {
         this.containerPort = containerPort;
+    }
+
+    public String getPreviewBaseUrl() {
+        return previewBaseUrl;
+    }
+
+    public void setPreviewBaseUrl(String previewBaseUrl) {
+        this.previewBaseUrl = previewBaseUrl;
     }
 
     public int getHostPortBase() {
