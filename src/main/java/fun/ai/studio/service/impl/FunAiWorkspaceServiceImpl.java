@@ -336,10 +336,94 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         return zipPath;
     }
 
+    @Override
+    public void stopRunForIdle(Long userId) {
+        if (userId == null) return;
+        if (!props.isEnabled()) return;
+
+        Path hostUserDir = resolveHostWorkspaceDir(userId);
+        Path runDir = hostUserDir.resolve("run");
+        Path pidPath = runDir.resolve("dev.pid");
+        Path metaPath = runDir.resolve("current.json");
+        if (Files.notExists(pidPath) && Files.notExists(metaPath)) {
+            return;
+        }
+
+        String containerName = containerNameFromMetaOrDefault(hostUserDir, userId);
+        String status = queryContainerStatus(containerName);
+        Long pid = readPidFromRunFiles(pidPath, metaPath);
+
+        try {
+            // 若容器还在跑且 pid 可用，则尝试 kill；否则只清理 run 文件即可
+            if ("RUNNING".equalsIgnoreCase(status) && pid != null && pid > 1) {
+                docker("exec", containerName, "bash", "-lc",
+                        "kill -TERM -- -" + pid + " 2>/dev/null || true; sleep 1; kill -KILL -- -" + pid + " 2>/dev/null || true");
+            }
+        } catch (Exception ignore) {
+        } finally {
+            try {
+                Files.deleteIfExists(pidPath);
+                Files.deleteIfExists(metaPath);
+                Files.deleteIfExists(runDir.resolve("dev.log"));
+            } catch (Exception ignore) {
+            }
+        }
+    }
+
+    @Override
+    public void stopContainerForIdle(Long userId) {
+        if (userId == null) return;
+        if (!props.isEnabled()) return;
+
+        Path hostUserDir = resolveHostWorkspaceDir(userId);
+        String containerName = containerNameFromMetaOrDefault(hostUserDir, userId);
+        String status = queryContainerStatus(containerName);
+        if (!"RUNNING".equalsIgnoreCase(status)) {
+            return;
+        }
+        try {
+            docker("stop", containerName);
+        } catch (Exception ignore) {
+        }
+    }
+
     private void assertEnabled() {
         if (!props.isEnabled()) {
             throw new IllegalStateException("workspace 功能未启用（funai.workspace.enabled=false）");
         }
+    }
+
+    private String containerNameFromMetaOrDefault(Path hostUserDir, Long userId) {
+        try {
+            WorkspaceMeta meta = tryLoadMeta(hostUserDir);
+            if (meta != null && StringUtils.hasText(meta.getContainerName())) {
+                return meta.getContainerName();
+            }
+        } catch (Exception ignore) {
+        }
+        return containerName(userId);
+    }
+
+    private Long readPidFromRunFiles(Path pidPath, Path metaPath) {
+        try {
+            if (Files.exists(metaPath)) {
+                FunAiWorkspaceRunMeta meta = objectMapper.readValue(Files.readString(metaPath, StandardCharsets.UTF_8), FunAiWorkspaceRunMeta.class);
+                if (meta != null && meta.getPid() != null) {
+                    return meta.getPid();
+                }
+            }
+        } catch (Exception ignore) {
+        }
+        try {
+            if (Files.exists(pidPath)) {
+                String s = Files.readString(pidPath, StandardCharsets.UTF_8).trim();
+                if (!s.isEmpty()) {
+                    return Long.parseLong(s);
+                }
+            }
+        } catch (Exception ignore) {
+        }
+        return null;
     }
 
     private String sanitizePath(String p) {

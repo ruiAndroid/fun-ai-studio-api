@@ -54,6 +54,16 @@ public class WorkspaceProperties {
     private String httpsProxy;
     private String noProxy;
 
+    /**
+     * 无操作多少分钟后自动 stop run（默认 10 分钟）
+     */
+    private int idleStopRunMinutes = 10;
+
+    /**
+     * 无操作多少分钟后自动 stop 容器（默认 20 分钟）
+     */
+    private int idleStopContainerMinutes = 20;
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -140,6 +150,22 @@ public class WorkspaceProperties {
 
     public void setNoProxy(String noProxy) {
         this.noProxy = noProxy;
+    }
+
+    public int getIdleStopRunMinutes() {
+        return idleStopRunMinutes;
+    }
+
+    public void setIdleStopRunMinutes(int idleStopRunMinutes) {
+        this.idleStopRunMinutes = idleStopRunMinutes;
+    }
+
+    public int getIdleStopContainerMinutes() {
+        return idleStopContainerMinutes;
+    }
+
+    public void setIdleStopContainerMinutes(int idleStopContainerMinutes) {
+        this.idleStopContainerMinutes = idleStopContainerMinutes;
     }
 }
 

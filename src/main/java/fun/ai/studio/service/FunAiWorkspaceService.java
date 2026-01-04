@@ -42,6 +42,16 @@ public interface FunAiWorkspaceService {
      * 将指定 app 目录打包为 zip 文件并返回 zipPath（位于 run/ 目录下的临时文件）
      */
     Path exportAppAsZip(Long userId, Long appId);
+
+    /**
+     * 给 idle 回收任务使用：不要因为 stopRun 而拉起容器。
+     */
+    void stopRunForIdle(Long userId);
+
+    /**
+     * 给 idle 回收任务使用：不要拉起容器。
+     */
+    void stopContainerForIdle(Long userId);
 }
 
 

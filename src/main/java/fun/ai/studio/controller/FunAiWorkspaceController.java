@@ -4,6 +4,7 @@ import fun.ai.studio.common.Result;
 import fun.ai.studio.service.FunAiWorkspaceService;
 import fun.ai.studio.entity.response.FunAiWorkspaceInfoResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceProjectDirResponse;
+import fun.ai.studio.entity.response.FunAiWorkspaceHeartbeatResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceRunStatusResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceStatusResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -23,6 +24,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Set;
 
+import fun.ai.studio.workspace.WorkspaceActivityTracker;
+
 /**
  * Workspace 控制器（阶段B：先打通持久化目录 + 容器挂载）
  */
@@ -34,9 +37,11 @@ public class FunAiWorkspaceController {
     private static final Logger log = LoggerFactory.getLogger(FunAiWorkspaceController.class);
 
     private final FunAiWorkspaceService funAiWorkspaceService;
+    private final WorkspaceActivityTracker activityTracker;
 
-    public FunAiWorkspaceController(FunAiWorkspaceService funAiWorkspaceService) {
+    public FunAiWorkspaceController(FunAiWorkspaceService funAiWorkspaceService, WorkspaceActivityTracker activityTracker) {
         this.funAiWorkspaceService = funAiWorkspaceService;
+        this.activityTracker = activityTracker;
     }
 
     @PostMapping("/ensure")
@@ -45,6 +50,7 @@ public class FunAiWorkspaceController {
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId
     ) {
         try {
+            activityTracker.touch(userId);
             return Result.success(funAiWorkspaceService.ensureWorkspace(userId));
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
@@ -60,6 +66,7 @@ public class FunAiWorkspaceController {
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId
     ) {
         try {
+            activityTracker.touch(userId);
             return Result.success(funAiWorkspaceService.getStatus(userId));
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
@@ -76,6 +83,7 @@ public class FunAiWorkspaceController {
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId
     ) {
         try {
+            activityTracker.touch(userId);
             return Result.success(funAiWorkspaceService.ensureAppDir(userId, appId));
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
@@ -94,6 +102,7 @@ public class FunAiWorkspaceController {
             @Parameter(description = "是否覆盖已存在目录（默认 true）") @RequestParam(defaultValue = "true") boolean overwrite
     ) {
         try {
+            activityTracker.touch(userId);
             return Result.success(funAiWorkspaceService.uploadAppZip(userId, appId, file, overwrite));
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
@@ -110,6 +119,7 @@ public class FunAiWorkspaceController {
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId
     ) {
         try {
+            activityTracker.touch(userId);
             return Result.success(funAiWorkspaceService.startDev(userId, appId));
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
@@ -125,6 +135,7 @@ public class FunAiWorkspaceController {
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId
     ) {
         try {
+            activityTracker.touch(userId);
             return Result.success(funAiWorkspaceService.stopRun(userId));
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
@@ -140,6 +151,7 @@ public class FunAiWorkspaceController {
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId
     ) {
         try {
+            activityTracker.touch(userId);
             return Result.success(funAiWorkspaceService.getRunStatus(userId));
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
@@ -157,6 +169,7 @@ public class FunAiWorkspaceController {
             @Parameter(description = "是否包含 node_modules（默认 false）") @RequestParam(defaultValue = "false") boolean includeNodeModules
     ) {
         try {
+            activityTracker.touch(userId);
             String filename = "app_" + appId + ".zip";
 
             // 通过 ensureAppDir 拿到宿主机路径（不额外落临时 zip，避免卡住/堆积）
@@ -188,6 +201,23 @@ public class FunAiWorkspaceController {
         } catch (Exception e) {
             log.error("download app zip failed: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
             return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    @PostMapping("/heartbeat")
+    @Operation(summary = "workspace 心跳", description = "前端定时调用，更新 lastActiveAt，用于 idle 回收")
+    public Result<FunAiWorkspaceHeartbeatResponse> heartbeat(
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId
+    ) {
+        try {
+            activityTracker.touch(userId);
+            FunAiWorkspaceHeartbeatResponse resp = new FunAiWorkspaceHeartbeatResponse();
+            resp.setUserId(userId);
+            resp.setServerTimeMs(System.currentTimeMillis());
+            resp.setMessage("ok");
+            return Result.success(resp);
+        } catch (Exception e) {
+            return Result.error("heartbeat failed: " + e.getMessage());
         }
     }
 }
