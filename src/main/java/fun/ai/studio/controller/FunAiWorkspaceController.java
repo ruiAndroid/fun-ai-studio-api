@@ -158,7 +158,7 @@ public class FunAiWorkspaceController {
             activityTracker.touch(userId);
             return Result.success(funAiWorkspaceService.uploadAppZip(userId, appId, file, overwrite));
         } catch (IllegalArgumentException e) {
-            return Result.error(e.getMessage());
+            return Result.error(e.getMessage()); 
         } catch (Exception e) {
             log.error("upload app zip failed: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
             return Result.error("upload app zip failed: " + e.getMessage());

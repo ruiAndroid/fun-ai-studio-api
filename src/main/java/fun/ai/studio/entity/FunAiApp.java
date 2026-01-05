@@ -63,6 +63,38 @@ public class FunAiApp {
     @Schema(description = "部署成功后可访问路径（仅当 appStatus=3 可访问时有值）", example = "/fun-ai-app/10000021/20000024/")
     private String accessUrl;
 
+    // ----------------------
+    // Workspace/容器运行时视图（last-known，不落库到 fun_ai_app）
+    // ----------------------
+
+    @TableField(exist = false)
+    @Schema(description = "（运行时）容器状态：NOT_CREATED/RUNNING/EXITED/UNKNOWN（来自 fun_ai_workspace_run）")
+    private String workspaceContainerStatus;
+
+    @TableField(exist = false)
+    @Schema(description = "（运行时）该应用在容器中的运行态：IDLE/STARTING/RUNNING/DEAD/UNKNOWN（仅当当前运行 appId==本应用 id 时有值）")
+    private String workspaceRunState;
+
+    @TableField(exist = false)
+    @Schema(description = "（运行时）预览地址（仅当 workspaceRunState=RUNNING 时有值）")
+    private String workspacePreviewUrl;
+
+    @TableField(exist = false)
+    @Schema(description = "（运行时）日志路径（例如 /workspace/run/dev.log）")
+    private String workspaceLogPath;
+
+    @TableField(exist = false)
+    @Schema(description = "（运行时）最近一次错误/提示信息（用于排查/展示）")
+    private String workspaceLastError;
+
+    @TableField(exist = false)
+    @Schema(description = "（运行时）workspace 中是否存在该 app 的项目目录（/workspace/apps/{appId}）")
+    private Boolean workspaceHasProjectDir;
+
+    @TableField(exist = false)
+    @Schema(description = "（运行时）workspace 项目目录下是否能检测到 package.json（maxDepth=2）")
+    private Boolean workspaceHasPackageJson;
+
     /**
      * 应用密钥
      */

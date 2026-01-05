@@ -3,11 +3,14 @@ package fun.ai.studio.controller;
 
 import fun.ai.studio.common.Result;
 import fun.ai.studio.entity.FunAiApp;
+import fun.ai.studio.entity.FunAiWorkspaceRun;
 import fun.ai.studio.entity.request.DeployFunAiAppRequest;
 import fun.ai.studio.entity.request.UpdateFunAiAppBasicInfoRequest;
 import fun.ai.studio.entity.response.FunAiAppDeployResponse;
 import fun.ai.studio.enums.FunAiAppStatus;
 import fun.ai.studio.service.FunAiAppService;
+import fun.ai.studio.service.FunAiWorkspaceRunService;
+import fun.ai.studio.workspace.WorkspaceProperties;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -21,6 +24,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.stream.Stream;
 import java.util.List;
 
 /**
@@ -42,8 +49,77 @@ public class FunAiAppController {
     @Autowired
     private FunAiAppService funAiAppService;
 
+    @Autowired(required = false)
+    private FunAiWorkspaceRunService funAiWorkspaceRunService;
+
+    @Autowired(required = false)
+    private WorkspaceProperties workspaceProperties;
+
     @Value("${funai.siteBaseUrl:}")
     private String siteBaseUrl;
+
+    private String sanitizePath(String p) {
+        if (p == null) return null;
+        return p.trim().replaceAll("^[\"']|[\"']$", "");
+    }
+
+    private boolean detectPackageJson(Path appDir) {
+        if (appDir == null || !Files.isDirectory(appDir)) return false;
+        // 优先检查根目录（最快）
+        if (Files.exists(appDir.resolve("package.json"))) return true;
+        // 兼容 zip 顶层多一层目录的情况：maxDepth=2
+        try (Stream<Path> s = Files.find(appDir, 2, (p, a) -> a.isRegularFile() && "package.json".equals(p.getFileName().toString()))) {
+            return s.findFirst().isPresent();
+        } catch (Exception ignore) {
+            return false;
+        }
+    }
+
+    private void fillRuntimeFields(Long userId, List<FunAiApp> apps) {
+        if (apps == null || apps.isEmpty()) return;
+        try {
+            // 1) workspace 运行态（last-known）
+            FunAiWorkspaceRun run = (funAiWorkspaceRunService == null) ? null : funAiWorkspaceRunService.getByUserId(userId);
+
+            // 2) 代码是否已同步到 workspace（无副作用：仅检查宿主机目录）
+            String hostRoot = workspaceProperties == null ? null : sanitizePath(workspaceProperties.getHostRoot());
+            Path userAppsDir = (hostRoot == null || hostRoot.isBlank()) ? null : Paths.get(hostRoot, String.valueOf(userId), "apps");
+
+            for (FunAiApp app : apps) {
+                if (app == null) continue;
+                if (run != null) {
+                    // 容器状态对该用户下所有 app 都相同
+                    app.setWorkspaceContainerStatus(run.getContainerStatus());
+                }
+
+                // 只有“当前运行的 app”才填 runState/previewUrl/log
+                if (run != null && run.getAppId() != null && app.getId() != null && run.getAppId().equals(app.getId())) {
+                    app.setWorkspaceRunState(run.getRunState());
+                    app.setWorkspacePreviewUrl(run.getPreviewUrl());
+                    app.setWorkspaceLogPath(run.getLogPath());
+                    app.setWorkspaceLastError(run.getLastError());
+                } else {
+                    app.setWorkspaceRunState(null);
+                    app.setWorkspacePreviewUrl(null);
+                    app.setWorkspaceLogPath(null);
+                    app.setWorkspaceLastError(null);
+                }
+
+                // 项目目录存在性与 package.json 检测
+                if (userAppsDir != null && app.getId() != null) {
+                    Path appDir = userAppsDir.resolve(String.valueOf(app.getId()));
+                    boolean hasDir = Files.isDirectory(appDir);
+                    app.setWorkspaceHasProjectDir(hasDir);
+                    app.setWorkspaceHasPackageJson(hasDir && detectPackageJson(appDir));
+                } else {
+                    app.setWorkspaceHasProjectDir(null);
+                    app.setWorkspaceHasPackageJson(null);
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("fill runtime fields failed: userId={}, error={}", userId, e.getMessage());
+        }
+    }
 
     /**
      * 创建应用
@@ -70,6 +146,8 @@ public class FunAiAppController {
     @Operation(summary = "获取当前用户的所有应用", description = "获取当前用户的所有应用")
     public Result<List<FunAiApp>> getApps(@Parameter(description = "用户ID", required = true) @RequestParam Long userId) {
         List<FunAiApp> apps = funAiAppService.getAppsByUserId(userId);
+        // 与容器运行态结合：补充 last-known runtime 字段（不改变 appStatus 的业务含义）
+        fillRuntimeFields(userId, apps);
         return Result.success(apps);
     }
 
@@ -85,20 +163,12 @@ public class FunAiAppController {
         if (app == null) {
             return Result.error("应用不存在");
         }
-        // 部署成功后给前端返回可访问路径
-        if (app.getAppStatus() != null && app.getAppStatus() == FunAiAppStatus.READY.code()) {
-            String base = (siteBaseUrl == null) ? "" : siteBaseUrl.trim();
-            if (base.endsWith("/")) {
-                base = base.substring(0, base.length() - 1);
-            }
-            if (base.isEmpty()) {
-                // 未配置时回退到当前请求域名
-                // 注意：如果你后面有反向代理，建议配置 funai.siteBaseUrl
-                // 例如 http://172.17.5.80:8080
-                // 这里不使用 X-Forwarded-*，保持简单
-                base = "http://localhost:8080";
-            }
-            app.setAccessUrl(base + "/fun-ai-app/" + userId + "/" + appId + "/");
+        // 与容器运行态结合：补充 last-known runtime 字段
+        fillRuntimeFields(userId, List.of(app));
+
+        // 旧链路的 /fun-ai-app 静态站点已废弃；这里如果该应用正在 RUNNING，则将 accessUrl 指向 previewUrl（兼容前端“可访问地址”展示）
+        if (app.getWorkspacePreviewUrl() != null && !app.getWorkspacePreviewUrl().isBlank()) {
+            app.setAccessUrl(app.getWorkspacePreviewUrl());
         } else {
             app.setAccessUrl(null);
         }
