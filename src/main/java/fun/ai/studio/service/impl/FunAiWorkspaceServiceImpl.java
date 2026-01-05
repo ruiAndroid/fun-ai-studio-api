@@ -233,7 +233,10 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                 + "npm config set registry https://registry.npmmirror.com >/dev/null 2>&1 || true\n"
                 + "if [ ! -d node_modules ]; then echo \"[dev-start] npm install...\" >>\"$LOG_FILE\"; npm install >>\"$LOG_FILE\" 2>&1; fi\n"
                 + "echo \"[dev-start] npm run dev on $PORT\" >>\"$LOG_FILE\" 2>&1\n"
-                + "setsid sh -c \"npm run dev -- --host 0.0.0.0 --port $PORT\" >>\"$LOG_FILE\" 2>&1 < /dev/null &\n"
+                // 关键：给 vite 设置 base，使其 dev client/HMR 等资源路径都带上 /ws/{userId}/ 前缀
+                // 这样 nginx 才能用路径反代（只开 80/443）而无需做复杂 rewrite/sub_filter
+                + "BASE='/ws/" + userId + "/'\n"
+                + "setsid sh -c \"npm run dev -- --host 0.0.0.0 --port $PORT --base $BASE\" >>\"$LOG_FILE\" 2>&1 < /dev/null &\n"
                 + "pid=$!\n"
                 + "echo \"$pid\" > \"$PID_FILE\"\n"
                 + "printf '{\"appId\":" + appId + ",\"type\":\"DEV\",\"pid\":%s,\"startedAt\":%s,\"logPath\":\"" + logFile + "\"}' \"$pid\" \"$(date +%s)\" > \"$META_FILE\"\n"
