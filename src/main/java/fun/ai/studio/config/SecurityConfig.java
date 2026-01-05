@@ -117,6 +117,8 @@ public class SecurityConfig {
         "/favicon.ico", // 浏览器默认请求站点图标
         "/chatui/**",
         "/api/fun-ai/auth/**",
+        // 在线文档
+        "/doc/**",
         // nginx auth_request 内部端口查询（仅用于同机 nginx 反代；接口内部还会校验来源IP）
         "/api/fun-ai/workspace/internal/**",
         "/v3/api-docs/**",

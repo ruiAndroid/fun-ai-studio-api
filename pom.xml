@@ -104,6 +104,13 @@
             <version>2.8.9</version>
         </dependency>
 
+        <!-- Markdown 渲染（用于 /doc 在线文档） -->
+        <dependency>
+            <groupId>org.commonmark</groupId>
+            <artifactId>commonmark</artifactId>
+            <version>0.23.0</version>
+        </dependency>
+
         <!-- 添加 Spring Boot Validation 依赖 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
