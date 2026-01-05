@@ -95,9 +95,14 @@ public class FunAiWorkspaceController {
         try {
             // 优先使用共享密钥（解决 auth_request 场景下 remoteAddr 可能不是 127.0.0.1 的问题）
             String required = workspaceProperties == null ? null : workspaceProperties.getNginxAuthToken();
-            String token = request == null ? null : request.getHeader("X-WS-Token");
+            String tokenHeader = request == null ? null : request.getHeader("X-WS-Token");
+            String tokenParam = request == null ? null : request.getParameter("token");
             if (StringUtils.hasText(required)) {
-                if (!required.equals(token)) {
+                boolean ok = required.equals(tokenHeader) || required.equals(tokenParam);
+                if (!ok) {
+                    String remote = request == null ? null : request.getRemoteAddr();
+                    log.warn("nginx port unauthorized: userId={}, remoteAddr={}, hasHeader={}, hasParam={}",
+                            userId, remote, StringUtils.hasText(tokenHeader), StringUtils.hasText(tokenParam));
                     return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
                 }
             } else {
