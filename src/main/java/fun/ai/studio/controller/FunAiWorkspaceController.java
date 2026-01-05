@@ -26,7 +26,9 @@ import java.nio.file.Paths;
 import java.util.Set;
 
 import fun.ai.studio.workspace.WorkspaceActivityTracker;
+import fun.ai.studio.workspace.WorkspaceProperties;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.util.StringUtils;
 
 /**
  * Workspace 控制器（阶段B：先打通持久化目录 + 容器挂载）
@@ -41,12 +43,15 @@ public class FunAiWorkspaceController {
     private final FunAiWorkspaceService funAiWorkspaceService;
     private final WorkspaceActivityTracker activityTracker;
     private final fun.ai.studio.service.impl.FunAiWorkspaceServiceImpl workspaceServiceImpl;
+    private final WorkspaceProperties workspaceProperties;
 
     public FunAiWorkspaceController(FunAiWorkspaceService funAiWorkspaceService, WorkspaceActivityTracker activityTracker,
-                                    fun.ai.studio.service.impl.FunAiWorkspaceServiceImpl workspaceServiceImpl) {
+                                    fun.ai.studio.service.impl.FunAiWorkspaceServiceImpl workspaceServiceImpl,
+                                    WorkspaceProperties workspaceProperties) {
         this.funAiWorkspaceService = funAiWorkspaceService;
         this.activityTracker = activityTracker;
         this.workspaceServiceImpl = workspaceServiceImpl;
+        this.workspaceProperties = workspaceProperties;
     }
 
     @PostMapping("/ensure")
@@ -88,10 +93,19 @@ public class FunAiWorkspaceController {
             HttpServletRequest request
     ) {
         try {
-            // 仅允许同机 nginx（localhost）调用，避免暴露端口映射信息到公网
-            String remote = request == null ? null : request.getRemoteAddr();
-            if (remote == null || !(remote.equals("127.0.0.1") || remote.equals("::1") || remote.equals("0:0:0:0:0:0:0:1"))) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            // 优先使用共享密钥（解决 auth_request 场景下 remoteAddr 可能不是 127.0.0.1 的问题）
+            String required = workspaceProperties == null ? null : workspaceProperties.getNginxAuthToken();
+            String token = request == null ? null : request.getHeader("X-WS-Token");
+            if (StringUtils.hasText(required)) {
+                if (!required.equals(token)) {
+                    return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+                }
+            } else {
+                // 若未配置密钥，则退化为仅允许同机调用（localhost）
+                String remote = request == null ? null : request.getRemoteAddr();
+                if (remote == null || !(remote.equals("127.0.0.1") || remote.equals("::1") || remote.equals("0:0:0:0:0:0:0:1"))) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+                }
             }
             Integer port = workspaceServiceImpl.getHostPortForNginx(userId);
             if (port == null || port <= 0) {

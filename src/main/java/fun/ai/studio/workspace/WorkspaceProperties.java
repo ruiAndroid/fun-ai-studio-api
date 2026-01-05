@@ -47,6 +47,12 @@ public class WorkspaceProperties {
     private String previewPathPrefix = "/ws";
 
     /**
+     * nginx auth_request 调用内部端口查询接口的共享密钥（强烈建议配置）
+     * nginx 子请求需要携带 Header：X-WS-Token
+     */
+    private String nginxAuthToken;
+
+    /**
      * 宿主机端口分配起始值
      */
     private int hostPortBase = 20000;
@@ -131,6 +137,14 @@ public class WorkspaceProperties {
 
     public void setPreviewPathPrefix(String previewPathPrefix) {
         this.previewPathPrefix = previewPathPrefix;
+    }
+
+    public String getNginxAuthToken() {
+        return nginxAuthToken;
+    }
+
+    public void setNginxAuthToken(String nginxAuthToken) {
+        this.nginxAuthToken = nginxAuthToken;
     }
 
     public int getHostPortBase() {
