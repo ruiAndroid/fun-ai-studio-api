@@ -2,6 +2,7 @@ package fun.ai.studio.controller;
 
 import fun.ai.studio.common.Result;
 import fun.ai.studio.service.FunAiWorkspaceService;
+import fun.ai.studio.service.FunAiWorkspaceRunService;
 import fun.ai.studio.entity.response.FunAiWorkspaceInfoResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceProjectDirResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceHeartbeatResponse;
@@ -41,17 +42,20 @@ public class FunAiWorkspaceController {
     private static final Logger log = LoggerFactory.getLogger(FunAiWorkspaceController.class);
 
     private final FunAiWorkspaceService funAiWorkspaceService;
+    private final FunAiWorkspaceRunService funAiWorkspaceRunService;
     private final WorkspaceActivityTracker activityTracker;
     private final fun.ai.studio.service.impl.FunAiWorkspaceServiceImpl workspaceServiceImpl;
     private final WorkspaceProperties workspaceProperties;
 
     public FunAiWorkspaceController(FunAiWorkspaceService funAiWorkspaceService, WorkspaceActivityTracker activityTracker,
                                     fun.ai.studio.service.impl.FunAiWorkspaceServiceImpl workspaceServiceImpl,
-                                    WorkspaceProperties workspaceProperties) {
+                                    WorkspaceProperties workspaceProperties,
+                                    FunAiWorkspaceRunService funAiWorkspaceRunService) {
         this.funAiWorkspaceService = funAiWorkspaceService;
         this.activityTracker = activityTracker;
         this.workspaceServiceImpl = workspaceServiceImpl;
         this.workspaceProperties = workspaceProperties;
+        this.funAiWorkspaceRunService = funAiWorkspaceRunService;
     }
 
     @PostMapping("/ensure")
@@ -260,6 +264,9 @@ public class FunAiWorkspaceController {
     ) {
         try {
             activityTracker.touch(userId);
+            if (funAiWorkspaceRunService != null) {
+                funAiWorkspaceRunService.touch(userId, System.currentTimeMillis());
+            }
             FunAiWorkspaceHeartbeatResponse resp = new FunAiWorkspaceHeartbeatResponse();
             resp.setUserId(userId);
             resp.setServerTimeMs(System.currentTimeMillis());

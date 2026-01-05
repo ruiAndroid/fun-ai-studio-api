@@ -6,7 +6,9 @@ import fun.ai.studio.entity.response.FunAiWorkspaceProjectDirResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceRunMeta;
 import fun.ai.studio.entity.response.FunAiWorkspaceRunStatusResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceStatusResponse;
+import fun.ai.studio.entity.FunAiWorkspaceRun;
 import fun.ai.studio.service.FunAiAppService;
+import fun.ai.studio.service.FunAiWorkspaceRunService;
 import fun.ai.studio.service.FunAiWorkspaceService;
 import fun.ai.studio.workspace.CommandResult;
 import fun.ai.studio.workspace.CommandRunner;
@@ -40,17 +42,32 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
     private final CommandRunner commandRunner;
     private final ObjectMapper objectMapper;
     private final FunAiAppService funAiAppService;
+    private final FunAiWorkspaceRunService workspaceRunService;
 
     private static final Duration CMD_TIMEOUT = Duration.ofSeconds(10);
 
     public FunAiWorkspaceServiceImpl(WorkspaceProperties props,
                                      CommandRunner commandRunner,
                                      ObjectMapper objectMapper,
-                                     FunAiAppService funAiAppService) {
+                                     FunAiAppService funAiAppService,
+                                     FunAiWorkspaceRunService workspaceRunService) {
         this.props = props;
         this.commandRunner = commandRunner;
         this.objectMapper = objectMapper;
         this.funAiAppService = funAiAppService;
+        this.workspaceRunService = workspaceRunService;
+    }
+
+    /**
+     * 将“最后一次观测/操作结果”写入 DB（单机版：userId 唯一 upsert）。
+     * 注意：运行态真相仍以 docker/端口/进程探测为准；DB 仅用于展示/审计/重启恢复体验。
+     */
+    private void upsertWorkspaceRun(FunAiWorkspaceRun record) {
+        if (workspaceRunService == null || record == null || record.getUserId() == null) return;
+        try {
+            workspaceRunService.upsertByUserId(record);
+        } catch (Exception ignore) {
+        }
     }
 
     @Override
@@ -86,6 +103,15 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         resp.setHostAppsDir(appsDir.toString());
         resp.setContainerWorkspaceDir(props.getContainerWorkdir());
         resp.setContainerAppsDir(Paths.get(props.getContainerWorkdir(), "apps").toString().replace("\\", "/"));
+
+        // last-known：落库（用于展示/审计/重启后的最后状态）
+        FunAiWorkspaceRun r = new FunAiWorkspaceRun();
+        r.setUserId(userId);
+        r.setContainerName(resp.getContainerName());
+        r.setHostPort(resp.getHostPort());
+        r.setContainerPort(resp.getContainerPort());
+        r.setContainerStatus(queryContainerStatus(resp.getContainerName()));
+        upsertWorkspaceRun(r);
         return resp;
     }
 
@@ -107,17 +133,28 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         resp.setHostPort(hostPort);
         resp.setContainerPort(props.getContainerPort());
         resp.setHostWorkspaceDir(hostUserDir.toString());
-        resp.setContainerStatus(queryContainerStatus(containerName));
+        String cStatus = queryContainerStatus(containerName);
+        resp.setContainerStatus(cStatus);
+
+        // last-known：刷新容器状态（不保证实时真相，仅记录最后观测）
+        FunAiWorkspaceRun r = new FunAiWorkspaceRun();
+        r.setUserId(userId);
+        r.setContainerName(containerName);
+        r.setHostPort(hostPort);
+        r.setContainerPort(props.getContainerPort());
+        r.setContainerStatus(cStatus);
+        upsertWorkspaceRun(r);
         return resp;
     }
 
     @Override
     public FunAiWorkspaceProjectDirResponse ensureAppDir(Long userId, Long appId) {
-        FunAiWorkspaceInfoResponse ws = ensureWorkspace(userId);
         if (appId == null) {
             throw new IllegalArgumentException("appId 不能为空");
         }
+        // 关键：先做 DB 归属校验，再触发容器/目录副作用（ensureWorkspace 会启动容器、创建目录）
         assertAppOwned(userId, appId);
+        FunAiWorkspaceInfoResponse ws = ensureWorkspace(userId);
         Path hostAppDir = resolveHostWorkspaceDir(userId).resolve("apps").resolve(String.valueOf(appId));
         ensureDir(hostAppDir);
 
@@ -259,6 +296,22 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         if (status.getMessage() == null || status.getMessage().isBlank()) {
             status.setMessage("已触发启动，请轮询 /run/status 等待 RUNNING");
         }
+
+        // last-known：记录最近一次 start 的 appId/状态
+        FunAiWorkspaceRun r2 = new FunAiWorkspaceRun();
+        r2.setUserId(userId);
+        r2.setAppId(appId);
+        r2.setRunState(status.getState());
+        r2.setRunPid(status.getPid());
+        r2.setLogPath(status.getLogPath());
+        r2.setPreviewUrl(status.getPreviewUrl());
+        r2.setLastError(status.getMessage());
+        r2.setLastStartedAt(System.currentTimeMillis() / 1000L);
+        r2.setContainerName(ws.getContainerName());
+        r2.setHostPort(ws.getHostPort());
+        r2.setContainerPort(ws.getContainerPort());
+        r2.setContainerStatus(queryContainerStatus(ws.getContainerName()));
+        upsertWorkspaceRun(r2);
         return status;
     }
 
@@ -294,7 +347,22 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         if (!r.isSuccess()) {
             log.warn("stop run failed: userId={}, out={}", userId, r.getOutput());
         }
-        return getRunStatus(userId);
+        FunAiWorkspaceRunStatusResponse status = getRunStatus(userId);
+        // last-known：记录 stop 后状态（通常为 IDLE/DEAD）
+        FunAiWorkspaceRun r2 = new FunAiWorkspaceRun();
+        r2.setUserId(userId);
+        r2.setAppId(status.getAppId());
+        r2.setRunState(status.getState());
+        r2.setRunPid(status.getPid());
+        r2.setLogPath(status.getLogPath());
+        r2.setPreviewUrl(status.getPreviewUrl());
+        r2.setLastError(status.getMessage());
+        r2.setContainerName(ws.getContainerName());
+        r2.setHostPort(ws.getHostPort());
+        r2.setContainerPort(ws.getContainerPort());
+        r2.setContainerStatus(queryContainerStatus(ws.getContainerName()));
+        upsertWorkspaceRun(r2);
+        return status;
     }
 
     @Override
@@ -314,6 +382,19 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
 
         if (Files.notExists(metaPath)) {
             resp.setState("IDLE");
+            FunAiWorkspaceRun r = new FunAiWorkspaceRun();
+            r.setUserId(userId);
+            r.setRunState(resp.getState());
+            r.setAppId(null);
+            r.setRunPid(null);
+            r.setPreviewUrl(null);
+            r.setLogPath(null);
+            r.setLastError(null);
+            r.setContainerName(ws.getContainerName());
+            r.setHostPort(ws.getHostPort());
+            r.setContainerPort(ws.getContainerPort());
+            r.setContainerStatus(queryContainerStatus(ws.getContainerName()));
+            upsertWorkspaceRun(r);
             return resp;
         }
 
@@ -330,6 +411,20 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                 if (!"RUNNING".equalsIgnoreCase(cStatus)) {
                     resp.setState("DEAD");
                     resp.setMessage("容器未运行（" + cStatus + "），请先 ensure 再 start；如频繁退出请检查 idle 回收或宿主机资源");
+                    FunAiWorkspaceRun r = new FunAiWorkspaceRun();
+                    r.setUserId(userId);
+                    r.setAppId(resp.getAppId());
+                    r.setRunState(resp.getState());
+                    r.setRunPid(resp.getPid());
+                    r.setPreviewUrl(resp.getPreviewUrl());
+                    r.setLogPath(resp.getLogPath());
+                    r.setLastError(resp.getMessage());
+                    r.setLastStartedAt(meta.getStartedAt());
+                    r.setContainerName(ws.getContainerName());
+                    r.setHostPort(ws.getHostPort());
+                    r.setContainerPort(ws.getContainerPort());
+                    r.setContainerStatus(cStatus);
+                    upsertWorkspaceRun(r);
                     return resp;
                 }
 
@@ -345,6 +440,20 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                         resp.setMessage("启动中（可能在 npm install），请稍后重试；可查看日志: " + (resp.getLogPath() == null ? "" : resp.getLogPath()));
                     }
                 }
+                FunAiWorkspaceRun r = new FunAiWorkspaceRun();
+                r.setUserId(userId);
+                r.setAppId(resp.getAppId());
+                r.setRunState(resp.getState());
+                r.setRunPid(resp.getPid());
+                r.setPreviewUrl(resp.getPreviewUrl());
+                r.setLogPath(resp.getLogPath());
+                r.setLastError(resp.getMessage());
+                r.setLastStartedAt(meta.getStartedAt());
+                r.setContainerName(ws.getContainerName());
+                r.setHostPort(ws.getHostPort());
+                r.setContainerPort(ws.getContainerPort());
+                r.setContainerStatus(queryContainerStatus(ws.getContainerName()));
+                upsertWorkspaceRun(r);
                 return resp;
             }
 
@@ -367,11 +476,34 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             } else {
                 resp.setState("DEAD");
             }
+            FunAiWorkspaceRun r = new FunAiWorkspaceRun();
+            r.setUserId(userId);
+            r.setAppId(resp.getAppId());
+            r.setRunState(resp.getState());
+            r.setRunPid(resp.getPid());
+            r.setPreviewUrl(resp.getPreviewUrl());
+            r.setLogPath(resp.getLogPath());
+            r.setLastError(resp.getMessage());
+            r.setLastStartedAt(meta.getStartedAt());
+            r.setContainerName(ws.getContainerName());
+            r.setHostPort(ws.getHostPort());
+            r.setContainerPort(ws.getContainerPort());
+            r.setContainerStatus(queryContainerStatus(ws.getContainerName()));
+            upsertWorkspaceRun(r);
             return resp;
         } catch (Exception e) {
             log.warn("read run meta failed: userId={}, error={}", userId, e.getMessage());
             resp.setState("UNKNOWN");
             resp.setMessage("读取运行状态失败: " + e.getMessage());
+            FunAiWorkspaceRun r = new FunAiWorkspaceRun();
+            r.setUserId(userId);
+            r.setRunState(resp.getState());
+            r.setLastError(resp.getMessage());
+            r.setContainerName(ws.getContainerName());
+            r.setHostPort(ws.getHostPort());
+            r.setContainerPort(ws.getContainerPort());
+            r.setContainerStatus(queryContainerStatus(ws.getContainerName()));
+            upsertWorkspaceRun(r);
             return resp;
         }
     }
@@ -470,6 +602,18 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             } catch (Exception ignore) {
             }
         }
+
+        // last-known：idle stop run 后记录为 IDLE
+        FunAiWorkspaceRun r = new FunAiWorkspaceRun();
+        r.setUserId(userId);
+        r.setRunState("IDLE");
+        r.setRunPid(null);
+        r.setPreviewUrl(null);
+        r.setLogPath(null);
+        r.setLastError("idle reaper stopped run");
+        r.setContainerName(containerName);
+        r.setContainerStatus(queryContainerStatus(containerName));
+        upsertWorkspaceRun(r);
     }
 
     @Override
@@ -487,6 +631,13 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             docker("stop", containerName);
         } catch (Exception ignore) {
         }
+
+        // last-known：idle stop container 后刷新容器状态
+        FunAiWorkspaceRun r = new FunAiWorkspaceRun();
+        r.setUserId(userId);
+        r.setContainerName(containerName);
+        r.setContainerStatus(queryContainerStatus(containerName));
+        upsertWorkspaceRun(r);
     }
 
     private void assertEnabled() {
