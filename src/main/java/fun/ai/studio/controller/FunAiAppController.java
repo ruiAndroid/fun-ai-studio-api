@@ -7,8 +7,12 @@ import fun.ai.studio.entity.FunAiWorkspaceRun;
 import fun.ai.studio.entity.request.DeployFunAiAppRequest;
 import fun.ai.studio.entity.request.UpdateFunAiAppBasicInfoRequest;
 import fun.ai.studio.entity.response.FunAiAppDeployResponse;
+import fun.ai.studio.entity.response.FunAiOpenEditorResponse;
+import fun.ai.studio.entity.response.FunAiWorkspaceProjectDirResponse;
+import fun.ai.studio.entity.response.FunAiWorkspaceRunStatusResponse;
 import fun.ai.studio.enums.FunAiAppStatus;
 import fun.ai.studio.service.FunAiAppService;
+import fun.ai.studio.service.FunAiWorkspaceService;
 import fun.ai.studio.service.FunAiWorkspaceRunService;
 import fun.ai.studio.workspace.WorkspaceProperties;
 import io.swagger.v3.oas.annotations.Operation;
@@ -54,6 +58,9 @@ public class FunAiAppController {
 
     @Autowired(required = false)
     private WorkspaceProperties workspaceProperties;
+
+    @Autowired(required = false)
+    private FunAiWorkspaceService funAiWorkspaceService;
 
     @Value("${funai.siteBaseUrl:}")
     private String siteBaseUrl;
@@ -173,6 +180,63 @@ public class FunAiAppController {
             app.setAccessUrl(null);
         }
         return Result.success(app);
+    }
+
+    @PostMapping("/open-editor")
+    @Operation(
+            summary = "打开在线编辑器（聚合接口）",
+            description = "对齐点：代码在容器内可见（通过 hostRoot bind-mount 到 /workspace）。流程：校验 app 归属 → ensure app dir（会确保容器运行）→ 检测 package.json（maxDepth=2）→ 若存在则自动触发 workspace/run/start（非阻塞）并返回 runStatus；否则仅返回 run/status 引导上传/新建。"
+    )
+    public Result<FunAiOpenEditorResponse> openEditor(
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "应用ID", required = true) @RequestParam Long appId
+    ) {
+        try {
+            if (userId == null || appId == null) {
+                return Result.error("userId/appId 不能为空");
+            }
+            if (funAiWorkspaceService == null) {
+                return Result.error("workspace 功能未启用");
+            }
+
+            FunAiApp app = funAiAppService.getAppByIdAndUserId(appId, userId);
+            if (app == null) {
+                return Result.error("应用不存在或无权限操作");
+            }
+
+            // 关键：ensureAppDir 内部已做归属校验，且会确保容器运行并创建宿主机目录（目录挂载到容器 /workspace）
+            FunAiWorkspaceProjectDirResponse dir = funAiWorkspaceService.ensureAppDir(userId, appId);
+            Path hostAppDir = Paths.get(dir.getHostAppDir());
+            boolean hasPkg = detectPackageJson(hostAppDir);
+
+            FunAiWorkspaceRunStatusResponse runStatus = hasPkg
+                    ? funAiWorkspaceService.startDev(userId, appId)   // 非阻塞：一般返回 STARTING
+                    : funAiWorkspaceService.getRunStatus(userId);      // 通常为 IDLE
+
+            // 补充 runtime 字段（previewUrl/runState 等）
+            fillRuntimeFields(userId, List.of(app));
+            if (runStatus != null && runStatus.getPreviewUrl() != null && !runStatus.getPreviewUrl().isBlank()) {
+                app.setAccessUrl(runStatus.getPreviewUrl());
+            }
+
+            FunAiOpenEditorResponse resp = new FunAiOpenEditorResponse();
+            resp.setUserId(userId);
+            resp.setAppId(appId);
+            resp.setApp(app);
+            resp.setProjectDir(dir);
+            resp.setHasPackageJson(hasPkg);
+            resp.setRunStatus(runStatus);
+            resp.setMessage(hasPkg
+                    ? "已检测到 package.json，已触发启动；请轮询 /api/fun-ai/workspace/run/status 等待 RUNNING"
+                    : "未检测到 package.json：请先上传 zip 或在编辑器中新建项目文件");
+            return Result.success(resp);
+        } catch (IllegalArgumentException e) {
+            logger.warn("open editor failed: userId={}, appId={}, error={}", userId, appId, e.getMessage());
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            logger.error("open editor failed: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
+            return Result.error("open editor failed: " + e.getMessage());
+        }
     }
 
 

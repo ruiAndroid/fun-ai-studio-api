@@ -2,6 +2,9 @@ package fun.ai.studio.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fun.ai.studio.entity.response.FunAiWorkspaceInfoResponse;
+import fun.ai.studio.entity.response.FunAiWorkspaceFileNode;
+import fun.ai.studio.entity.response.FunAiWorkspaceFileReadResponse;
+import fun.ai.studio.entity.response.FunAiWorkspaceFileTreeResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceProjectDirResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceRunMeta;
 import fun.ai.studio.entity.response.FunAiWorkspaceRunStatusResponse;
@@ -29,10 +32,14 @@ import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Service
 public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
@@ -45,6 +52,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
     private final FunAiWorkspaceRunService workspaceRunService;
 
     private static final Duration CMD_TIMEOUT = Duration.ofSeconds(10);
+    private static final long MAX_TEXT_FILE_BYTES = 1024L * 1024L * 2L; // 2MB
 
     public FunAiWorkspaceServiceImpl(WorkspaceProperties props,
                                      CommandRunner commandRunner,
@@ -568,6 +576,335 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             throw new RuntimeException("打包失败: " + e.getMessage(), e);
         }
         return zipPath;
+    }
+
+    @Override
+    public FunAiWorkspaceFileTreeResponse listFileTree(Long userId, Long appId, String path, Integer maxDepth, Integer maxEntries) {
+        assertEnabled();
+        assertAppOwned(userId, appId);
+        FunAiWorkspaceProjectDirResponse dir = ensureAppDir(userId, appId);
+        Path root = Paths.get(dir.getHostAppDir());
+
+        int depth = maxDepth == null ? 6 : Math.max(0, Math.min(20, maxDepth));
+        int limit = maxEntries == null ? 5000 : Math.max(1, Math.min(20000, maxEntries));
+
+        Path start = resolveSafePath(root, path, true);
+        if (Files.notExists(start)) {
+            // 空目录树
+            FunAiWorkspaceFileTreeResponse resp = new FunAiWorkspaceFileTreeResponse();
+            resp.setUserId(userId);
+            resp.setAppId(appId);
+            resp.setRootPath(normalizeRelPath(root, start));
+            resp.setMaxDepth(depth);
+            resp.setMaxEntries(limit);
+            resp.setNodes(List.of());
+            return resp;
+        }
+        if (!Files.isDirectory(start)) {
+            throw new IllegalArgumentException("不是目录: " + normalizeRelPath(root, start));
+        }
+
+        Set<String> ignores = defaultIgnoredNames();
+        Counter counter = new Counter(limit);
+        List<FunAiWorkspaceFileNode> nodes = listDirRecursive(root, start, depth, ignores, counter);
+
+        FunAiWorkspaceFileTreeResponse resp = new FunAiWorkspaceFileTreeResponse();
+        resp.setUserId(userId);
+        resp.setAppId(appId);
+        resp.setRootPath(normalizeRelPath(root, start));
+        resp.setMaxDepth(depth);
+        resp.setMaxEntries(limit);
+        resp.setNodes(nodes);
+        return resp;
+    }
+
+    @Override
+    public FunAiWorkspaceFileReadResponse readFileContent(Long userId, Long appId, String path) {
+        assertEnabled();
+        assertAppOwned(userId, appId);
+        FunAiWorkspaceProjectDirResponse dir = ensureAppDir(userId, appId);
+        Path root = Paths.get(dir.getHostAppDir());
+        Path file = resolveSafePath(root, path, false);
+        if (Files.notExists(file) || Files.isDirectory(file)) {
+            throw new IllegalArgumentException("文件不存在: " + normalizeRelPath(root, file));
+        }
+        try {
+            long size = Files.size(file);
+            if (size > MAX_TEXT_FILE_BYTES) {
+                throw new IllegalArgumentException("文件过大（" + size + " bytes），暂不支持在线读取");
+            }
+            String content = Files.readString(file, StandardCharsets.UTF_8);
+            FunAiWorkspaceFileReadResponse resp = new FunAiWorkspaceFileReadResponse();
+            resp.setUserId(userId);
+            resp.setAppId(appId);
+            resp.setPath(normalizeRelPath(root, file));
+            resp.setContent(content);
+            resp.setSize(size);
+            resp.setLastModifiedMs(Files.getLastModifiedTime(file).toMillis());
+            return resp;
+        } catch (IOException e) {
+            throw new RuntimeException("读取文件失败: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public FunAiWorkspaceFileReadResponse writeFileContent(Long userId, Long appId, String path, String content, boolean createParents, Long expectedLastModifiedMs) {
+        assertEnabled();
+        assertAppOwned(userId, appId);
+        FunAiWorkspaceProjectDirResponse dir = ensureAppDir(userId, appId);
+        Path root = Paths.get(dir.getHostAppDir());
+        Path file = resolveSafePath(root, path, false);
+
+        if (Files.exists(file) && Files.isDirectory(file)) {
+            throw new IllegalArgumentException("目标是目录，无法写入文件: " + normalizeRelPath(root, file));
+        }
+
+        try {
+            if (createParents) {
+                Path parent = file.getParent();
+                if (parent != null) ensureDir(parent);
+            }
+
+            // optimistic lock
+            if (expectedLastModifiedMs != null) {
+                if (Files.exists(file)) {
+                    long current = Files.getLastModifiedTime(file).toMillis();
+                    if (current != expectedLastModifiedMs) {
+                        throw new IllegalStateException("文件已被其他人修改（currentLastModifiedMs=" + current + "），请先重新拉取再保存");
+                    }
+                } else {
+                    // must not exist
+                    if (!(expectedLastModifiedMs == 0L || expectedLastModifiedMs == -1L)) {
+                        throw new IllegalStateException("文件不存在，expectedLastModifiedMs=" + expectedLastModifiedMs + " 不匹配（可传 0/-1 表示必须不存在）");
+                    }
+                }
+            }
+
+            byte[] bytes = (content == null ? "" : content).getBytes(StandardCharsets.UTF_8);
+            if (bytes.length > MAX_TEXT_FILE_BYTES) {
+                throw new IllegalArgumentException("内容过大（" + bytes.length + " bytes），请分拆或改为上传文件");
+            }
+            Files.write(file, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            return readFileContent(userId, appId, normalizeRelPath(root, file));
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (IOException e) {
+            throw new RuntimeException("写入文件失败: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void createDirectory(Long userId, Long appId, String path, boolean createParents) {
+        assertEnabled();
+        assertAppOwned(userId, appId);
+        FunAiWorkspaceProjectDirResponse dir = ensureAppDir(userId, appId);
+        Path root = Paths.get(dir.getHostAppDir());
+        Path d = resolveSafePath(root, path, false);
+        try {
+            if (Files.exists(d) && !Files.isDirectory(d)) {
+                throw new IllegalArgumentException("路径已存在且不是目录: " + normalizeRelPath(root, d));
+            }
+            if (createParents) {
+                Files.createDirectories(d);
+            } else {
+                Files.createDirectory(d);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("创建目录失败: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void deletePath(Long userId, Long appId, String path) {
+        assertEnabled();
+        assertAppOwned(userId, appId);
+        FunAiWorkspaceProjectDirResponse dir = ensureAppDir(userId, appId);
+        Path root = Paths.get(dir.getHostAppDir());
+        Path target = resolveSafePath(root, path, false);
+        if (target.normalize().equals(root.normalize())) {
+            throw new IllegalArgumentException("禁止删除 app 根目录");
+        }
+        if (Files.notExists(target)) return;
+        try {
+            ZipUtils.deleteDirectoryRecursively(target);
+        } catch (Exception e) {
+            throw new RuntimeException("删除失败: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void movePath(Long userId, Long appId, String fromPath, String toPath, boolean overwrite) {
+        assertEnabled();
+        assertAppOwned(userId, appId);
+        FunAiWorkspaceProjectDirResponse dir = ensureAppDir(userId, appId);
+        Path root = Paths.get(dir.getHostAppDir());
+
+        Path from = resolveSafePath(root, fromPath, false);
+        Path to = resolveSafePath(root, toPath, false);
+        if (Files.notExists(from)) {
+            throw new IllegalArgumentException("源路径不存在: " + normalizeRelPath(root, from));
+        }
+        if (to.normalize().equals(root.normalize())) {
+            throw new IllegalArgumentException("目标路径非法");
+        }
+        try {
+            Path parent = to.getParent();
+            if (parent != null) ensureDir(parent);
+            if (Files.exists(to)) {
+                if (!overwrite) {
+                    throw new IllegalArgumentException("目标已存在: " + normalizeRelPath(root, to));
+                }
+                ZipUtils.deleteDirectoryRecursively(to);
+            }
+            Files.move(from, to, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            throw new RuntimeException("移动失败: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public FunAiWorkspaceFileReadResponse uploadFile(Long userId, Long appId, String path, MultipartFile file, boolean overwrite, boolean createParents) {
+        assertEnabled();
+        assertAppOwned(userId, appId);
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("文件不能为空");
+        }
+        FunAiWorkspaceProjectDirResponse dir = ensureAppDir(userId, appId);
+        Path root = Paths.get(dir.getHostAppDir());
+        Path target = resolveSafePath(root, path, false);
+        try {
+            if (Files.exists(target) && Files.isDirectory(target)) {
+                throw new IllegalArgumentException("目标是目录: " + normalizeRelPath(root, target));
+            }
+            if (Files.exists(target) && !overwrite) {
+                throw new IllegalArgumentException("目标已存在: " + normalizeRelPath(root, target));
+            }
+            if (createParents) {
+                Path parent = target.getParent();
+                if (parent != null) ensureDir(parent);
+            }
+            try (var is = file.getInputStream()) {
+                Files.copy(is, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+            return readFileContent(userId, appId, normalizeRelPath(root, target));
+        } catch (IOException e) {
+            throw new RuntimeException("上传失败: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public Path downloadFile(Long userId, Long appId, String path) {
+        assertEnabled();
+        assertAppOwned(userId, appId);
+        FunAiWorkspaceProjectDirResponse dir = ensureAppDir(userId, appId);
+        Path root = Paths.get(dir.getHostAppDir());
+        Path file = resolveSafePath(root, path, false);
+        if (Files.notExists(file) || Files.isDirectory(file)) {
+            throw new IllegalArgumentException("文件不存在: " + normalizeRelPath(root, file));
+        }
+        return file;
+    }
+
+    private static class Counter {
+        int limit;
+        int used;
+        Counter(int limit) { this.limit = limit; }
+        boolean inc() { used++; return used <= limit; }
+        boolean allow() { return used < limit; }
+    }
+
+    private Set<String> defaultIgnoredNames() {
+        Set<String> s = new HashSet<>();
+        s.add("node_modules");
+        s.add(".git");
+        s.add("dist");
+        s.add("build");
+        s.add(".next");
+        s.add("target");
+        return s;
+    }
+
+    private List<FunAiWorkspaceFileNode> listDirRecursive(Path root, Path dir, int depth, Set<String> ignores, Counter counter) {
+        if (depth < 0 || !counter.allow()) return List.of();
+        try (var stream = Files.list(dir)) {
+            List<Path> children = stream
+                    .sorted(Comparator.comparing((Path p) -> !Files.isDirectory(p)).thenComparing(p -> p.getFileName().toString().toLowerCase()))
+                    .toList();
+
+            List<FunAiWorkspaceFileNode> out = new ArrayList<>();
+            for (Path p : children) {
+                if (!counter.allow()) break;
+                String name = p.getFileName() == null ? "" : p.getFileName().toString();
+                if (ignores.contains(name)) continue;
+
+                FunAiWorkspaceFileNode n = new FunAiWorkspaceFileNode();
+                n.setName(name);
+                n.setPath(normalizeRelPath(root, p));
+                n.setLastModifiedMs(safeLastModifiedMs(p));
+                if (Files.isDirectory(p)) {
+                    n.setType("DIR");
+                    if (counter.inc() && depth > 0) {
+                        n.setChildren(listDirRecursive(root, p, depth - 1, ignores, counter));
+                    } else {
+                        n.setChildren(List.of());
+                    }
+                } else {
+                    n.setType("FILE");
+                    n.setSize(safeSize(p));
+                    counter.inc();
+                }
+                out.add(n);
+            }
+            return out;
+        } catch (IOException e) {
+            throw new RuntimeException("读取目录失败: " + e.getMessage(), e);
+        }
+    }
+
+    private Long safeLastModifiedMs(Path p) {
+        try {
+            return Files.getLastModifiedTime(p).toMillis();
+        } catch (Exception ignore) {
+            return null;
+        }
+    }
+
+    private Long safeSize(Path p) {
+        try {
+            return Files.size(p);
+        } catch (Exception ignore) {
+            return null;
+        }
+    }
+
+    private Path resolveSafePath(Path root, String rel, boolean allowEmpty) {
+        if (root == null) throw new IllegalArgumentException("root 不能为空");
+        String r = rel == null ? "" : rel.trim();
+        r = r.replace("\\", "/");
+        while (r.startsWith("/")) r = r.substring(1);
+        if (!allowEmpty && (r.isEmpty() || ".".equals(r))) {
+            throw new IllegalArgumentException("path 不能为空");
+        }
+        if (r.contains("\0")) {
+            throw new IllegalArgumentException("非法 path");
+        }
+        Path resolved = r.isEmpty() ? root : root.resolve(r);
+        resolved = resolved.normalize();
+        Path normalizedRoot = root.normalize();
+        if (!resolved.startsWith(normalizedRoot)) {
+            throw new IllegalArgumentException("非法 path（疑似越权访问）");
+        }
+        return resolved;
+    }
+
+    private String normalizeRelPath(Path root, Path p) {
+        try {
+            Path rp = root.normalize().relativize(p.normalize());
+            String s = rp.toString().replace("\\", "/");
+            return s.isEmpty() ? "." : s;
+        } catch (Exception ignore) {
+            return ".";
+        }
     }
 
     @Override

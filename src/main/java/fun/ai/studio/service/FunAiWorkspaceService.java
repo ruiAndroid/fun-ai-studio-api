@@ -1,6 +1,8 @@
 package fun.ai.studio.service;
 
 import fun.ai.studio.entity.response.FunAiWorkspaceInfoResponse;
+import fun.ai.studio.entity.response.FunAiWorkspaceFileReadResponse;
+import fun.ai.studio.entity.response.FunAiWorkspaceFileTreeResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceProjectDirResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceRunStatusResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceStatusResponse;
@@ -42,6 +44,46 @@ public interface FunAiWorkspaceService {
      * 将指定 app 目录打包为 zip 文件并返回 zipPath（位于 run/ 目录下的临时文件）
      */
     Path exportAppAsZip(Long userId, Long appId);
+
+    /**
+     * 在线编辑器：读取目录树（默认忽略 node_modules/.git/dist/build/.next/target 等）
+     */
+    FunAiWorkspaceFileTreeResponse listFileTree(Long userId, Long appId, String path, Integer maxDepth, Integer maxEntries);
+
+    /**
+     * 在线编辑器：读取文件内容（UTF-8 文本）
+     */
+    FunAiWorkspaceFileReadResponse readFileContent(Long userId, Long appId, String path);
+
+    /**
+     * 在线编辑器：写入文件内容（UTF-8 文本，带乐观锁）
+     */
+    FunAiWorkspaceFileReadResponse writeFileContent(Long userId, Long appId, String path, String content, boolean createParents, Long expectedLastModifiedMs);
+
+    /**
+     * 在线编辑器：创建目录
+     */
+    void createDirectory(Long userId, Long appId, String path, boolean createParents);
+
+    /**
+     * 在线编辑器：删除文件/目录（递归）
+     */
+    void deletePath(Long userId, Long appId, String path);
+
+    /**
+     * 在线编辑器：移动/重命名
+     */
+    void movePath(Long userId, Long appId, String fromPath, String toPath, boolean overwrite);
+
+    /**
+     * 在线编辑器：上传单文件到指定路径
+     */
+    FunAiWorkspaceFileReadResponse uploadFile(Long userId, Long appId, String path, MultipartFile file, boolean overwrite, boolean createParents);
+
+    /**
+     * 在线编辑器：下载单文件（返回宿主机文件路径用于 controller streaming）
+     */
+    Path downloadFile(Long userId, Long appId, String path);
 
     /**
      * 给 idle 回收任务使用：不要因为 stopRun 而拉起容器。
