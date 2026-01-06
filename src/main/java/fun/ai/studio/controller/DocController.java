@@ -1,5 +1,6 @@
 package fun.ai.studio.controller;
 
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.commonmark.node.Node;
 import org.commonmark.parser.Parser;
 import org.commonmark.renderer.html.HtmlRenderer;
@@ -25,6 +26,7 @@ import java.nio.charset.StandardCharsets;
  */
 @RestController
 @RequestMapping("/doc")
+@Tag(name = "Fun AI 补充文档", description = "非http/https接口文档类型的补充")
 public class DocController {
 
     private static final Parser MARKDOWN_PARSER = Parser.builder().build();
