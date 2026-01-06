@@ -4,17 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import fun.ai.studio.common.Result;
 import fun.ai.studio.security.JwtAuthenticationFilter;
 import fun.ai.studio.utils.JwtUtil;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.AuthenticationProvider;
-import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
-import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
-import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -26,10 +20,8 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 @Configuration
 @EnableWebSecurity
-@EnableGlobalMethodSecurity(prePostEnabled = true)
+@EnableMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
-
-    private static final Logger logger = LoggerFactory.getLogger(SecurityConfig.class);
 
     private final UserDetailsService userDetailsService;
     private final JwtUtil jwtUtil;
@@ -41,34 +33,21 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http.csrf().disable()
-            // 禁用表单登录
-            .formLogin().disable()
-            // 禁用HTTP基本认证
-            .httpBasic().disable()
-
-            // 禁用session
-            .sessionManagement()
-            .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-
-            // 配置认证入口点，处理未认证的请求
-            .and()
-            .exceptionHandling()
-            .authenticationEntryPoint(authenticationEntryPoint())
-
-             // 配置拦截规则
-            .and()
-            .authorizeHttpRequests()
-            // 确保 Swagger UI 相关路径都被允许（放在最前面，优先级最高）
-            .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/swagger-ui/index.html").permitAll()
-            .requestMatchers("/v3/api-docs/**").permitAll()
-            .requestMatchers("/webjars/**").permitAll()
-            .requestMatchers(URL_WHITELIST).permitAll() // 接口请求白名单
-            .anyRequest().authenticated() // 其他请求需要认证
-
-             //配置自定义的过滤器
-            .and()
-            .addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class);
+        http
+                .csrf(csrf -> csrf.disable())
+                .formLogin(form -> form.disable())
+                .httpBasic(basic -> basic.disable())
+                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(ex -> ex.authenticationEntryPoint(authenticationEntryPoint()))
+                .authorizeHttpRequests(auth -> auth
+                        // 确保 Swagger UI 相关路径都被允许（放在最前面，优先级最高）
+                        .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/swagger-ui/index.html").permitAll()
+                        .requestMatchers("/v3/api-docs/**").permitAll()
+                        .requestMatchers("/webjars/**").permitAll()
+                        .requestMatchers(URL_WHITELIST).permitAll()
+                        .anyRequest().authenticated()
+                )
+                .addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
@@ -89,20 +68,6 @@ public class SecurityConfig {
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
-
-    @Bean
-    public AuthenticationProvider authenticationProvider() {
-        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
-        authProvider.setHideUserNotFoundExceptions(false);
-        authProvider.setUserDetailsService(userDetailsService);
-        authProvider.setPasswordEncoder(passwordEncoder());
-        return authProvider;
-    }
-
-    @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration authConfig) throws Exception {
-        return authConfig.getAuthenticationManager();
-    }
     
     @Bean
     public JwtAuthenticationFilter jwtAuthenticationFilter() {
@@ -121,6 +86,9 @@ public class SecurityConfig {
         "/doc/**",
         // nginx auth_request 内部端口查询（仅用于同机 nginx 反代；接口内部还会校验来源IP）
         "/api/fun-ai/workspace/internal/**",
+        // 在线编辑器实时通道：SSE / WebSocket（应用归属在业务层校验，前端也无法在 WS 握手中自定义 Header）
+        "/api/fun-ai/workspace/events",
+        "/api/fun-ai/workspace/ws/**",
         "/v3/api-docs/**",
         "/webjars/**",
         "/fun-ai-app/**", // FunAI 应用静态站点访问（dist）
