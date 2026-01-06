@@ -96,6 +96,8 @@ public class WorkspaceTerminalWebSocketHandler extends TextWebSocketHandler {
         Process proc = pb.start();
         st.process = proc;
         st.userId = userId;
+        st.containerName = containerName;
+        st.containerAppDir = appDir;
 
         st.stdin = new BufferedOutputStream(proc.getOutputStream());
         InputStream stdout = new BufferedInputStream(proc.getInputStream());
@@ -134,7 +136,9 @@ public class WorkspaceTerminalWebSocketHandler extends TextWebSocketHandler {
 
         switch (type) {
             case "stdin" -> write(st, data);
-            case "exec" -> write(st, data.endsWith("\n") ? data : (data + "\n"));
+            case "exec" -> startExecJob(session, st, data);
+            case "cancel" -> cancelExecJob(session, st);
+            case "ctrl_c" -> ctrlC(session, st);
             case "resize" -> send(session, msg("resize", "ignored")); // 无 tty，先占位
             case "close" -> session.close(CloseStatus.NORMAL);
             default -> write(st, data.endsWith("\n") ? data : (data + "\n"));
@@ -147,6 +151,102 @@ public class WorkspaceTerminalWebSocketHandler extends TextWebSocketHandler {
         if (st != null) {
             st.close();
         }
+    }
+
+    /**
+     * 路径B增强：exec 任务模式（非TTY）
+     * - 用 docker exec 另起一个 bash -lc，适合 npm install / git / npm run dev 等长任务
+     * - 支持实时 stdout + exit + cancel（destroy）
+     */
+    private void startExecJob(WebSocketSession session, TerminalSessionState st, String cmd) {
+        if (st == null || st.closed.get()) return;
+        String c = cmd == null ? "" : cmd.trim();
+        if (c.isEmpty()) {
+            send(session, msg("error", "exec: command is empty"));
+            return;
+        }
+        synchronized (st.execLock) {
+            if (st.execProcess != null && st.execProcess.isAlive()) {
+                send(session, msg("error", "exec: another job is running, send {type:'cancel'} first"));
+                return;
+            }
+            try {
+                String appDirEsc = shellEscape(st.containerAppDir == null ? "/workspace" : st.containerAppDir);
+                String full = "cd " + appDirEsc + " && " + c;
+                ProcessBuilder pb = new ProcessBuilder("docker", "exec", "-i", st.containerName, "bash", "-lc", full);
+                pb.redirectErrorStream(true);
+                Process p = pb.start();
+                st.execProcess = p;
+                send(session, msg("exec_start", c));
+
+                ioPool.submit(() -> {
+                    try (InputStream in = new BufferedInputStream(p.getInputStream())) {
+                        byte[] buf = new byte[4096];
+                        int n;
+                        while (!st.closed.get() && (n = in.read(buf)) >= 0) {
+                            if (n == 0) continue;
+                            String s = new String(buf, 0, n, StandardCharsets.UTF_8);
+                            send(session, msg("exec_stdout", s));
+                        }
+                    } catch (Exception ignore) {
+                    }
+                });
+
+                ioPool.submit(() -> {
+                    int code;
+                    try {
+                        code = p.waitFor();
+                    } catch (Exception e) {
+                        code = 137;
+                    }
+                    send(session, msg("exec_exit", String.valueOf(code)));
+                    synchronized (st.execLock) {
+                        st.execProcess = null;
+                    }
+                });
+            } catch (Exception e) {
+                send(session, msg("error", "exec failed: " + e.getMessage()));
+            }
+        }
+    }
+
+    private void cancelExecJob(WebSocketSession session, TerminalSessionState st) {
+        if (st == null) return;
+        synchronized (st.execLock) {
+            Process p = st.execProcess;
+            if (p == null || !p.isAlive()) {
+                send(session, msg("exec_cancel", "no running job"));
+                return;
+            }
+            try {
+                p.destroy();
+                try {
+                    Thread.sleep(200);
+                } catch (Exception ignore) {
+                }
+                if (p.isAlive()) {
+                    p.destroyForcibly();
+                }
+                send(session, msg("exec_cancel", "ok"));
+            } catch (Exception e) {
+                send(session, msg("error", "cancel failed: " + e.getMessage()));
+            }
+        }
+    }
+
+    private void ctrlC(WebSocketSession session, TerminalSessionState st) {
+        // 非TTY下真正的 SIGINT 不可靠：
+        // - 对 exec 任务：用 cancel 方式终止
+        // - 对交互 stdin：尝试写入 ^C 字符（可能无效），并提示前端
+        if (st == null) return;
+        synchronized (st.execLock) {
+            if (st.execProcess != null && st.execProcess.isAlive()) {
+                cancelExecJob(session, st);
+                return;
+            }
+        }
+        write(st, "\u0003"); // ETX
+        send(session, msg("ctrl_c", "sent (non-tty mode, may not interrupt running command)"));
     }
 
     private void pumpStdout(WebSocketSession session, TerminalSessionState st, InputStream in) {
@@ -245,10 +345,25 @@ public class WorkspaceTerminalWebSocketHandler extends TextWebSocketHandler {
         Process process;
         OutputStream stdin;
         Long userId;
+        String containerName;
+        String containerAppDir;
         AtomicBoolean closed = new AtomicBoolean(false);
+        final Object execLock = new Object();
+        Process execProcess;
 
         void close() {
             if (!closed.compareAndSet(false, true)) return;
+            // cancel exec job
+            synchronized (execLock) {
+                try {
+                    if (execProcess != null) {
+                        execProcess.destroy();
+                        execProcess.destroyForcibly();
+                    }
+                } catch (Exception ignore) {
+                }
+                execProcess = null;
+            }
             try {
                 if (stdin != null) stdin.close();
             } catch (Exception ignore) {
