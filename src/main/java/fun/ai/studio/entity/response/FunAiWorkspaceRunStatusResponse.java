@@ -17,6 +17,11 @@ public class FunAiWorkspaceRunStatusResponse {
     private Integer containerPort;
     private Long pid;
     /**
+     * 诊断字段：容器内 containerPort 当前实际监听该端口的进程 pid（用于排查“端口被旧进程占用导致预览指向旧内容”）
+     * - null：未监听或无法获取
+     */
+    private Long portListenPid;
+    /**
      * 预览地址（后端根据配置生成，前端无需拼 URL）
      */
     private String previewUrl;

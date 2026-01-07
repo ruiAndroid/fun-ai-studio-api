@@ -278,10 +278,54 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                 + "npm config set registry https://registry.npmmirror.com >/dev/null 2>&1 || true\n"
                 + "if [ ! -d node_modules ]; then echo \"[dev-start] npm install...\" >>\"$LOG_FILE\"; npm install >>\"$LOG_FILE\" 2>&1; fi\n"
                 + "echo \"[dev-start] npm run dev on $PORT\" >>\"$LOG_FILE\" 2>&1\n"
+                // 关键：容器 + 挂载卷场景下，inotify 事件可能不稳定，导致“刷新也还是旧内容”（Vite transform 缓存未失效）
+                // 通过开启 polling，确保文件增删改能被可靠检测到（代价是稍高 CPU；后续可做成可配置项）
+                + "export CHOKIDAR_USEPOLLING=true\n"
+                + "export CHOKIDAR_INTERVAL=1000\n"
+                + "export WATCHPACK_POLLING=true\n"
+                + "echo \"[dev-start] watch: CHOKIDAR_USEPOLLING=$CHOKIDAR_USEPOLLING interval=$CHOKIDAR_INTERVAL\" >>\"$LOG_FILE\" 2>&1\n"
+                // 关键：必须确保 dev server 绑定在固定端口（containerPort，默认 5173），因为 nginx/previewUrl 只会反代这个端口
+                // 如果端口被历史进程占用，Vite 会自动切到 5174/5175，导致“容器内文件已更新，但 previewUrl 仍旧内容”（命中旧端口）
+                // 这里不依赖 ps/lsof/fuser（精简镜像常缺失），直接通过 /proc 定位占用端口的进程并清理
+                + "TARGET_PORT_HEX=$(printf '%04X' \"$PORT\" | tr '[:upper:]' '[:lower:]')\n"
+                + "find_inode() {\n"
+                + "  local inode\n"
+                + "  inode=$(awk -v p=\":$TARGET_PORT_HEX\" '$2 ~ (p\"$\") && $4==\"0A\" {print $10; exit}' /proc/net/tcp 2>/dev/null || true)\n"
+                + "  if [ -z \"$inode\" ]; then\n"
+                + "    inode=$(awk -v p=\":$TARGET_PORT_HEX\" '$2 ~ (p\"$\") && $4==\"0A\" {print $10; exit}' /proc/net/tcp6 2>/dev/null || true)\n"
+                + "  fi\n"
+                + "  echo \"$inode\"\n"
+                + "}\n"
+                + "kill_by_inode() {\n"
+                + "  local inode=\"$1\"\n"
+                + "  [ -z \"$inode\" ] && return 0\n"
+                + "  echo \"[dev-start] port $PORT is in use (inode=$inode), trying to kill holder...\" >>\"$LOG_FILE\" 2>&1\n"
+                + "  for p in /proc/[0-9]*; do\n"
+                + "    pid=${p#/proc/}\n"
+                + "    for fd in $p/fd/*; do\n"
+                + "      link=$(readlink \"$fd\" 2>/dev/null || true)\n"
+                + "      if [ \"$link\" = \"socket:[$inode]\" ]; then\n"
+                + "        kill -TERM \"$pid\" 2>/dev/null || true\n"
+                + "      fi\n"
+                + "    done\n"
+                + "  done\n"
+                + "  sleep 1\n"
+                + "  for p in /proc/[0-9]*; do\n"
+                + "    pid=${p#/proc/}\n"
+                + "    for fd in $p/fd/*; do\n"
+                + "      link=$(readlink \"$fd\" 2>/dev/null || true)\n"
+                + "      if [ \"$link\" = \"socket:[$inode]\" ]; then\n"
+                + "        kill -KILL \"$pid\" 2>/dev/null || true\n"
+                + "      fi\n"
+                + "    done\n"
+                + "  done\n"
+                + "}\n"
+                + "inode=$(find_inode)\n"
+                + "if [ -n \"$inode\" ]; then kill_by_inode \"$inode\"; fi\n"
                 // 关键：给 vite 设置 base，使其 dev client/HMR 等资源路径都带上 /ws/{userId}/ 前缀
                 // 这样 nginx 才能用路径反代（只开 80/443）而无需做复杂 rewrite/sub_filter
                 + "BASE='/ws/" + userId + "/'\n"
-                + "setsid sh -c \"npm run dev -- --host 0.0.0.0 --port $PORT --base $BASE\" >>\"$LOG_FILE\" 2>&1 < /dev/null &\n"
+                + "setsid sh -c \"npm run dev -- --host 0.0.0.0 --port $PORT --strictPort --base $BASE\" >>\"$LOG_FILE\" 2>&1 < /dev/null &\n"
                 + "pid=$!\n"
                 + "echo \"$pid\" > \"$PID_FILE\"\n"
                 + "printf '{\"appId\":" + appId + ",\"type\":\"DEV\",\"pid\":%s,\"startedAt\":%s,\"logPath\":\"" + logFile + "\"}' \"$pid\" \"$(date +%s)\" > \"$META_FILE\"\n"
@@ -484,6 +528,18 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             } else {
                 resp.setState("DEAD");
             }
+
+            // 诊断：containerPort 当前监听进程 pid（用于排查端口被旧进程占用，导致 previewUrl 指向旧内容）
+            Long listenPid = tryGetListenPid(ws.getContainerName(), ws.getContainerPort());
+            resp.setPortListenPid(listenPid);
+            if (listenPid != null && resp.getPid() != null && !listenPid.equals(resp.getPid())) {
+                String warn = "诊断：containerPort=" + ws.getContainerPort()
+                        + " 被 pid=" + listenPid + " 占用，但 current.json pid=" + resp.getPid()
+                        + "；可能出现“预览仍旧内容/端口漂移到 5174+”。建议先 stopRun 再 startDev。";
+                if (resp.getMessage() == null || resp.getMessage().isBlank()) resp.setMessage(warn);
+                else resp.setMessage(resp.getMessage() + "；" + warn);
+            }
+
             FunAiWorkspaceRun r = new FunAiWorkspaceRun();
             r.setUserId(userId);
             r.setAppId(resp.getAppId());
@@ -513,6 +569,44 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             r.setContainerStatus(queryContainerStatus(ws.getContainerName()));
             upsertWorkspaceRun(r);
             return resp;
+        }
+    }
+
+    /**
+     * 查询容器内指定端口（LISTEN）对应的 pid。
+     * 不依赖 ps/ss/lsof（精简镜像常缺失），通过 /proc/net/tcp(+tcp6) + /proc/<pid>/fd 反查 socket inode。
+     */
+    private Long tryGetListenPid(String containerName, Integer port) {
+        if (containerName == null || containerName.isBlank() || port == null) return null;
+        try {
+            String script = ""
+                    + "set -e\n"
+                    + "port=" + port + "\n"
+                    + "PORT_HEX=$(printf '%04X' \"$port\" | tr '[:upper:]' '[:lower:]')\n"
+                    + "inode=$(awk -v p=\":$PORT_HEX\" '$2 ~ (p\"$\") && $4==\"0A\" {print $10; exit}' /proc/net/tcp 2>/dev/null || true)\n"
+                    + "if [ -z \"$inode\" ]; then inode=$(awk -v p=\":$PORT_HEX\" '$2 ~ (p\"$\") && $4==\"0A\" {print $10; exit}' /proc/net/tcp6 2>/dev/null || true); fi\n"
+                    + "[ -z \"$inode\" ] && exit 0\n"
+                    + "for p in /proc/[0-9]*; do\n"
+                    + "  pid=${p#/proc/}\n"
+                    + "  for fd in $p/fd/*; do\n"
+                    + "    link=$(readlink \"$fd\" 2>/dev/null || true)\n"
+                    + "    if [ \"$link\" = \"socket:[$inode]\" ]; then\n"
+                    + "      echo \"$pid\"\n"
+                    + "      exit 0\n"
+                    + "    fi\n"
+                    + "  done\n"
+                    + "done\n"
+                    + "exit 0\n";
+            CommandResult r = docker("exec", containerName, "bash", "-lc", script);
+            if (r == null || r.getOutput() == null) return null;
+            String out = r.getOutput().trim();
+            if (out.isBlank()) return null;
+            // docker exec 输出可能包含换行，这里只取第一行
+            String first = out.split("\\R", 2)[0].trim();
+            if (first.isBlank()) return null;
+            return Long.parseLong(first);
+        } catch (Exception ignore) {
+            return null;
         }
     }
 

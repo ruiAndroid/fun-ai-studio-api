@@ -26,6 +26,49 @@
 - `ws://{host}/api/fun-ai/workspace/ws/terminal?userId={userId}&appId={appId}`
 - 如果站点是 HTTPS，请使用 `wss://...`
 
+### Nginx 反代注意事项（否则可能握手 400）
+
+如果你通过 Nginx 反代到 Spring Boot（例如 `location / { proxy_pass http://127.0.0.1:8080; }`），必须**单独**为 WebSocket 路径加上 Upgrade 相关头，并使用 HTTP/1.1 转发，否则后端会把请求当成普通 HTTP GET，从而出现 `Unexpected server response: 400`。
+
+推荐在 `server {}` 里（并且放在 `location /` 之前）增加：
+
+```nginx
+# http { } 里放一次即可（用于 Connection upgrade）
+map $http_upgrade $connection_upgrade {
+  default upgrade;
+  ''      close;
+}
+
+server {
+  # ... 省略 ...
+
+  # WebSocket：/api/fun-ai/workspace/ws/**
+  location ^~ /api/fun-ai/workspace/ws/ {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+    proxy_buffering off;
+  }
+
+  location / {
+    proxy_pass http://127.0.0.1:8080;
+    # ... 你的其他 header ...
+  }
+}
+```
+
+快速验证（建议先绕过 Nginx 直连后端，定位问题来源）：
+
+- 直连后端：`ws://127.0.0.1:8080/api/fun-ai/workspace/ws/terminal?userId=...&appId=...`
+- 再走 Nginx：`ws://{host}/api/fun-ai/workspace/ws/terminal?userId=...&appId=...`
+
 ### 出站消息（后端 → 前端）
 
 所有消息都是 JSON 文本：
