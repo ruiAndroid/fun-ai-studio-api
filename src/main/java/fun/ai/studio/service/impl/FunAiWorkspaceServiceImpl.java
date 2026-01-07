@@ -532,12 +532,17 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             // 诊断：containerPort 当前监听进程 pid（用于排查端口被旧进程占用，导致 previewUrl 指向旧内容）
             Long listenPid = tryGetListenPid(ws.getContainerName(), ws.getContainerPort());
             resp.setPortListenPid(listenPid);
-            if (listenPid != null && resp.getPid() != null && !listenPid.equals(resp.getPid())) {
-                String warn = "诊断：containerPort=" + ws.getContainerPort()
-                        + " 被 pid=" + listenPid + " 占用，但 current.json pid=" + resp.getPid()
-                        + "；可能出现“预览仍旧内容/端口漂移到 5174+”。建议先 stopRun 再 startDev。";
-                if (resp.getMessage() == null || resp.getMessage().isBlank()) resp.setMessage(warn);
-                else resp.setMessage(resp.getMessage() + "；" + warn);
+            // 注意：current.json 的 pid 是 setsid/sh 的“进程组组长”，真正监听端口的通常是 node 子进程
+            // 因此这里用“端口监听进程的 pgrp 是否等于 current.json pid”来判断是否同一次 run
+            if (listenPid != null && resp.getPid() != null) {
+                Long listenPgrp = tryGetProcessGroupId(ws.getContainerName(), listenPid);
+                if (listenPgrp != null && !listenPgrp.equals(resp.getPid())) {
+                    String warn = "诊断：containerPort=" + ws.getContainerPort()
+                            + " 当前监听 pid=" + listenPid + "(pgrp=" + listenPgrp + ")，但 current.json pid(pgrp leader)=" + resp.getPid()
+                            + "；预览可能命中旧进程/旧项目。建议先 stopRun 再 startDev。";
+                    if (resp.getMessage() == null || resp.getMessage().isBlank()) resp.setMessage(warn);
+                    else resp.setMessage(resp.getMessage() + "；" + warn);
+                }
             }
 
             FunAiWorkspaceRun r = new FunAiWorkspaceRun();
@@ -599,12 +604,28 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     + "exit 0\n";
             CommandResult r = docker("exec", containerName, "bash", "-lc", script);
             if (r == null || r.getOutput() == null) return null;
-            String out = r.getOutput().trim();
+            // podman-docker 可能在 stdout 打印告警，这里取最后一个非空行
+            String out = normalizeDockerCliOutput(r.getOutput());
             if (out.isBlank()) return null;
-            // docker exec 输出可能包含换行，这里只取第一行
-            String first = out.split("\\R", 2)[0].trim();
-            if (first.isBlank()) return null;
-            return Long.parseLong(first);
+            if (!out.matches("\\d+")) return null;
+            return Long.parseLong(out);
+        } catch (Exception ignore) {
+            return null;
+        }
+    }
+
+    private Long tryGetProcessGroupId(String containerName, Long pid) {
+        if (containerName == null || containerName.isBlank() || pid == null || pid <= 0) return null;
+        try {
+            String script = ""
+                    + "pid=" + pid + "\n"
+                    + "awk '{print $5}' /proc/$pid/stat 2>/dev/null || true\n";
+            CommandResult r = docker("exec", containerName, "bash", "-lc", script);
+            if (r == null || r.getOutput() == null) return null;
+            String out = normalizeDockerCliOutput(r.getOutput());
+            if (out.isBlank()) return null;
+            if (!out.matches("\\d+")) return null;
+            return Long.parseLong(out);
         } catch (Exception ignore) {
             return null;
         }

@@ -235,29 +235,29 @@ server {
 
     client_max_body_size 200m;
 
-    # 友好错误页：容器未启动 / 端口不可达（502/504）
+    # ===== 友好错误页：容器未启动（反代端口不可达） =====
     location = /__ws_sleeping {
-        default_type text/html;
+        default_type text/html;  # 避免浏览器下载
         return 200 '<!doctype html><html><head><meta charset="utf-8"><title>Workspace 已休眠</title>
 <style>body{font-family:system-ui,Segoe UI,Arial;margin:40px;max-width:720px}code{background:#f6f8fa;padding:2px 6px;border-radius:6px}</style>
 </head><body>
 <h2>Workspace 已休眠</h2>
 <p>当前用户容器/Dev Server 未运行（省钱模式下会自动回收）。</p>
 <p>请回到控制台页面点击「启动/恢复」，或等待启动完成后刷新本页。</p>
-<p>如长时间无法恢复，请查看后端 <code>/api/fun-ai/workspace/run/status</code> 的 message 或 dev.log。</p>
+<p>如果长时间无法恢复，请查看后端 <code>/api/fun-ai/workspace/run/status</code> 的 message 或 dev.log。</p>
 </body></html>';
     }
 
-    # /ws/{userId}/... 反代（保留原始 URI；配合 Vite --base /ws/{userId}/）
+    # ===== 1) /ws/{userId}/... 反代到 127.0.0.1:{hostPort}（保留原始 URI）=====
     location ~ ^/ws/(?<uid>\d+)(?<rest>/.*)?$ {
-        # 让子请求能拿到 userId（子请求会继承该变量）
+        # 子请求要用到 userId（注意：子请求会继承该变量）
         set $ws_uid $uid;
 
-        # auth_request 固定 URI（不要写成带变量的 URI）
+        # 固定 URI 的 auth_request（不能用变量 URI）
         auth_request /_ws_port;
         auth_request_set $ws_port $upstream_http_x_ws_port;
 
-        # 端口不可达时展示友好页
+        # 如果端口没起来，反代会 502/504 → 友好页
         proxy_intercept_errors on;
         error_page 502 504 = /__ws_sleeping;
 
@@ -268,21 +268,43 @@ server {
         proxy_buffering off;
         proxy_read_timeout 3600s;
 
+        # 关键：保留原始 URI，配合 Vite --base /ws/{userId}/
         proxy_pass http://127.0.0.1:$ws_port$request_uri;
     }
 
-    # nginx 子请求：查询端口（内部 + token）
+    # ===== 2) auth_request 子请求：查询端口（内部）=====
     location = /_ws_port {
         internal;
+
         proxy_pass http://127.0.0.1:8080/api/fun-ai/workspace/internal/nginx/port?userId=$ws_uid;
         proxy_pass_request_body off;
         proxy_set_header Content-Length "";
-        proxy_set_header X-WS-Token "<TOKEN>";
+
+        # 共享密钥（和后端 funai.workspace.nginxAuthToken 保持一致）
+        proxy_set_header X-WS-Token "5082883253738cc32576088cc023b6dfe13aabe155fdd4b16196f387da3bbdb2";
     }
 
-    # API/站点入口
+# ===== 3.5) WebSocket：在线终端/实时通道 =====
+location ^~ /api/fun-ai/workspace/ws/ {
+    proxy_pass http://127.0.0.1:8080;
+
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+    proxy_buffering off;
+}
+    # ===== 3) 你的站点/API：反代给 Spring Boot =====
     location / {
         proxy_pass http://127.0.0.1:8080;
+
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
