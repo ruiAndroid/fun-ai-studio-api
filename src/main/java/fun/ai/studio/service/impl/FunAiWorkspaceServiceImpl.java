@@ -287,12 +287,13 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                 // 关键：必须确保 dev server 绑定在固定端口（containerPort，默认 5173），因为 nginx/previewUrl 只会反代这个端口
                 // 如果端口被历史进程占用，Vite 会自动切到 5174/5175，导致“容器内文件已更新，但 previewUrl 仍旧内容”（命中旧端口）
                 // 这里不依赖 ps/lsof/fuser（精简镜像常缺失），直接通过 /proc 定位占用端口的进程并清理
-                + "TARGET_PORT_HEX=$(printf '%04X' \"$PORT\" | tr '[:upper:]' '[:lower:]')\n"
+                // /proc/net/tcp 的十六进制端口通常是大写；这里用 toupper 匹配，避免大小写导致找不到 inode
+                + "TARGET_PORT_HEX=$(printf '%04X' \"$PORT\")\n"
                 + "find_inode() {\n"
                 + "  local inode\n"
-                + "  inode=$(awk -v p=\":$TARGET_PORT_HEX\" '$2 ~ (p\"$\") && $4==\"0A\" {print $10; exit}' /proc/net/tcp 2>/dev/null || true)\n"
+                + "  inode=$(awk -v p=\":$TARGET_PORT_HEX\" 'toupper($2) ~ (p\"$\") && $4==\"0A\" {print $10; exit}' /proc/net/tcp 2>/dev/null || true)\n"
                 + "  if [ -z \"$inode\" ]; then\n"
-                + "    inode=$(awk -v p=\":$TARGET_PORT_HEX\" '$2 ~ (p\"$\") && $4==\"0A\" {print $10; exit}' /proc/net/tcp6 2>/dev/null || true)\n"
+                + "    inode=$(awk -v p=\":$TARGET_PORT_HEX\" 'toupper($2) ~ (p\"$\") && $4==\"0A\" {print $10; exit}' /proc/net/tcp6 2>/dev/null || true)\n"
                 + "  fi\n"
                 + "  echo \"$inode\"\n"
                 + "}\n"
@@ -587,9 +588,9 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             String script = ""
                     + "set -e\n"
                     + "port=" + port + "\n"
-                    + "PORT_HEX=$(printf '%04X' \"$port\" | tr '[:upper:]' '[:lower:]')\n"
-                    + "inode=$(awk -v p=\":$PORT_HEX\" '$2 ~ (p\"$\") && $4==\"0A\" {print $10; exit}' /proc/net/tcp 2>/dev/null || true)\n"
-                    + "if [ -z \"$inode\" ]; then inode=$(awk -v p=\":$PORT_HEX\" '$2 ~ (p\"$\") && $4==\"0A\" {print $10; exit}' /proc/net/tcp6 2>/dev/null || true); fi\n"
+                    + "PORT_HEX=$(printf '%04X' \"$port\")\n"
+                    + "inode=$(awk -v p=\":$PORT_HEX\" 'toupper($2) ~ (p\"$\") && $4==\"0A\" {print $10; exit}' /proc/net/tcp 2>/dev/null || true)\n"
+                    + "if [ -z \"$inode\" ]; then inode=$(awk -v p=\":$PORT_HEX\" 'toupper($2) ~ (p\"$\") && $4==\"0A\" {print $10; exit}' /proc/net/tcp6 2>/dev/null || true); fi\n"
                     + "[ -z \"$inode\" ] && exit 0\n"
                     + "for p in /proc/[0-9]*; do\n"
                     + "  pid=${p#/proc/}\n"
