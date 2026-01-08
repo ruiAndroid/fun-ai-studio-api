@@ -22,7 +22,7 @@ import java.nio.charset.StandardCharsets;
  * 访问示例：
  * - /doc/                        -> 文档首页
  * - /doc/README.md               -> 渲染 README
- * - /doc/部署-阿里云Linux3-单机版(Workspace+Nginx80-443).md
+ * - /doc/阿里云部署文档.md
  * - /doc/raw/README.md           -> 原始 markdown
  */
 @RestController

@@ -91,6 +91,16 @@ public class WorkspaceProperties {
      */
     private int runStartingTimeoutSeconds = 300;
 
+    /**
+     * Mongo（可选）：在 workspace 用户容器内提供本地 MongoDB（同一用户容器仅一个 mongod 实例）
+     * 隔离方式：同一个 mongod 下按 appId 使用不同 dbName（默认前缀 app_）。
+     *
+     * 约定：
+     * - 宿主机使用 bind mount 持久化：{hostRoot}/{userId}/mongo/db
+     * - 容器内 dbPath 默认：/data/db
+     */
+    private MongoProperties mongo = new MongoProperties();
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -225,6 +235,121 @@ public class WorkspaceProperties {
 
     public void setRunStartingTimeoutSeconds(int runStartingTimeoutSeconds) {
         this.runStartingTimeoutSeconds = runStartingTimeoutSeconds;
+    }
+
+    public MongoProperties getMongo() {
+        return mongo;
+    }
+
+    public void setMongo(MongoProperties mongo) {
+        this.mongo = mongo;
+    }
+
+    public static class MongoProperties {
+        /**
+         * 是否启用（要求 workspace image 内包含 mongod/mongosh）
+         */
+        private boolean enabled = false;
+
+        /**
+         * 宿主机数据库持久化根目录：{hostRoot}/{userId}/mongo/...
+         * 示例：/data/funai/database
+         */
+        private String hostRoot;
+
+        /**
+         * 容器内 Mongo 数据目录（mongod --dbpath）
+         */
+        private String containerDbPath = "/data/db";
+
+        /**
+         * 容器内 Mongo 日志目录
+         */
+        private String containerLogDir = "/var/log/mongodb";
+
+        /**
+         * mongod bindIp（推荐 127.0.0.1，仅容器内访问）
+         */
+        private String bindIp = "127.0.0.1";
+
+        /**
+         * mongod 端口
+         */
+        private int port = 27017;
+
+        /**
+         * 逻辑库名前缀：最终 dbName = {dbNamePrefix}{appId}
+         */
+        private String dbNamePrefix = "app_";
+
+        /**
+         * 日志文件名（位于 containerLogDir 下）
+         */
+        private String logFileName = "mongod.log";
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getHostRoot() {
+            return hostRoot;
+        }
+
+        public void setHostRoot(String hostRoot) {
+            this.hostRoot = hostRoot;
+        }
+
+        public String getContainerDbPath() {
+            return containerDbPath;
+        }
+
+        public void setContainerDbPath(String containerDbPath) {
+            this.containerDbPath = containerDbPath;
+        }
+
+        public String getContainerLogDir() {
+            return containerLogDir;
+        }
+
+        public void setContainerLogDir(String containerLogDir) {
+            this.containerLogDir = containerLogDir;
+        }
+
+        public String getBindIp() {
+            return bindIp;
+        }
+
+        public void setBindIp(String bindIp) {
+            this.bindIp = bindIp;
+        }
+
+        public int getPort() {
+            return port;
+        }
+
+        public void setPort(int port) {
+            this.port = port;
+        }
+
+        public String getDbNamePrefix() {
+            return dbNamePrefix;
+        }
+
+        public void setDbNamePrefix(String dbNamePrefix) {
+            this.dbNamePrefix = dbNamePrefix;
+        }
+
+        public String getLogFileName() {
+            return logFileName;
+        }
+
+        public void setLogFileName(String logFileName) {
+            this.logFileName = logFileName;
+        }
     }
 }
 
