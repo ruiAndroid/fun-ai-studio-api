@@ -94,6 +94,14 @@ public interface FunAiWorkspaceService {
      * 给 idle 回收任务使用：不要拉起容器。
      */
     void stopContainerForIdle(Long userId);
+
+    /**
+     * 应用被删除后的 workspace 清理（无 DB 归属校验：调用方需确保已校验 app 归属）
+     * - 若该 app 正在运行：尝试 stopRun（仅当容器处于 RUNNING 时）
+     * - 删除宿主机目录：{hostRoot}/{userId}/apps/{appId}
+     * - 必要时清理 run 元数据并将 last-known 运行态落库为 IDLE
+     */
+    void cleanupWorkspaceOnAppDeleted(Long userId, Long appId);
 }
 
 

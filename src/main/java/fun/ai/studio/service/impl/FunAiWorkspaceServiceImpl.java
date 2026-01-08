@@ -1093,6 +1093,69 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         upsertWorkspaceRun(r);
     }
 
+    @Override
+    public void cleanupWorkspaceOnAppDeleted(Long userId, Long appId) {
+        // 注意：此方法不做 DB 归属校验；由调用方（删除应用接口）保证已校验 app 归属
+        if (userId == null || appId == null) return;
+        if (props == null || !props.isEnabled()) return;
+        if (!StringUtils.hasText(props.getHostRoot())) return;
+
+        Path hostUserDir = resolveHostWorkspaceDir(userId);
+        Path hostAppsDir = hostUserDir.resolve("apps");
+        Path hostAppDir = hostAppsDir.resolve(String.valueOf(appId));
+        Path hostRunDir = hostUserDir.resolve("run");
+        Path metaPath = hostRunDir.resolve("current.json");
+        Path pidPath = hostRunDir.resolve("dev.pid");
+
+        // 1) 如果删除的是当前运行 app：尽量 stopRun（仅当容器在 RUNNING）
+        try {
+            if (Files.exists(metaPath)) {
+                FunAiWorkspaceRunMeta meta = objectMapper.readValue(Files.readString(metaPath, StandardCharsets.UTF_8), FunAiWorkspaceRunMeta.class);
+                if (meta != null && meta.getAppId() != null && meta.getAppId().equals(appId)) {
+                    String containerName = containerName(userId);
+                    String cStatus = queryContainerStatus(containerName);
+                    if ("RUNNING".equalsIgnoreCase(cStatus)) {
+                        // 容器在跑：通过 stopRun 杀掉进程组并清理 run 文件（会落库）
+                        stopRun(userId);
+                    } else {
+                        // 容器不在跑：仅清理宿主机 run 元数据，并落库为 IDLE
+                        try {
+                            Files.deleteIfExists(pidPath);
+                            Files.deleteIfExists(metaPath);
+                        } catch (Exception ignore) {
+                        }
+                        FunAiWorkspaceRun r = new FunAiWorkspaceRun();
+                        r.setUserId(userId);
+                        r.setAppId(null);
+                        r.setRunState("IDLE");
+                        r.setRunPid(null);
+                        r.setPreviewUrl(null);
+                        r.setLogPath(null);
+                        r.setLastError("app deleted: " + appId);
+                        r.setContainerName(containerName);
+                        r.setHostPort(getHostPortForNginx(userId));
+                        r.setContainerPort(props.getContainerPort());
+                        r.setContainerStatus(cStatus);
+                        upsertWorkspaceRun(r);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // 清理失败不阻断删除流程
+            log.warn("cleanup workspace run meta failed: userId={}, appId={}, err={}", userId, appId, e.getMessage());
+        }
+
+        // 2) 删除 workspace app 目录（宿主机持久化）
+        try {
+            if (Files.exists(hostAppDir)) {
+                ZipUtils.deleteDirectoryRecursively(hostAppDir);
+            }
+        } catch (Exception e) {
+            log.warn("cleanup workspace app dir failed: userId={}, appId={}, dir={}, err={}",
+                    userId, appId, hostAppDir, e.getMessage());
+        }
+    }
+
     private void assertEnabled() {
         if (!props.isEnabled()) {
             throw new IllegalStateException("workspace 功能未启用（funai.workspace.enabled=false）");
