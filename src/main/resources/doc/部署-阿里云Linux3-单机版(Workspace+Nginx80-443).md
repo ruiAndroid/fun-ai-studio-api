@@ -341,7 +341,7 @@ curl -I http://47.118.27.59/ws/10000021/
 
 ### 8.2 主要接口（后端）
 
-- **ensure 容器**：`POST /api/fun-ai/workspace/ensure?userId=...`
+- **ensure 容器**：`POST /api/fun-ai/workspace/container/ensure?userId=...`
   - 创建目录、创建容器、确保容器 running、挂载到 `/workspace`
 
 - **启动 dev（非阻塞）**：`POST /api/fun-ai/workspace/run/start?userId=...&appId=...`
@@ -354,7 +354,7 @@ curl -I http://47.118.27.59/ws/10000021/
 
 - **停止运行**：`POST /api/fun-ai/workspace/run/stop?userId=...`
 
-- **心跳**：`POST /api/fun-ai/workspace/heartbeat?userId=...`
+- **心跳**：`POST /api/fun-ai/workspace/container/heartbeat?userId=...`
   - 仅用于更新时间戳，给 idle 回收使用（前端不可靠也没关系，回收后可恢复）
 
 ### 8.3 idle 回收（省钱模式）

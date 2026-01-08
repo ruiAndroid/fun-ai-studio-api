@@ -1,6 +1,7 @@
 package fun.ai.studio.controller;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Hidden;
 import org.commonmark.node.Node;
 import org.commonmark.parser.Parser;
 import org.commonmark.renderer.html.HtmlRenderer;
@@ -39,6 +40,7 @@ public class DocController {
     }
 
     @GetMapping(value = "/raw/{name:.+}", produces = MediaType.TEXT_PLAIN_VALUE)
+    @Hidden
     public ResponseEntity<String> raw(@PathVariable("name") String name) {
         String safe = sanitizeName(name);
         if (safe == null) return ResponseEntity.notFound().build();
@@ -53,6 +55,7 @@ public class DocController {
     }
 
     @GetMapping(value = "/{name:.+}", produces = MediaType.TEXT_HTML_VALUE)
+    @Hidden
     public ResponseEntity<String> render(@PathVariable("name") String name) {
         return renderMd(name);
     }

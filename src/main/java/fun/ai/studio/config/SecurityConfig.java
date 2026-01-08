@@ -87,7 +87,7 @@ public class SecurityConfig {
         // nginx auth_request 内部端口查询（仅用于同机 nginx 反代；接口内部还会校验来源IP）
         "/api/fun-ai/workspace/internal/**",
         // 在线编辑器实时通道：SSE / WebSocket（应用归属在业务层校验，前端也无法在 WS 握手中自定义 Header）
-        "/api/fun-ai/workspace/events",
+        "/api/fun-ai/workspace/realtime/**",
         "/api/fun-ai/workspace/ws/**",
         "/v3/api-docs/**",
         "/webjars/**",

@@ -4,7 +4,7 @@
 
 ### 订阅地址
 
-- `GET /api/fun-ai/workspace/events?userId={userId}&appId={appId}&withLog=true`
+- `GET /api/fun-ai/workspace/realtime/events?userId={userId}&appId={appId}&withLog=true`
 
 ### 事件类型
 

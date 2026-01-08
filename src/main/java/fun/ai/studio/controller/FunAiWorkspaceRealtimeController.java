@@ -32,8 +32,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 @RestController
-@RequestMapping("/api/fun-ai/workspace")
-@Tag(name = "Fun AI Workspace 实时通道 部分WS使用方式以及接入点，请访问http://47.118.27.59/doc", description = "在线编辑器实时：SSE（状态/日志）")
+@RequestMapping("/api/fun-ai/workspace/realtime")
+@Tag(name = "Fun AI Workspace 实时通道", description = "在线编辑器实时：SSE（状态/日志），WS 终端请看 /doc/workspace-realtime.md")
 public class FunAiWorkspaceRealtimeController {
     private final FunAiWorkspaceService funAiWorkspaceService;
     private final FunAiAppService funAiAppService;

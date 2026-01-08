@@ -159,7 +159,8 @@ public class FunAiAppController {
      */
     @GetMapping("/info")
     @Operation(summary = "获取应用详情", description = "根据应用ID获取应用详情,appStatus: 0:空壳/草稿，1:已上传，2:部署中，3:可访问，4:部署失败，5:禁用")
-    public Result<FunAiApp> getAppInfo(@Parameter(description = "用户ID", required = true) @RequestParam Long userId, @Parameter(description = "应用ID", required = true) @RequestParam Long appId) {
+    public Result<FunAiApp> getAppInfo(@Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+                                       @Parameter(description = "应用ID", required = true) @RequestParam Long appId) {
         FunAiApp app = funAiAppService.getAppByIdAndUserId(appId, userId);
         if (app == null) {
             return Result.error("应用不存在");
@@ -198,6 +199,20 @@ public class FunAiAppController {
                 return Result.error("应用不存在或无权限操作");
             }
 
+            // 关键：同一用户同时只能预览一个应用（/ws/{userId}/ 是用户级入口）
+            // 若当前运行的是其它 app（A），而用户打开的是 B（可能还未创建/无 package.json），
+            // 为避免前端默认打开预览时“看到的还是 A”，这里先 stop 当前 run，确保预览不会误指向旧应用。
+            try {
+                FunAiWorkspaceRunStatusResponse cur = funAiWorkspaceService.getRunStatus(userId);
+                String st = cur == null ? null : cur.getState();
+                Long runningAppId = cur == null ? null : cur.getAppId();
+                boolean running = st != null && ("RUNNING".equalsIgnoreCase(st) || "STARTING".equalsIgnoreCase(st));
+                if (running && runningAppId != null && !runningAppId.equals(appId)) {
+                    funAiWorkspaceService.stopRun(userId);
+                }
+            } catch (Exception ignore) {
+            }
+
             // 关键：ensureAppDir 内部已做归属校验，且会确保容器运行并创建宿主机目录（目录挂载到容器 /workspace）
             FunAiWorkspaceProjectDirResponse dir = funAiWorkspaceService.ensureAppDir(userId, appId);
             Path hostAppDir = Paths.get(dir.getHostAppDir());
@@ -209,8 +224,15 @@ public class FunAiAppController {
 
             // 补充 runtime 字段（previewUrl/runState 等）
             fillRuntimeFields(userId, List.of(app));
-            if (runStatus != null && runStatus.getPreviewUrl() != null && !runStatus.getPreviewUrl().isBlank()) {
+            // 只在“当前 run 的 appId 与本次打开的 appId 一致”时，才给前端返回预览地址
+            if (runStatus != null
+                    && runStatus.getAppId() != null
+                    && runStatus.getAppId().equals(appId)
+                    && runStatus.getPreviewUrl() != null
+                    && !runStatus.getPreviewUrl().isBlank()) {
                 app.setAccessUrl(runStatus.getPreviewUrl());
+            } else {
+                app.setAccessUrl(null);
             }
 
             FunAiOpenEditorResponse resp = new FunAiOpenEditorResponse();
@@ -242,7 +264,8 @@ public class FunAiAppController {
      */
     @GetMapping ("/delete")
     @Operation(summary = "删除应用", description = "根据应用ID删除应用")
-    public Result<String> deleteApp(@Parameter(description = "用户ID", required = true) @RequestParam Long userId, @Parameter(description = "应用ID", required = true) @RequestParam Long appId) {
+    public Result<String> deleteApp(@Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+                                    @Parameter(description = "应用ID", required = true) @RequestParam Long appId) {
         try {
             boolean deleted = funAiAppService.deleteApp(appId, userId);
             if (!deleted) {
