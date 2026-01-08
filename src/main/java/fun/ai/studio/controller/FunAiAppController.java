@@ -4,9 +4,7 @@ package fun.ai.studio.controller;
 import fun.ai.studio.common.Result;
 import fun.ai.studio.entity.FunAiApp;
 import fun.ai.studio.entity.FunAiWorkspaceRun;
-import fun.ai.studio.entity.request.DeployFunAiAppRequest;
 import fun.ai.studio.entity.request.UpdateFunAiAppBasicInfoRequest;
-import fun.ai.studio.entity.response.FunAiAppDeployResponse;
 import fun.ai.studio.entity.response.FunAiOpenEditorResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceProjectDirResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceRunStatusResponse;
@@ -21,12 +19,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.io.Resource;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -274,31 +268,6 @@ public class FunAiAppController {
     }
 
     /**
-     * 上传应用文件（zip压缩包）
-     * @param userId 用户ID
-     * @param appId 应用ID
-     * @param file 上传的zip文件
-     * @return 上传结果，包含文件保存路径
-     */
-    @PostMapping("/upload")
-    @Deprecated
-    @Operation(summary = "[Deprecated] 上传应用文件（旧链路）", description = "旧链路：上传zip压缩包到指定应用文件夹。全量 workspace 场景请使用 /api/fun-ai/workspace/apps/upload", deprecated = true)
-    public Result<String> uploadAppFile(
-            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
-            @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
-            @Parameter(description = "zip文件", required = true) @RequestParam("file") MultipartFile file) {
-        try {
-            return Result.error("该接口已废弃：请使用 /api/fun-ai/workspace/apps/upload");
-        } catch (IllegalArgumentException e) {
-            logger.warn("文件上传失败: userId={}, appId={}, error={}", userId, appId, e.getMessage());
-            return Result.error(e.getMessage());
-        } catch (Exception e) {
-            logger.error("文件上传失败: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
-            return Result.error("文件上传失败: " + e.getMessage());
-        }
-    }
-
-    /**
      * 修改应用基础信息（appName/appDescription/appType）
      * - appName：同一用户下不可重名
      */
@@ -320,27 +289,6 @@ public class FunAiAppController {
         } catch (Exception e) {
             logger.error("修改应用基础信息失败: req={}, error={}", req, e.getMessage(), e);
             return Result.error("修改应用基础信息失败: " + e.getMessage());
-        }
-    }
-
-    /**
-     * 部署应用
-     * 校验：
-     * - 必须已上传 zip
-     * - 仅当 appStatus == 1 时允许发布/部署
-     */
-    @PostMapping("/deploy")
-    @Deprecated
-    @Operation(summary = "[Deprecated] 部署应用（旧链路）", description = "旧链路：解压 + npm build + /fun-ai-app 静态站点。全量 workspace 场景请使用 workspace run/start", deprecated = true)
-    public Result<FunAiAppDeployResponse> deployApp(@RequestBody DeployFunAiAppRequest req) {
-        try {
-            return Result.error("该接口已废弃：请使用 /api/fun-ai/workspace/run/start");
-        } catch (IllegalArgumentException e) {
-            logger.warn("部署应用失败: req={}, error={}", req, e.getMessage());
-            return Result.error(e.getMessage());
-        } catch (Exception e) {
-            logger.error("部署应用失败: req={}, error={}", req, e.getMessage(), e);
-            return Result.error("部署应用失败: " + e.getMessage());
         }
     }
 
@@ -387,24 +335,4 @@ public class FunAiAppController {
         }
     }
 
-    /**
-     * 下载指定应用“最新的zip代码包”
-     */
-    @GetMapping("/download-app")
-    @Deprecated
-    @Operation(summary = "[Deprecated] 下载应用最新zip代码包（旧链路）", description = "旧链路：下载应用目录下上传的 zip。全量 workspace 场景请使用 /api/fun-ai/workspace/apps/download", deprecated = true)
-    public ResponseEntity<Resource> downloadLatestZip(
-            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
-            @Parameter(description = "应用ID", required = true) @RequestParam Long appId
-    ) {
-        try {
-            return ResponseEntity.status(HttpStatus.GONE).build();
-        } catch (IllegalArgumentException e) {
-            // 业务类错误（无权限/不存在/未上传）
-            return ResponseEntity.badRequest().build();
-        } catch (Exception e) {
-            logger.error("下载zip失败: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
-            return ResponseEntity.internalServerError().build();
-        }
-    }
 }
