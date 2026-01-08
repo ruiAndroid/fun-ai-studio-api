@@ -19,7 +19,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 import java.nio.file.Files;
@@ -55,9 +54,6 @@ public class FunAiAppController {
 
     @Autowired(required = false)
     private FunAiWorkspaceService funAiWorkspaceService;
-
-    @Value("${funai.siteBaseUrl:}")
-    private String siteBaseUrl;
 
     private String sanitizePath(String p) {
         if (p == null) return null;
@@ -168,7 +164,7 @@ public class FunAiAppController {
         // 与容器运行态结合：补充 last-known runtime 字段
         fillRuntimeFields(userId, List.of(app));
 
-        // 旧链路的 /fun-ai-app 静态站点已废弃；这里如果该应用正在 RUNNING，则将 accessUrl 指向 previewUrl（兼容前端“可访问地址”展示）
+        // 旧链路的 /fun-ai-app 静态站点已废弃；workspace 运行时将 accessUrl 指向 previewUrl（/ws/{userId}/）
         if (app.getWorkspacePreviewUrl() != null && !app.getWorkspacePreviewUrl().isBlank()) {
             app.setAccessUrl(app.getWorkspacePreviewUrl());
         } else {

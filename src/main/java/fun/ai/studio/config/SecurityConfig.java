@@ -91,7 +91,7 @@ public class SecurityConfig {
         "/api/fun-ai/workspace/ws/**",
         "/v3/api-docs/**",
         "/webjars/**",
-        "/fun-ai-app/**", // FunAI 应用静态站点访问（dist）
+        // "/fun-ai-app/**" 旧静态站点入口已移除（全量 workspace 在线运行）
 
 
     };

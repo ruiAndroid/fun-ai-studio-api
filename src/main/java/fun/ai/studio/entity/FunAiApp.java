@@ -60,7 +60,7 @@ public class FunAiApp {
     private String lastDeployError;
 
     @TableField(exist = false)
-    @Schema(description = "部署成功后可访问路径（仅当 appStatus=3 可访问时有值）", example = "/fun-ai-app/10000021/20000024/")
+    @Schema(description = "可访问路径（workspace 预览时会填入 /ws/{userId}/；旧静态站点 /fun-ai-app 已废弃）", example = "http://47.118.27.59/ws/10000021/")
     private String accessUrl;
 
     // ----------------------
