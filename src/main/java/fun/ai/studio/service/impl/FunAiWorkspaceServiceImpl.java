@@ -222,6 +222,27 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         }
         assertAppOwned(userId, appId);
 
+        // 切换模式：同一用户同一时间只能运行一个应用
+        // - 若当前已在 RUNNING/STARTING 且 appId 不同：先 stop 再启动目标 app
+        // - 若当前已在 RUNNING 且 appId 相同：直接返回当前状态
+        try {
+            FunAiWorkspaceRunStatusResponse cur = getRunStatus(userId);
+            String st = cur == null ? null : cur.getState();
+            Long runningAppId = cur == null ? null : cur.getAppId();
+            if (runningAppId != null && st != null
+                    && ("RUNNING".equalsIgnoreCase(st) || "STARTING".equalsIgnoreCase(st))) {
+                if (runningAppId.equals(appId)) {
+                    if (cur.getMessage() == null || cur.getMessage().isBlank()) {
+                        cur.setMessage("已在运行中");
+                    }
+                    return cur;
+                }
+                // stopRun 内部会做进程组 kill + 清理 run 元数据 + 落库
+                stopRun(userId);
+            }
+        } catch (Exception ignore) {
+        }
+
         FunAiWorkspaceInfoResponse ws = ensureWorkspace(userId);
         // 确保应用目录存在
         ensureAppDir(userId, appId);
