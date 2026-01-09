@@ -1,10 +1,23 @@
-# 文档目录
+# 文档目录（总索引）
 
-- [阿里云部署文档](/doc/阿里云部署文档.md)：从 0 部署到可用（含关键命令、配置、排错、扩容注意事项）
-  - 原始 Markdown：[/doc/raw/阿里云部署文档.md](/doc/raw/阿里云部署文档.md)
-- [workspace-realtime](/doc/workspace-realtime.md)：在线编辑器实时通道（SSE + WebSocket 终端）对接说明
-  - 原始 Markdown：[/doc/raw/workspace-realtime.md](/doc/raw/workspace-realtime.md)
-- [api-migration-map](/doc/api-migration-map.md)：旧接口到新接口的迁移映射表（前端替换用）
-  - 原始 Markdown：[/doc/raw/api-migration-map.md](/doc/raw/api-migration-map.md)
+## 部署与运维
+
+- [阿里云部署文档（单机版）](./阿里云部署文档.md)
+
+## 子系统文档（面向 AI/新人）
+
+- [子系统文档索引](./domains/README.md)
+
+## Workspace 实时通道（旧文档入口，后续建议以 domains/workspace/realtime.md 为准）
+
+- [workspace-realtime](./workspace-realtime.md)
+
+## 迁移/兼容
+
+- [api-migration-map](./api-migration-map.md)
+
+## 目录结构建议
+
+- [structure](./structure.md)
 
 
