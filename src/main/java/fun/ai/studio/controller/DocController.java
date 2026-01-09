@@ -69,7 +69,7 @@ public class DocController {
     }
 
     private ResponseEntity<String> renderMd(String name) {
-        String safe = sanitizeName(name);
+        String safe = sanitizePath(name);
         if (safe == null) return ResponseEntity.notFound().build();
         if (!safe.toLowerCase().endsWith(".md")) {
             safe = safe + ".md";
@@ -95,6 +95,7 @@ public class DocController {
         if (s.contains("..") || s.contains("\\") || s.startsWith("/")) return null;
         return s;
     }
+
 
     private String extractPathAfterPrefix(HttpServletRequest request, String prefix) {
         if (request == null || prefix == null) return null;
