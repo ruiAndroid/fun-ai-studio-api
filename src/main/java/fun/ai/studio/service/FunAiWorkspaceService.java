@@ -56,6 +56,13 @@ public interface FunAiWorkspaceService {
     FunAiWorkspaceRunStatusResponse getRunStatus(Long userId);
 
     /**
+     * 清空当前 run 的 dev.log（宿主机文件：{hostRoot}/{userId}/run/dev.log）。
+     * <p>
+     * 为避免误清其它应用的运行日志：如果存在 run/current.json 且其 appId 与入参 appId 不一致，将抛出 IllegalArgumentException。
+     */
+    void clearRunLog(Long userId, Long appId);
+
+    /**
      * 将指定 app 目录打包为 zip 文件并返回 zipPath（位于 run/ 目录下的临时文件）
      */
     Path exportAppAsZip(Long userId, Long appId);

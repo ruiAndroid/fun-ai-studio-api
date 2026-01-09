@@ -12,6 +12,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -157,6 +158,33 @@ public class FunAiWorkspaceRealtimeController {
         }, 5, 5, TimeUnit.SECONDS);
 
         return emitter;
+    }
+
+    @PostMapping("/log/clear")
+    @Operation(
+            summary = "清除 dev.log",
+            description = "清空当前运行任务的 dev.log（宿主机文件 {hostRoot}/{userId}/run/dev.log）。" +
+                    "由于 realtime 接口在安全配置中为白名单，这里会做 appId 归属校验，并校验 current.json 的 appId 防止误清其它应用日志。"
+    )
+    public Result<String> clearLog(
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "应用ID", required = true) @RequestParam Long appId
+    ) {
+        try {
+            if (userId == null || appId == null) {
+                return Result.error("userId/appId 不能为空");
+            }
+            if (funAiAppService.getAppByIdAndUserId(appId, userId) == null) {
+                return Result.error("应用不存在或无权限操作");
+            }
+            activityTracker.touch(userId);
+            funAiWorkspaceService.clearRunLog(userId, appId);
+            return Result.success("ok");
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            return Result.error("clear log failed: " + e.getMessage());
+        }
     }
 
     private Path resolveDevLogPath(Long userId) {

@@ -841,6 +841,43 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         }
     }
 
+    @Override
+    public void clearRunLog(Long userId, Long appId) {
+        assertEnabled();
+        if (userId == null || appId == null) {
+            throw new IllegalArgumentException("userId/appId 不能为空");
+        }
+        if (!StringUtils.hasText(props.getHostRoot())) {
+            throw new IllegalStateException("hostRoot 未配置，无法清除日志");
+        }
+
+        Path hostUserDir = resolveHostWorkspaceDir(userId);
+        Path runDir = hostUserDir.resolve("run");
+        Path metaPath = runDir.resolve("current.json");
+        Path logPath = runDir.resolve("dev.log");
+
+        // 防误清：若存在 current.json 且 appId 不匹配，则拒绝
+        try {
+            if (Files.exists(metaPath)) {
+                FunAiWorkspaceRunMeta meta = objectMapper.readValue(Files.readString(metaPath, StandardCharsets.UTF_8), FunAiWorkspaceRunMeta.class);
+                if (meta != null && meta.getAppId() != null && !meta.getAppId().equals(appId)) {
+                    throw new IllegalArgumentException("当前正在运行其它应用(appId=" + meta.getAppId() + ")，请先停止或传入当前运行应用的 appId");
+                }
+            }
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception ignore) {
+            // current.json 解析失败时不阻塞清理（避免因为旧文件损坏导致无法自助清空日志）
+        }
+
+        ensureDir(runDir);
+        try {
+            Files.write(logPath, new byte[0], StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        } catch (Exception e) {
+            throw new RuntimeException("清除日志失败: " + e.getMessage(), e);
+        }
+    }
+
     /**
      * 查询容器内指定端口（LISTEN）对应的 pid。
      * 不依赖 ps/ss/lsof（精简镜像常缺失），通过 /proc/net/tcp(+tcp6) + /proc/<pid>/fd 反查 socket inode。
