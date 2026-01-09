@@ -10,10 +10,10 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StreamUtils;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import jakarta.servlet.http.HttpServletRequest;
 import java.nio.charset.StandardCharsets;
 
 /**
@@ -39,10 +39,14 @@ public class DocController {
         return renderMd("README.md");
     }
 
-    @GetMapping(value = "/raw/{name:.+}", produces = MediaType.TEXT_PLAIN_VALUE)
+    /**
+     * 原始 Markdown（支持子目录）：/doc/raw/**  -> classpath:/doc/**
+     */
+    @GetMapping(value = "/raw/**", produces = MediaType.TEXT_PLAIN_VALUE)
     @Hidden
-    public ResponseEntity<String> raw(@PathVariable("name") String name) {
-        String safe = sanitizeName(name);
+    public ResponseEntity<String> raw(HttpServletRequest request) {
+        String name = extractPathAfterPrefix(request, "/doc/raw/");
+        String safe = sanitizePath(name);
         if (safe == null) return ResponseEntity.notFound().build();
         ClassPathResource r = new ClassPathResource("doc/" + safe);
         if (!r.exists()) return ResponseEntity.notFound().build();
@@ -54,9 +58,13 @@ public class DocController {
         }
     }
 
-    @GetMapping(value = "/{name:.+}", produces = MediaType.TEXT_HTML_VALUE)
+    /**
+     * 渲染 Markdown（支持子目录）：/doc/** -> classpath:/doc/**
+     */
+    @GetMapping(value = "/**", produces = MediaType.TEXT_HTML_VALUE)
     @Hidden
-    public ResponseEntity<String> render(@PathVariable("name") String name) {
+    public ResponseEntity<String> render(HttpServletRequest request) {
+        String name = extractPathAfterPrefix(request, "/doc/");
         return renderMd(name);
     }
 
@@ -79,13 +87,25 @@ public class DocController {
         }
     }
 
-    private String sanitizeName(String name) {
+    private String sanitizePath(String name) {
         if (name == null) return null;
         String s = name.trim();
         if (s.isEmpty()) return null;
         // 禁止路径穿越
         if (s.contains("..") || s.contains("\\") || s.startsWith("/")) return null;
         return s;
+    }
+
+    private String extractPathAfterPrefix(HttpServletRequest request, String prefix) {
+        if (request == null || prefix == null) return null;
+        String uri = request.getRequestURI();
+        String ctx = request.getContextPath();
+        if (ctx != null && !ctx.isEmpty() && uri != null && uri.startsWith(ctx)) {
+            uri = uri.substring(ctx.length());
+        }
+        if (uri == null) return null;
+        if (!uri.startsWith(prefix)) return null;
+        return uri.substring(prefix.length());
     }
 
     private String wrapHtml(String title, String bodyHtml) {
