@@ -9,6 +9,7 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StreamUtils;
+import org.springframework.web.util.UriUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -46,7 +47,7 @@ public class DocController {
     @Hidden
     public ResponseEntity<String> raw(HttpServletRequest request) {
         String name = extractPathAfterPrefix(request, "/doc/raw/");
-        String safe = sanitizePath(name);
+        String safe = sanitizePath(decodePath(name));
         if (safe == null) return ResponseEntity.notFound().build();
         ClassPathResource r = new ClassPathResource("doc/" + safe);
         if (!r.exists()) return ResponseEntity.notFound().build();
@@ -65,7 +66,7 @@ public class DocController {
     @Hidden
     public ResponseEntity<String> render(HttpServletRequest request) {
         String name = extractPathAfterPrefix(request, "/doc/");
-        return renderMd(name);
+        return renderMd(decodePath(name));
     }
 
     private ResponseEntity<String> renderMd(String name) {
@@ -109,6 +110,21 @@ public class DocController {
         return uri.substring(prefix.length());
     }
 
+    /**
+     * 兼容用户直接访问 URL-encoded 路径（例如 /doc/%E9%98%BF...md）。
+     * - 若 name 已被容器解码（/doc/阿里云部署文档.md），decode 不会改变结果
+     * - 若 name 仍是 %XX 编码，这里按 UTF-8 解码为实际文件名
+     */
+    private String decodePath(String name) {
+        if (name == null) return null;
+        try {
+            // UriUtils.decode 对 path 语义更合适（不会把 '+' 当空格来处理 query 的语义）
+            return UriUtils.decode(name, StandardCharsets.UTF_8);
+        } catch (Exception ignore) {
+            return name;
+        }
+    }
+
     private String wrapHtml(String title, String bodyHtml) {
         // 极简样式：支持 code/pre/table
         return "<!doctype html><html><head><meta charset=\"utf-8\"/>"
@@ -137,8 +153,8 @@ public class DocController {
     }
 
     private String urlPath(String s) {
-        // 仅用于拼接路径（浏览器会自动 URL encode 非 ASCII），这里不做复杂 encode
-        return s == null ? "" : s;
+        // 用于拼接 /doc/raw/** 链接：对中文/空格等做 URL encode，但保留路径分隔符 '/'
+        return s == null ? "" : UriUtils.encodePath(s, StandardCharsets.UTF_8);
     }
 }
 
