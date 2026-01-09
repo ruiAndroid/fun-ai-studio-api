@@ -44,7 +44,7 @@ participant SSE as WorkspaceRealtimeAPI
 
 FE->>WSFiles: ensure-dir(userId,appId)
 FE->>WSFiles: upload-zip / file CRUD (可选)
-FE->>WSRun: start(userId,appId)
+FE->>WSRun: build/install/preview (按钮触发)
 FE->>SSE: events(userId,appId,withLog=true)
 SSE-->>FE: status/log/ping events
 ```

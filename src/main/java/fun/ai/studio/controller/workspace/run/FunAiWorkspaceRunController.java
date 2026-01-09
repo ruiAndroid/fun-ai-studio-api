@@ -49,6 +49,57 @@ public class FunAiWorkspaceRunController {
         }
     }
 
+    @PostMapping("/build")
+    @Operation(summary = "受控构建（非阻塞）", description = "在 workspace 容器内执行 npm run build（写入 current.json/dev.log）。会先 stopRun，保证平台对 5173 拥有最终控制权。")
+    public Result<FunAiWorkspaceRunStatusResponse> build(
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "应用ID", required = true) @RequestParam Long appId
+    ) {
+        try {
+            activityTracker.touch(userId);
+            return Result.success(workspaceService.startBuild(userId, appId));
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            log.error("start build failed: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
+            return Result.error("start build failed: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/preview")
+    @Operation(summary = "受控预览（非阻塞）", description = "在 workspace 容器内执行 npm run start（全栈项目预览）。会先 stopRun，保证平台对 5173 拥有最终控制权。")
+    public Result<FunAiWorkspaceRunStatusResponse> preview(
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "应用ID", required = true) @RequestParam Long appId
+    ) {
+        try {
+            activityTracker.touch(userId);
+            return Result.success(workspaceService.startPreview(userId, appId));
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            log.error("start preview failed: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
+            return Result.error("start preview failed: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/install")
+    @Operation(summary = "受控安装依赖（非阻塞）", description = "在 workspace 容器内执行 npm install（写入 current.json/dev.log）。会先 stopRun，避免与受控预览/其它任务并发导致状态错乱。")
+    public Result<FunAiWorkspaceRunStatusResponse> install(
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "应用ID", required = true) @RequestParam Long appId
+    ) {
+        try {
+            activityTracker.touch(userId);
+            return Result.success(workspaceService.startInstall(userId, appId));
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            log.error("start install failed: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
+            return Result.error("start install failed: " + e.getMessage());
+        }
+    }
+
     @PostMapping("/stop")
     @Operation(summary = "停止当前运行应用", description = "kill 进程组并清理 /workspace/run/dev.pid 与 current.json")
     public Result<FunAiWorkspaceRunStatusResponse> stop(

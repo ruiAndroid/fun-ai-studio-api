@@ -176,7 +176,7 @@ public class FunAiAppController {
     @PostMapping("/open-editor")
     @Operation(
             summary = "打开在线编辑器（聚合接口）",
-            description = "对齐点：代码在容器内可见（通过 hostRoot bind-mount 到 /workspace）。流程：校验 app 归属 → ensure app dir（会确保容器运行）→ 检测 package.json（maxDepth=2）→ 若存在则自动触发 workspace/run/start（非阻塞）并返回 runStatus；否则仅返回 run/status 引导上传/新建。"
+            description = "对齐点：代码在容器内可见（通过 hostRoot bind-mount 到 /workspace）。流程：校验 app 归属 → ensure app dir（会确保容器运行）→ 检测 package.json（maxDepth=2）→ 返回 run/status（不自动启动；由前端按钮触发 build/preview）。"
     )
     public Result<FunAiOpenEditorResponse> openEditor(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
@@ -195,28 +195,13 @@ public class FunAiAppController {
                 return Result.error("应用不存在或无权限操作");
             }
 
-            // 关键：同一用户同时只能预览一个应用（/ws/{userId}/ 是用户级入口）
-            // 若当前运行的是其它 app（A），而用户打开的是 B（可能还未创建/无 package.json），
-            // 为避免前端默认打开预览时“看到的还是 A”，这里先 stop 当前 run，确保预览不会误指向旧应用。
-            try {
-                FunAiWorkspaceRunStatusResponse cur = funAiWorkspaceService.getRunStatus(userId);
-                String st = cur == null ? null : cur.getState();
-                Long runningAppId = cur == null ? null : cur.getAppId();
-                boolean running = st != null && ("RUNNING".equalsIgnoreCase(st) || "STARTING".equalsIgnoreCase(st));
-                if (running && runningAppId != null && !runningAppId.equals(appId)) {
-                    funAiWorkspaceService.stopRun(userId);
-                }
-            } catch (Exception ignore) {
-            }
-
             // 关键：ensureAppDir 内部已做归属校验，且会确保容器运行并创建宿主机目录（目录挂载到容器 /workspace）
             FunAiWorkspaceProjectDirResponse dir = funAiWorkspaceService.ensureAppDir(userId, appId);
             Path hostAppDir = Paths.get(dir.getHostAppDir());
             boolean hasPkg = detectPackageJson(hostAppDir);
 
-            FunAiWorkspaceRunStatusResponse runStatus = hasPkg
-                    ? funAiWorkspaceService.startDev(userId, appId)   // 非阻塞：一般返回 STARTING
-                    : funAiWorkspaceService.getRunStatus(userId);      // 通常为 IDLE
+            // 不自动启动（避免与 WS 终端自由命令并发导致进程错乱）
+            FunAiWorkspaceRunStatusResponse runStatus = funAiWorkspaceService.getRunStatus(userId); // 通常为 IDLE/STARTING/RUNNING/DEAD
 
             // 补充 runtime 字段（previewUrl/runState 等）
             fillRuntimeFields(userId, List.of(app));
@@ -239,7 +224,7 @@ public class FunAiAppController {
             resp.setHasPackageJson(hasPkg);
             resp.setRunStatus(runStatus);
             resp.setMessage(hasPkg
-                    ? "已检测到 package.json，已触发启动；请轮询 /api/fun-ai/workspace/run/status 等待 RUNNING"
+                    ? "已检测到 package.json：请点击“构建/预览”按钮触发 npm run build / npm run start；当前不会自动启动"
                     : "未检测到 package.json：请先上传 zip 或在编辑器中新建项目文件");
             return Result.success(resp);
         } catch (IllegalArgumentException e) {

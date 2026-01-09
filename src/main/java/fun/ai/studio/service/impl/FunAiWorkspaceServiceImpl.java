@@ -261,22 +261,268 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         } catch (Exception ignore) {
         }
 
+        return startManagedRun(userId, appId, "DEV");
+    }
+
+    @Override
+    public FunAiWorkspaceRunStatusResponse startBuild(Long userId, Long appId) {
+        assertEnabled();
+        if (userId == null) throw new IllegalArgumentException("userId 不能为空");
+        if (appId == null) throw new IllegalArgumentException("appId 不能为空");
+        assertAppOwned(userId, appId);
+
+        // 平台拥有最终控制权：先 stop 清理旧进程/端口占用
+        try {
+            stopRun(userId);
+        } catch (Exception ignore) {
+        }
+        return startManagedRun(userId, appId, "BUILD");
+    }
+
+    @Override
+    public FunAiWorkspaceRunStatusResponse startPreview(Long userId, Long appId) {
+        assertEnabled();
+        if (userId == null) throw new IllegalArgumentException("userId 不能为空");
+        if (appId == null) throw new IllegalArgumentException("appId 不能为空");
+        assertAppOwned(userId, appId);
+
+        // 平台拥有最终控制权：先 stop 清理旧进程/端口占用
+        try {
+            stopRun(userId);
+        } catch (Exception ignore) {
+        }
+        return startManagedRun(userId, appId, "START");
+    }
+
+    @Override
+    public FunAiWorkspaceRunStatusResponse startInstall(Long userId, Long appId) {
+        assertEnabled();
+        if (userId == null) throw new IllegalArgumentException("userId 不能为空");
+        if (appId == null) throw new IllegalArgumentException("appId 不能为空");
+        assertAppOwned(userId, appId);
+
+        // 平台拥有最终控制权：避免与预览/其它任务并发导致状态错乱
+        try {
+            stopRun(userId);
+        } catch (Exception ignore) {
+        }
+        return startManagedRun(userId, appId, "INSTALL");
+    }
+
+    /**
+     * 受控运行（非阻塞）：统一产出 run/current.json、run/dev.pid、run/dev.log
+     * - DEV：npm run dev（并强制端口 + base）
+     * - START：npm run start（注入 PORT/HOST/BASE_PATH）
+     * - BUILD：npm run build（执行完成后写入 exitCode/finishedAt，并清理 pid 文件）
+     * - INSTALL：npm install（执行完成后写入 exitCode/finishedAt，并清理 pid 文件）
+     */
+    private FunAiWorkspaceRunStatusResponse startManagedRun(Long userId, Long appId, String type) {
         FunAiWorkspaceInfoResponse ws = ensureWorkspace(userId);
-        // 确保应用目录存在
         ensureAppDir(userId, appId);
 
         String containerName = ws.getContainerName();
-        String containerAppDir = Paths.get(props.getContainerWorkdir(), "apps", String.valueOf(appId)).toString().replace("\\", "/");
-        String runDir = Paths.get(props.getContainerWorkdir(), "run").toString().replace("\\", "/");
+        String containerWorkdir = props.getContainerWorkdir();
+        String containerAppDir = Paths.get(containerWorkdir, "apps", String.valueOf(appId)).toString().replace("\\", "/");
+        String runDir = Paths.get(containerWorkdir, "run").toString().replace("\\", "/");
         String pidFile = runDir + "/dev.pid";
         String metaFile = runDir + "/current.json";
         String logFile = runDir + "/dev.log";
-        String startSh = runDir + "/dev-start.sh";
+        String startSh = runDir + "/managed-start.sh";
 
-        // 在容器内启动（只允许一个项目运行：若 pid 仍存活则拒绝）
-        // 设计：start 接口不阻塞（不等待 npm install）
-        // - 先写入 STARTING 的 meta（pid=null）
-        // - 再用后台脚本完成 npm install + 启动 vite，并更新 meta/pid
+        String op = (type == null ? "" : type.trim().toUpperCase());
+        if (op.isEmpty()) op = "DEV";
+
+        String innerScript;
+        if ("BUILD".equals(op)) {
+            innerScript = ""
+                    + "set -e\n"
+                    + "APP_DIR='" + containerAppDir + "'\n"
+                    + "PID_FILE='" + pidFile + "'\n"
+                    + "META_FILE='" + metaFile + "'\n"
+                    + "LOG_FILE='" + logFile + "'\n"
+                    + "STARTED_AT=$(date +%s)\n"
+                    + "echo \"[build] start at $(date -Is)\" >>\"$LOG_FILE\" 2>&1\n"
+                    + "cd \"$APP_DIR\" >>\"$LOG_FILE\" 2>&1 || true\n"
+                    + "if [ ! -f package.json ]; then\n"
+                    + "  pkg=$(find \"$APP_DIR\" -maxdepth 2 -type f -name package.json 2>/dev/null | head -n 1 || true)\n"
+                    + "  if [ -n \"$pkg\" ]; then APP_DIR=$(dirname \"$pkg\"); cd \"$APP_DIR\" >>\"$LOG_FILE\" 2>&1; fi\n"
+                    + "fi\n"
+                    + "code=0\n"
+                    + "if [ ! -f package.json ]; then echo \"package.json not found: $APP_DIR\" >>\"$LOG_FILE\"; code=2; else\n"
+                    + "  npm config set registry https://registry.npmmirror.com >/dev/null 2>&1 || true\n"
+                    + "  if [ -n \"$NPM_CONFIG_CACHE\" ]; then export npm_config_cache=\"$NPM_CONFIG_CACHE\"; fi\n"
+                    + "  if [ -n \"$npm_config_cache\" ]; then echo \"[build] npm cache: $npm_config_cache\" >>\"$LOG_FILE\" 2>&1; fi\n"
+                    + "  echo \"[build] npm run build\" >>\"$LOG_FILE\" 2>&1\n"
+                    + "  set +e\n"
+                    + "  npm run build >>\"$LOG_FILE\" 2>&1\n"
+                    + "  code=$?\n"
+                    + "  set -e\n"
+                    + "fi\n"
+                    + "FINISHED_AT=$(date +%s)\n"
+                    + "rm -f \"$PID_FILE\" || true\n"
+                    + "printf '{\"appId\":" + appId + ",\"type\":\"BUILD\",\"pid\":null,\"startedAt\":%s,\"finishedAt\":%s,\"exitCode\":%s,\"logPath\":\"" + logFile + "\"}' \"$STARTED_AT\" \"$FINISHED_AT\" \"$code\" > \"$META_FILE\"\n";
+        } else if ("INSTALL".equals(op)) {
+            innerScript = ""
+                    + "set -e\n"
+                    + "APP_DIR='" + containerAppDir + "'\n"
+                    + "PID_FILE='" + pidFile + "'\n"
+                    + "META_FILE='" + metaFile + "'\n"
+                    + "LOG_FILE='" + logFile + "'\n"
+                    + "STARTED_AT=$(date +%s)\n"
+                    + "echo \"[install] start at $(date -Is)\" >>\"$LOG_FILE\" 2>&1\n"
+                    + "cd \"$APP_DIR\" >>\"$LOG_FILE\" 2>&1 || true\n"
+                    + "if [ ! -f package.json ]; then\n"
+                    + "  pkg=$(find \"$APP_DIR\" -maxdepth 2 -type f -name package.json 2>/dev/null | head -n 1 || true)\n"
+                    + "  if [ -n \"$pkg\" ]; then APP_DIR=$(dirname \"$pkg\"); cd \"$APP_DIR\" >>\"$LOG_FILE\" 2>&1; fi\n"
+                    + "fi\n"
+                    + "code=0\n"
+                    + "if [ ! -f package.json ]; then echo \"package.json not found: $APP_DIR\" >>\"$LOG_FILE\"; code=2; else\n"
+                    + "  npm config set registry https://registry.npmmirror.com >/dev/null 2>&1 || true\n"
+                    + "  if [ -n \"$NPM_CONFIG_CACHE\" ]; then export npm_config_cache=\"$NPM_CONFIG_CACHE\"; fi\n"
+                    + "  if [ -n \"$npm_config_cache\" ]; then echo \"[install] npm cache: $npm_config_cache\" >>\"$LOG_FILE\" 2>&1; fi\n"
+                    + "  echo \"[install] npm install\" >>\"$LOG_FILE\" 2>&1\n"
+                    + "  set +e\n"
+                    + "  npm install >>\"$LOG_FILE\" 2>&1\n"
+                    + "  code=$?\n"
+                    + "  set -e\n"
+                    + "fi\n"
+                    + "FINISHED_AT=$(date +%s)\n"
+                    + "rm -f \"$PID_FILE\" || true\n"
+                    + "printf '{\"appId\":" + appId + ",\"type\":\"INSTALL\",\"pid\":null,\"startedAt\":%s,\"finishedAt\":%s,\"exitCode\":%s,\"logPath\":\"" + logFile + "\"}' \"$STARTED_AT\" \"$FINISHED_AT\" \"$code\" > \"$META_FILE\"\n";
+        } else if ("START".equals(op)) {
+            innerScript = ""
+                    + "set -e\n"
+                    + "APP_DIR='" + containerAppDir + "'\n"
+                    + "PORT='" + ws.getContainerPort() + "'\n"
+                    + "PID_FILE='" + pidFile + "'\n"
+                    + "META_FILE='" + metaFile + "'\n"
+                    + "LOG_FILE='" + logFile + "'\n"
+                    + "BASE_PATH='/ws/" + userId + "/'\n"
+                    + "echo \"[preview] start at $(date -Is)\" >>\"$LOG_FILE\" 2>&1\n"
+                    + "cd \"$APP_DIR\" >>\"$LOG_FILE\" 2>&1 || true\n"
+                    + "if [ ! -f package.json ]; then\n"
+                    + "  pkg=$(find \"$APP_DIR\" -maxdepth 2 -type f -name package.json 2>/dev/null | head -n 1 || true)\n"
+                    + "  if [ -n \"$pkg\" ]; then APP_DIR=$(dirname \"$pkg\"); cd \"$APP_DIR\" >>\"$LOG_FILE\" 2>&1; fi\n"
+                    + "fi\n"
+                    + "if [ ! -f package.json ]; then echo \"package.json not found: $APP_DIR\" >>\"$LOG_FILE\"; exit 2; fi\n"
+                    + "npm config set registry https://registry.npmmirror.com >/dev/null 2>&1 || true\n"
+                    + "if [ -n \"$NPM_CONFIG_CACHE\" ]; then export npm_config_cache=\"$NPM_CONFIG_CACHE\"; fi\n"
+                    + "if [ -n \"$npm_config_cache\" ]; then echo \"[preview] npm cache: $npm_config_cache\" >>\"$LOG_FILE\" 2>&1; fi\n"
+                    + "export PORT=\"$PORT\"\n"
+                    + "export HOST=\"0.0.0.0\"\n"
+                    + "export BASE_PATH=\"$BASE_PATH\"\n"
+                    + "export FUNAI_USER_ID='" + userId + "'\n"
+                    + "export FUNAI_APP_ID='" + appId + "'\n"
+                    + "echo \"[preview] npm run start on $PORT base=$BASE_PATH\" >>\"$LOG_FILE\" 2>&1\n"
+                    + "TARGET_PORT_HEX=$(printf '%04X' \"$PORT\")\n"
+                    + "inode=$(awk -v p=\":$TARGET_PORT_HEX\" 'toupper($2) ~ (p\"$\") && $4==\"0A\" {print $10; exit}' /proc/net/tcp 2>/dev/null || true)\n"
+                    + "if [ -z \"$inode\" ]; then inode=$(awk -v p=\":$TARGET_PORT_HEX\" 'toupper($2) ~ (p\"$\") && $4==\"0A\" {print $10; exit}' /proc/net/tcp6 2>/dev/null || true); fi\n"
+                    + "if [ -n \"$inode\" ]; then\n"
+                    + "  echo \"[preview] port $PORT is in use (inode=$inode), trying to kill holder...\" >>\"$LOG_FILE\" 2>&1\n"
+                    + "  for p in /proc/[0-9]*; do\n"
+                    + "    pid=${p#/proc/}\n"
+                    + "    for fd in $p/fd/*; do\n"
+                    + "      link=$(readlink \"$fd\" 2>/dev/null || true)\n"
+                    + "      if [ \"$link\" = \"socket:[$inode]\" ]; then kill -TERM \"$pid\" 2>/dev/null || true; fi\n"
+                    + "    done\n"
+                    + "  done\n"
+                    + "  sleep 1\n"
+                    + "  for p in /proc/[0-9]*; do\n"
+                    + "    pid=${p#/proc/}\n"
+                    + "    for fd in $p/fd/*; do\n"
+                    + "      link=$(readlink \"$fd\" 2>/dev/null || true)\n"
+                    + "      if [ \"$link\" = \"socket:[$inode]\" ]; then kill -KILL \"$pid\" 2>/dev/null || true; fi\n"
+                    + "    done\n"
+                    + "  done\n"
+                    + "fi\n"
+                    + "setsid sh -c \"npm run start\" >>\"$LOG_FILE\" 2>&1 < /dev/null &\n"
+                    + "pid=$!\n"
+                    + "echo \"$pid\" > \"$PID_FILE\"\n"
+                    + "printf '{\"appId\":" + appId + ",\"type\":\"START\",\"pid\":%s,\"startedAt\":%s,\"logPath\":\"" + logFile + "\"}' \"$pid\" \"$(date +%s)\" > \"$META_FILE\"\n";
+        } else {
+            // DEV（原有逻辑保持）
+            innerScript = ""
+                    + "set -e\n"
+                    + "APP_DIR='" + containerAppDir + "'\n"
+                    + "PORT='" + ws.getContainerPort() + "'\n"
+                    + "PID_FILE='" + pidFile + "'\n"
+                    + "META_FILE='" + metaFile + "'\n"
+                    + "LOG_FILE='" + logFile + "'\n"
+                    + (props.getMongo() != null && props.getMongo().isEnabled()
+                    ? ""
+                    + "export FUNAI_USER_ID='" + userId + "'\n"
+                    + "export FUNAI_APP_ID='" + appId + "'\n"
+                    + "export MONGO_HOST='127.0.0.1'\n"
+                    + "export MONGO_PORT='" + (props.getMongo().getPort() > 0 ? props.getMongo().getPort() : 27017) + "'\n"
+                    + "export MONGO_DB_PREFIX='" + (StringUtils.hasText(props.getMongo().getDbNamePrefix()) ? props.getMongo().getDbNamePrefix() : "app_") + "'\n"
+                    + "export MONGO_DB_NAME=\"${MONGO_DB_PREFIX}" + appId + "\"\n"
+                    + "export MONGO_URL=\"mongodb://${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB_NAME}\"\n"
+                    + "export MONGODB_URI=\"$MONGO_URL\"\n"
+                    : "")
+                    + "echo \"[dev-start] start at $(date -Is)\" >>\"$LOG_FILE\" 2>&1\n"
+                    + "cd \"$APP_DIR\" >>\"$LOG_FILE\" 2>&1 || true\n"
+                    + "if [ ! -f package.json ]; then\n"
+                    + "  pkg=$(find \"$APP_DIR\" -maxdepth 2 -type f -name package.json 2>/dev/null | head -n 1 || true)\n"
+                    + "  if [ -n \"$pkg\" ]; then\n"
+                    + "    APP_DIR=$(dirname \"$pkg\")\n"
+                    + "    echo \"[dev-start] detected project root: $APP_DIR\" >>\"$LOG_FILE\" 2>&1\n"
+                    + "    cd \"$APP_DIR\" >>\"$LOG_FILE\" 2>&1\n"
+                    + "  fi\n"
+                    + "fi\n"
+                    + "if [ ! -f package.json ]; then echo \"package.json not found: $APP_DIR\" >>\"$LOG_FILE\"; exit 2; fi\n"
+                    + "npm config set registry https://registry.npmmirror.com >/dev/null 2>&1 || true\n"
+                    + "if [ -n \"$NPM_CONFIG_CACHE\" ]; then export npm_config_cache=\"$NPM_CONFIG_CACHE\"; fi\n"
+                    + "if [ -n \"$npm_config_cache\" ]; then echo \"[dev-start] npm cache: $npm_config_cache\" >>\"$LOG_FILE\" 2>&1; fi\n"
+                    + "if [ ! -d node_modules ]; then echo \"[dev-start] npm install...\" >>\"$LOG_FILE\"; npm install >>\"$LOG_FILE\" 2>&1; fi\n"
+                    + "echo \"[dev-start] npm run dev on $PORT\" >>\"$LOG_FILE\" 2>&1\n"
+                    + "export CHOKIDAR_USEPOLLING=true\n"
+                    + "export CHOKIDAR_INTERVAL=1000\n"
+                    + "export WATCHPACK_POLLING=true\n"
+                    + "echo \"[dev-start] watch: CHOKIDAR_USEPOLLING=$CHOKIDAR_USEPOLLING interval=$CHOKIDAR_INTERVAL\" >>\"$LOG_FILE\" 2>&1\n"
+                    + "TARGET_PORT_HEX=$(printf '%04X' \"$PORT\")\n"
+                    + "find_inode() {\n"
+                    + "  local inode\n"
+                    + "  inode=$(awk -v p=\":$TARGET_PORT_HEX\" 'toupper($2) ~ (p\"$\") && $4==\"0A\" {print $10; exit}' /proc/net/tcp 2>/dev/null || true)\n"
+                    + "  if [ -z \"$inode\" ]; then\n"
+                    + "    inode=$(awk -v p=\":$TARGET_PORT_HEX\" 'toupper($2) ~ (p\"$\") && $4==\"0A\" {print $10; exit}' /proc/net/tcp6 2>/dev/null || true)\n"
+                    + "  fi\n"
+                    + "  echo \"$inode\"\n"
+                    + "}\n"
+                    + "kill_by_inode() {\n"
+                    + "  local inode=\"$1\"\n"
+                    + "  [ -z \"$inode\" ] && return 0\n"
+                    + "  echo \"[dev-start] port $PORT is in use (inode=$inode), trying to kill holder...\" >>\"$LOG_FILE\" 2>&1\n"
+                    + "  for p in /proc/[0-9]*; do\n"
+                    + "    pid=${p#/proc/}\n"
+                    + "    for fd in $p/fd/*; do\n"
+                    + "      link=$(readlink \"$fd\" 2>/dev/null || true)\n"
+                    + "      if [ \"$link\" = \"socket:[$inode]\" ]; then\n"
+                    + "        kill -TERM \"$pid\" 2>/dev/null || true\n"
+                    + "      fi\n"
+                    + "    done\n"
+                    + "  done\n"
+                    + "  sleep 1\n"
+                    + "  for p in /proc/[0-9]*; do\n"
+                    + "    pid=${p#/proc/}\n"
+                    + "    for fd in $p/fd/*; do\n"
+                    + "      link=$(readlink \"$fd\" 2>/dev/null || true)\n"
+                    + "      if [ \"$link\" = \"socket:[$inode]\" ]; then\n"
+                    + "        kill -KILL \"$pid\" 2>/dev/null || true\n"
+                    + "      fi\n"
+                    + "    done\n"
+                    + "  done\n"
+                    + "}\n"
+                    + "inode=$(find_inode)\n"
+                    + "if [ -n \"$inode\" ]; then kill_by_inode \"$inode\"; fi\n"
+                    + "BASE='/ws/" + userId + "/'\n"
+                    + "setsid sh -c \"npm run dev -- --host 0.0.0.0 --port $PORT --strictPort --base $BASE\" >>\"$LOG_FILE\" 2>&1 < /dev/null &\n"
+                    + "pid=$!\n"
+                    + "echo \"$pid\" > \"$PID_FILE\"\n"
+                    + "printf '{\"appId\":" + appId + ",\"type\":\"DEV\",\"pid\":%s,\"startedAt\":%s,\"logPath\":\"" + logFile + "\"}' \"$pid\" \"$(date +%s)\" > \"$META_FILE\"\n";
+        }
+
+        // 外层脚本：只做互斥与写入 STARTING/BULDING meta，然后后台启动 innerScript
+        String initialState = "BUILD".equals(op) ? "BUILDING" : ("INSTALL".equals(op) ? "INSTALLING" : "STARTING");
         String script = ""
                 + "set -e\n"
                 + "RUN_DIR='" + runDir + "'\n"
@@ -293,130 +539,32 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                 + "  fi\n"
                 + "fi\n"
                 + "rm -f \"$PID_FILE\" || true\n"
-                + "printf '{\"appId\":" + appId + ",\"type\":\"DEV\",\"pid\":null,\"startedAt\":'\"$(date +%s)\"',\"logPath\":\"" + logFile + "\"}' > \"$META_FILE\"\n"
-                // 用单引号 heredoc，避免在“写入脚本文件”这一步把 $APP_DIR/$LOG_FILE 等变量提前展开为空
+                + "printf '{\"appId\":" + appId + ",\"type\":\"" + op + "\",\"pid\":null,\"startedAt\":'\"$(date +%s)\"',\"logPath\":\"" + logFile + "\"}' > \"$META_FILE\"\n"
                 + "cat > \"$START_SH\" <<'EOS'\n"
-                + "set -e\n"
-                + "APP_DIR='" + containerAppDir + "'\n"
-                + "PORT='" + ws.getContainerPort() + "'\n"
-                + "PID_FILE='" + pidFile + "'\n"
-                + "META_FILE='" + metaFile + "'\n"
-                + "LOG_FILE='" + logFile + "'\n"
-                + (props.getMongo() != null && props.getMongo().isEnabled()
-                    ? ""
-                    + "export FUNAI_USER_ID='" + userId + "'\n"
-                    + "export FUNAI_APP_ID='" + appId + "'\n"
-                    + "export MONGO_HOST='127.0.0.1'\n"
-                    + "export MONGO_PORT='" + (props.getMongo().getPort() > 0 ? props.getMongo().getPort() : 27017) + "'\n"
-                    + "export MONGO_DB_PREFIX='" + (StringUtils.hasText(props.getMongo().getDbNamePrefix()) ? props.getMongo().getDbNamePrefix() : "app_") + "'\n"
-                    + "export MONGO_DB_NAME=\"${MONGO_DB_PREFIX}" + appId + "\"\n"
-                    + "export MONGO_URL=\"mongodb://${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB_NAME}\"\n"
-                    + "export MONGODB_URI=\"$MONGO_URL\"\n"
-                    : "")
-                + "echo \"[dev-start] start at $(date -Is)\" >>\"$LOG_FILE\" 2>&1\n"
-                + "cd \"$APP_DIR\" >>\"$LOG_FILE\" 2>&1 || true\n"
-                + "if [ ! -f package.json ]; then\n"
-                + "  # 常见：zip 顶层带一层目录，package.json 在子目录里\n"
-                + "  pkg=$(find \"$APP_DIR\" -maxdepth 2 -type f -name package.json 2>/dev/null | head -n 1 || true)\n"
-                + "  if [ -n \"$pkg\" ]; then\n"
-                + "    APP_DIR=$(dirname \"$pkg\")\n"
-                + "    echo \"[dev-start] detected project root: $APP_DIR\" >>\"$LOG_FILE\" 2>&1\n"
-                + "    cd \"$APP_DIR\" >>\"$LOG_FILE\" 2>&1\n"
-                + "  fi\n"
-                + "fi\n"
-                + "if [ ! -f package.json ]; then echo \"package.json not found: $APP_DIR\" >>\"$LOG_FILE\"; exit 2; fi\n"
-                + "npm config set registry https://registry.npmmirror.com >/dev/null 2>&1 || true\n"
-                + "if [ -n \"$NPM_CONFIG_CACHE\" ]; then export npm_config_cache=\"$NPM_CONFIG_CACHE\"; fi\n"
-                + "if [ -n \"$npm_config_cache\" ]; then echo \"[dev-start] npm cache: $npm_config_cache\" >>\"$LOG_FILE\" 2>&1; fi\n"
-                + "if [ ! -d node_modules ]; then echo \"[dev-start] npm install...\" >>\"$LOG_FILE\"; npm install >>\"$LOG_FILE\" 2>&1; fi\n"
-                + "echo \"[dev-start] npm run dev on $PORT\" >>\"$LOG_FILE\" 2>&1\n"
-                // 关键：容器 + 挂载卷场景下，inotify 事件可能不稳定，导致“刷新也还是旧内容”（Vite transform 缓存未失效）
-                // 通过开启 polling，确保文件增删改能被可靠检测到（代价是稍高 CPU；后续可做成可配置项）
-                + "export CHOKIDAR_USEPOLLING=true\n"
-                + "export CHOKIDAR_INTERVAL=1000\n"
-                + "export WATCHPACK_POLLING=true\n"
-                + "echo \"[dev-start] watch: CHOKIDAR_USEPOLLING=$CHOKIDAR_USEPOLLING interval=$CHOKIDAR_INTERVAL\" >>\"$LOG_FILE\" 2>&1\n"
-                // 关键：必须确保 dev server 绑定在固定端口（containerPort，默认 5173），因为 nginx/previewUrl 只会反代这个端口
-                // 如果端口被历史进程占用，Vite 会自动切到 5174/5175，导致“容器内文件已更新，但 previewUrl 仍旧内容”（命中旧端口）
-                // 这里不依赖 ps/lsof/fuser（精简镜像常缺失），直接通过 /proc 定位占用端口的进程并清理
-                // /proc/net/tcp 的十六进制端口通常是大写；这里用 toupper 匹配，避免大小写导致找不到 inode
-                + "TARGET_PORT_HEX=$(printf '%04X' \"$PORT\")\n"
-                + "find_inode() {\n"
-                + "  local inode\n"
-                + "  inode=$(awk -v p=\":$TARGET_PORT_HEX\" 'toupper($2) ~ (p\"$\") && $4==\"0A\" {print $10; exit}' /proc/net/tcp 2>/dev/null || true)\n"
-                + "  if [ -z \"$inode\" ]; then\n"
-                + "    inode=$(awk -v p=\":$TARGET_PORT_HEX\" 'toupper($2) ~ (p\"$\") && $4==\"0A\" {print $10; exit}' /proc/net/tcp6 2>/dev/null || true)\n"
-                + "  fi\n"
-                + "  echo \"$inode\"\n"
-                + "}\n"
-                + "kill_by_inode() {\n"
-                + "  local inode=\"$1\"\n"
-                + "  [ -z \"$inode\" ] && return 0\n"
-                + "  echo \"[dev-start] port $PORT is in use (inode=$inode), trying to kill holder...\" >>\"$LOG_FILE\" 2>&1\n"
-                + "  for p in /proc/[0-9]*; do\n"
-                + "    pid=${p#/proc/}\n"
-                + "    for fd in $p/fd/*; do\n"
-                + "      link=$(readlink \"$fd\" 2>/dev/null || true)\n"
-                + "      if [ \"$link\" = \"socket:[$inode]\" ]; then\n"
-                + "        kill -TERM \"$pid\" 2>/dev/null || true\n"
-                + "      fi\n"
-                + "    done\n"
-                + "  done\n"
-                + "  sleep 1\n"
-                + "  for p in /proc/[0-9]*; do\n"
-                + "    pid=${p#/proc/}\n"
-                + "    for fd in $p/fd/*; do\n"
-                + "      link=$(readlink \"$fd\" 2>/dev/null || true)\n"
-                + "      if [ \"$link\" = \"socket:[$inode]\" ]; then\n"
-                + "        kill -KILL \"$pid\" 2>/dev/null || true\n"
-                + "      fi\n"
-                + "    done\n"
-                + "  done\n"
-                + "}\n"
-                + "inode=$(find_inode)\n"
-                + "if [ -n \"$inode\" ]; then kill_by_inode \"$inode\"; fi\n"
-                // 关键：给 vite 设置 base，使其 dev client/HMR 等资源路径都带上 /ws/{userId}/ 前缀
-                // 这样 nginx 才能用路径反代（只开 80/443）而无需做复杂 rewrite/sub_filter
-                + "BASE='/ws/" + userId + "/'\n"
-                + "setsid sh -c \"npm run dev -- --host 0.0.0.0 --port $PORT --strictPort --base $BASE\" >>\"$LOG_FILE\" 2>&1 < /dev/null &\n"
-                + "pid=$!\n"
-                + "echo \"$pid\" > \"$PID_FILE\"\n"
-                + "printf '{\"appId\":" + appId + ",\"type\":\"DEV\",\"pid\":%s,\"startedAt\":%s,\"logPath\":\"" + logFile + "\"}' \"$pid\" \"$(date +%s)\" > \"$META_FILE\"\n"
+                + innerScript
                 + "EOS\n"
                 + "chmod +x \"$START_SH\" || true\n"
                 + "nohup bash \"$START_SH\" >>\"$LOG_FILE\" 2>&1 &\n"
-                + "echo \"LAUNCHED\"\n";
+                + "pid=$!\n"
+                + "echo \"$pid\" > \"$PID_FILE\"\n"
+                + "printf '{\"appId\":" + appId + ",\"type\":\"" + op + "\",\"pid\":%s,\"startedAt\":%s,\"logPath\":\"" + logFile + "\"}' \"$pid\" \"$(date +%s)\" > \"$META_FILE\"\n"
+                + "echo \"LAUNCHED:" + initialState + "\"\n";
 
         CommandResult r = docker("exec", containerName, "bash", "-lc", script);
         if (r.getExitCode() == 42) {
             FunAiWorkspaceRunStatusResponse status = getRunStatus(userId);
-            status.setMessage("已在运行中，当前仅允许同时运行一个应用");
+            if (status.getMessage() == null || status.getMessage().isBlank()) {
+                status.setMessage("已存在运行任务，请先停止或等待完成");
+            }
             return status;
         }
         if (!r.isSuccess()) {
-            throw new RuntimeException("启动 dev 失败: " + r.getOutput());
+            throw new RuntimeException("启动任务失败(" + op + "): " + r.getOutput());
         }
         FunAiWorkspaceRunStatusResponse status = getRunStatus(userId);
-        // start 接口立即返回（一般为 STARTING）
         if (status.getMessage() == null || status.getMessage().isBlank()) {
-            status.setMessage("已触发启动，请轮询 /run/status 等待 RUNNING");
+            status.setMessage("已触发启动(" + op + ")，请轮询 /run/status 或通过 SSE /realtime/events 查看日志与状态");
         }
-
-        // last-known：记录最近一次 start 的 appId/状态
-        FunAiWorkspaceRun r2 = new FunAiWorkspaceRun();
-        r2.setUserId(userId);
-        r2.setAppId(appId);
-        r2.setRunState(status.getState());
-        r2.setRunPid(status.getPid());
-        r2.setLogPath(status.getLogPath());
-        r2.setPreviewUrl(status.getPreviewUrl());
-        r2.setLastError(status.getMessage());
-        r2.setLastStartedAt(System.currentTimeMillis() / 1000L);
-        r2.setContainerName(ws.getContainerName());
-        r2.setHostPort(ws.getHostPort());
-        r2.setContainerPort(ws.getContainerPort());
-        r2.setContainerStatus(queryContainerStatus(ws.getContainerName()));
-        upsertWorkspaceRun(r2);
         return status;
     }
 
@@ -508,6 +656,8 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             resp.setAppId(meta.getAppId());
             resp.setPid(meta.getPid());
             resp.setLogPath(meta.getLogPath());
+            resp.setType(meta.getType());
+            resp.setExitCode(meta.getExitCode());
 
             // pid 为空：说明 start 已触发，但后台脚本尚未写入 pid（npm install 进行中）
             if (meta.getPid() == null) {
@@ -533,16 +683,42 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     return resp;
                 }
 
+                String t = meta.getType() == null ? "" : meta.getType().trim().toUpperCase();
                 long nowSec = System.currentTimeMillis() / 1000L;
                 long startedAt = meta.getStartedAt() == null ? 0L : meta.getStartedAt();
                 int timeoutSec = Math.max(30, props.getRunStartingTimeoutSeconds());
                 if (startedAt > 0 && nowSec - startedAt >= timeoutSec) {
                     resp.setState("DEAD");
-                    resp.setMessage("启动超时（" + timeoutSec + "s），请查看日志: " + (resp.getLogPath() == null ? "" : resp.getLogPath()));
+                    resp.setMessage(("BUILD".equals(t) ? "构建" : "启动") + "超时（" + timeoutSec + "s），请查看日志: " + (resp.getLogPath() == null ? "" : resp.getLogPath()));
                 } else {
-                    resp.setState("STARTING");
-                    if (resp.getMessage() == null || resp.getMessage().isBlank()) {
-                        resp.setMessage("启动中（可能在 npm install），请稍后重试；可查看日志: " + (resp.getLogPath() == null ? "" : resp.getLogPath()));
+                    if ("BUILD".equals(t) || "INSTALL".equals(t)) {
+                        // BUILD：pid=null 可能是“启动中（尚未写入 pid）”，也可能是“已结束且写入 exitCode/finishedAt”
+                        if (meta.getExitCode() != null || meta.getFinishedAt() != null) {
+                            Integer ec = meta.getExitCode();
+                            if (ec != null) {
+                                resp.setState(ec == 0 ? "SUCCESS" : "FAILED");
+                                if (resp.getMessage() == null || resp.getMessage().isBlank()) {
+                                    String okMsg = "INSTALL".equals(t) ? "依赖安装成功" : "构建成功";
+                                    String failMsg = "INSTALL".equals(t) ? ("依赖安装失败(exitCode=" + ec + ")") : ("构建失败(exitCode=" + ec + ")");
+                                    resp.setMessage(ec == 0 ? okMsg : (failMsg + "，请查看日志: " + (resp.getLogPath() == null ? "" : resp.getLogPath())));
+                                }
+                            } else {
+                                resp.setState("UNKNOWN");
+                                if (resp.getMessage() == null || resp.getMessage().isBlank()) {
+                                    resp.setMessage(("INSTALL".equals(t) ? "依赖安装" : "构建") + "已结束，但未获取 exitCode；请查看日志: " + (resp.getLogPath() == null ? "" : resp.getLogPath()));
+                                }
+                            }
+                        } else {
+                            resp.setState("INSTALL".equals(t) ? "INSTALLING" : "BUILDING");
+                            if (resp.getMessage() == null || resp.getMessage().isBlank()) {
+                                resp.setMessage(("INSTALL".equals(t) ? "依赖安装中" : "构建中") + "，请稍后重试；可查看日志: " + (resp.getLogPath() == null ? "" : resp.getLogPath()));
+                            }
+                        }
+                    } else {
+                        resp.setState("STARTING");
+                        if (resp.getMessage() == null || resp.getMessage().isBlank()) {
+                            resp.setMessage("启动中（可能在 npm install），请稍后重试；可查看日志: " + (resp.getLogPath() == null ? "" : resp.getLogPath()));
+                        }
                     }
                 }
                 FunAiWorkspaceRun r = new FunAiWorkspaceRun();
@@ -562,39 +738,74 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                 return resp;
             }
 
-            // 进程存活校验（容器内） + 端口就绪判定（/dev/tcp，无需依赖 curl/ss）
-            String check = ""
-                    + "pid=" + meta.getPid() + "\n"
-                    + "port=" + ws.getContainerPort() + "\n"
-                    + "if kill -0 \"$pid\" 2>/dev/null; then\n"
-                    + "  (echo > /dev/tcp/127.0.0.1/$port) >/dev/null 2>&1 && echo RUNNING || echo STARTING\n"
-                    + "else\n"
-                    + "  echo DEAD\n"
-                    + "fi\n";
-            CommandResult alive = docker("exec", ws.getContainerName(), "bash", "-lc", check);
-            String s = alive.getOutput() == null ? "" : alive.getOutput().trim();
-            if (s.contains("RUNNING")) {
-                resp.setState("RUNNING");
-                resp.setPreviewUrl(buildPreviewUrl(ws));
-            } else if (s.contains("STARTING")) {
-                resp.setState("STARTING");
+            String t = meta.getType() == null ? "" : meta.getType().trim().toUpperCase();
+            if ("BUILD".equals(t) || "INSTALL".equals(t)) {
+                // BUILD/INSTALL：只关心进程是否存活，不做端口探测
+                String check = ""
+                        + "pid=" + meta.getPid() + "\n"
+                        + "if kill -0 \"$pid\" 2>/dev/null; then\n"
+                        + "  echo RUNNING\n"
+                        + "else\n"
+                        + "  echo DONE\n"
+                        + "fi\n";
+                CommandResult alive = docker("exec", ws.getContainerName(), "bash", "-lc", check);
+                String s = alive.getOutput() == null ? "" : alive.getOutput().trim();
+                if (s.contains("RUNNING")) {
+                    resp.setState("INSTALL".equals(t) ? "INSTALLING" : "BUILDING");
+                } else {
+                    // build 已结束：根据 exitCode 给出 SUCCESS/FAILED（若 meta 未写 exitCode，则 UNKNOWN）
+                    Integer ec = meta.getExitCode();
+                    if (ec != null) {
+                        resp.setState(ec == 0 ? "SUCCESS" : "FAILED");
+                        if (resp.getMessage() == null || resp.getMessage().isBlank()) {
+                            String okMsg = "INSTALL".equals(t) ? "依赖安装成功" : "构建成功";
+                            String failMsg = "INSTALL".equals(t) ? ("依赖安装失败(exitCode=" + ec + ")") : ("构建失败(exitCode=" + ec + ")");
+                            resp.setMessage(ec == 0 ? okMsg : (failMsg + "，请查看日志: " + (resp.getLogPath() == null ? "" : resp.getLogPath())));
+                        }
+                    } else {
+                        resp.setState("UNKNOWN");
+                        if (resp.getMessage() == null || resp.getMessage().isBlank()) {
+                            resp.setMessage(("INSTALL".equals(t) ? "依赖安装" : "构建") + "已结束，但未获取 exitCode；请查看日志: " + (resp.getLogPath() == null ? "" : resp.getLogPath()));
+                        }
+                    }
+                }
             } else {
-                resp.setState("DEAD");
+                // DEV/START：进程存活校验（容器内） + 端口就绪判定（/dev/tcp，无需依赖 curl/ss）
+                String check = ""
+                        + "pid=" + meta.getPid() + "\n"
+                        + "port=" + ws.getContainerPort() + "\n"
+                        + "if kill -0 \"$pid\" 2>/dev/null; then\n"
+                        + "  (echo > /dev/tcp/127.0.0.1/$port) >/dev/null 2>&1 && echo RUNNING || echo STARTING\n"
+                        + "else\n"
+                        + "  echo DEAD\n"
+                        + "fi\n";
+                CommandResult alive = docker("exec", ws.getContainerName(), "bash", "-lc", check);
+                String s = alive.getOutput() == null ? "" : alive.getOutput().trim();
+                if (s.contains("RUNNING")) {
+                    resp.setState("RUNNING");
+                    resp.setPreviewUrl(buildPreviewUrl(ws));
+                } else if (s.contains("STARTING")) {
+                    resp.setState("STARTING");
+                } else {
+                    resp.setState("DEAD");
+                }
             }
 
-            // 诊断：containerPort 当前监听进程 pid（用于排查端口被旧进程占用，导致 previewUrl 指向旧内容）
-            Long listenPid = tryGetListenPid(ws.getContainerName(), ws.getContainerPort());
-            resp.setPortListenPid(listenPid);
-            // 注意：current.json 的 pid 是 setsid/sh 的“进程组组长”，真正监听端口的通常是 node 子进程
-            // 因此这里用“端口监听进程的 pgrp 是否等于 current.json pid”来判断是否同一次 run
-            if (listenPid != null && resp.getPid() != null) {
-                Long listenPgrp = tryGetProcessGroupId(ws.getContainerName(), listenPid);
-                if (listenPgrp != null && !listenPgrp.equals(resp.getPid())) {
-                    String warn = "诊断：containerPort=" + ws.getContainerPort()
-                            + " 当前监听 pid=" + listenPid + "(pgrp=" + listenPgrp + ")，但 current.json pid(pgrp leader)=" + resp.getPid()
-                            + "；预览可能命中旧进程/旧项目。建议先 stopRun 再 startDev。";
-                    if (resp.getMessage() == null || resp.getMessage().isBlank()) resp.setMessage(warn);
-                    else resp.setMessage(resp.getMessage() + "；" + warn);
+            // 诊断（仅 DEV/START）：containerPort 当前监听进程 pid（用于排查端口被旧进程占用，导致 previewUrl 指向旧内容）
+            if (!"BUILD".equals(t)) {
+                Long listenPid = tryGetListenPid(ws.getContainerName(), ws.getContainerPort());
+                resp.setPortListenPid(listenPid);
+                // 注意：current.json 的 pid 是 setsid/sh 的“进程组组长”，真正监听端口的通常是 node 子进程
+                // 因此这里用“端口监听进程的 pgrp 是否等于 current.json pid”来判断是否同一次 run
+                if (listenPid != null && resp.getPid() != null) {
+                    Long listenPgrp = tryGetProcessGroupId(ws.getContainerName(), listenPid);
+                    if (listenPgrp != null && !listenPgrp.equals(resp.getPid())) {
+                        String warn = "诊断：containerPort=" + ws.getContainerPort()
+                                + " 当前监听 pid=" + listenPid + "(pgrp=" + listenPgrp + ")，但 current.json pid(pgrp leader)=" + resp.getPid()
+                                + "；预览可能命中旧进程/旧项目。建议先 stopRun 再 startDev。";
+                        if (resp.getMessage() == null || resp.getMessage().isBlank()) resp.setMessage(warn);
+                        else resp.setMessage(resp.getMessage() + "；" + warn);
+                    }
                 }
             }
 

@@ -9,13 +9,21 @@ import lombok.Data;
 public class FunAiWorkspaceRunStatusResponse {
     private Long userId;
     /**
-     * IDLE / STARTING / RUNNING / DEAD / UNKNOWN
+     * IDLE / STARTING / RUNNING / DEAD / UNKNOWN / BUILDING / INSTALLING / SUCCESS / FAILED
      */
     private String state;
+    /**
+     * DEV / START / BUILD / INSTALL（与 current.json 的 type 对齐）
+     */
+    private String type;
     private Long appId;
     private Integer hostPort;
     private Integer containerPort;
     private Long pid;
+    /**
+     * BUILD/START/DEV 的退出码（若已结束且可获取）
+     */
+    private Integer exitCode;
     /**
      * 诊断字段：容器内 containerPort 当前实际监听该端口的进程 pid（用于排查“端口被旧进程占用导致预览指向旧内容”）
      * - null：未监听或无法获取

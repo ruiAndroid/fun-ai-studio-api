@@ -31,6 +31,21 @@ public interface FunAiWorkspaceService {
     FunAiWorkspaceRunStatusResponse startDev(Long userId, Long appId);
 
     /**
+     * 受控构建（非阻塞）：在容器内执行 npm run build，并写入 run/current.json + run/dev.log
+     */
+    FunAiWorkspaceRunStatusResponse startBuild(Long userId, Long appId);
+
+    /**
+     * 受控预览（非阻塞）：在容器内执行 npm run start（全栈项目），并要求绑定到 containerPort（默认 5173）。
+     */
+    FunAiWorkspaceRunStatusResponse startPreview(Long userId, Long appId);
+
+    /**
+     * 受控依赖安装（非阻塞）：在容器内执行 npm install（写入 current.json/dev.log）
+     */
+    FunAiWorkspaceRunStatusResponse startInstall(Long userId, Long appId);
+
+    /**
      * 停止当前运行任务（如果存在）
      */
     FunAiWorkspaceRunStatusResponse stopRun(Long userId);

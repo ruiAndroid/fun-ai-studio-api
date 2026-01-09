@@ -23,6 +23,7 @@
 
 - 先做 `appId` 归属校验，避免被滥用。
 - SSE 长连接会周期性触发 `activityTracker.touch(userId)`，避免 idle 回收误伤活跃用户。
+- 日志读取的文件为 `run/dev.log`：受控任务（build/install/preview/dev）都会写入该日志，便于统一观测。
 
 ## WebSocket（在线终端）
 
