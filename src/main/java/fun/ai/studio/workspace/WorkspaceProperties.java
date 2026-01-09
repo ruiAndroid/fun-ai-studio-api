@@ -280,7 +280,7 @@ public class WorkspaceProperties {
         /**
          * 逻辑库名前缀：最终 dbName = {dbNamePrefix}{appId}
          */
-        private String dbNamePrefix = "app_";
+        private String dbNamePrefix = "db_";
 
         /**
          * 日志文件名（位于 containerLogDir 下）
