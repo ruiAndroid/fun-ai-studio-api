@@ -6,6 +6,7 @@ Workspace 域的目标：给每个用户提供一个可持久化的“在线开�
 - 容器内运行 dev server（Vite/Node）
 - 实时日志/状态（SSE）
 - 在线终端（WebSocket + docker exec）
+- 依赖安装加速（npm 缓存/后续私有仓库）
 
 ## 核心约束（单机版）
 
@@ -27,6 +28,10 @@ Workspace 域的目标：给每个用户提供一个可持久化的“在线开�
   - internal：`fun.ai.studio.workspace.internal.FunAiWorkspaceInternalController`
   - SSE：`fun.ai.studio.controller.FunAiWorkspaceRealtimeController`
   - WebSocket 终端：`fun.ai.studio.workspace.realtime.WorkspaceTerminalWebSocketHandler`
+
+## 常用增强能力
+
+- [npm 缓存（最简方案）](./npm-cache.md)
 
 ## 典型链路（在线编辑器进入）
 

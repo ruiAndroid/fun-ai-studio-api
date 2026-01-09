@@ -98,6 +98,14 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         ensureDir(appsDir);
         ensureDir(runDir);
 
+        // 全局 npm cache（可选）：跨用户复用依赖下载缓存
+        if (props.getNpmCache() != null && props.getNpmCache().isEnabled()) {
+            if (!StringUtils.hasText(props.getNpmCache().getHostDir())) {
+                throw new IllegalArgumentException("funai.workspace.npmCache.hostDir 未配置");
+            }
+            ensureDir(Paths.get(props.getNpmCache().getHostDir()));
+        }
+
         // Mongo（可选）：用户级持久化（同一用户容器仅一个 mongod 实例）
         // 目录不应放在 workspace 下（在线编辑器实时同步会干扰 WiredTiger 文件），因此使用单独 hostRoot。
         if (props.getMongo() != null && props.getMongo().isEnabled()) {
@@ -318,6 +326,8 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                 + "fi\n"
                 + "if [ ! -f package.json ]; then echo \"package.json not found: $APP_DIR\" >>\"$LOG_FILE\"; exit 2; fi\n"
                 + "npm config set registry https://registry.npmmirror.com >/dev/null 2>&1 || true\n"
+                + "if [ -n \"$NPM_CONFIG_CACHE\" ]; then export npm_config_cache=\"$NPM_CONFIG_CACHE\"; fi\n"
+                + "if [ -n \"$npm_config_cache\" ]; then echo \"[dev-start] npm cache: $npm_config_cache\" >>\"$LOG_FILE\" 2>&1; fi\n"
                 + "if [ ! -d node_modules ]; then echo \"[dev-start] npm install...\" >>\"$LOG_FILE\"; npm install >>\"$LOG_FILE\" 2>&1; fi\n"
                 + "echo \"[dev-start] npm run dev on $PORT\" >>\"$LOG_FILE\" 2>&1\n"
                 // 关键：容器 + 挂载卷场景下，inotify 事件可能不稳定，导致“刷新也还是旧内容”（Vite transform 缓存未失效）
@@ -1376,6 +1386,28 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         cmd.add(hostUserDir.toString() + ":" + props.getContainerWorkdir());
         cmd.add("-w");
         cmd.add(props.getContainerWorkdir());
+
+        // npm cache bind mount（可选）
+        if (props.getNpmCache() != null && props.getNpmCache().isEnabled()) {
+            String hostDir = props.getNpmCache().getHostDir();
+            String containerDir = StringUtils.hasText(props.getNpmCache().getContainerDir())
+                    ? props.getNpmCache().getContainerDir()
+                    : "/opt/funai/npm-cache";
+
+            cmd.add("-v");
+            cmd.add(hostDir + ":" + containerDir);
+
+            cmd.add("-e");
+            cmd.add("NPM_CONFIG_CACHE=" + containerDir);
+            cmd.add("-e");
+            cmd.add("npm_config_cache=" + containerDir);
+            cmd.add("-e");
+            cmd.add("npm_config_prefer_offline=" + props.getNpmCache().isPreferOffline());
+            cmd.add("-e");
+            cmd.add("npm_config_fetch_retries=" + Math.max(0, props.getNpmCache().getFetchRetries()));
+            cmd.add("-e");
+            cmd.add("npm_config_fetch_timeout=" + Math.max(10_000, props.getNpmCache().getFetchTimeoutMs()));
+        }
 
         // mongo bind mount（可选）
         if (props.getMongo() != null && props.getMongo().isEnabled()) {

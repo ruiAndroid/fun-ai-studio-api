@@ -19,5 +19,6 @@
 - [Workspace：运行态（start/stop/status）](./workspace/run.md)
 - [Workspace：实时通道（SSE events、WebSocket 终端）](./workspace/realtime.md)
 - [Workspace：internal（nginx auth_request 查询端口）](./workspace/internal.md)
+- [Workspace：npm 缓存（最简方案）](./workspace/npm-cache.md)
 
 

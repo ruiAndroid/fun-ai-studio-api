@@ -93,13 +93,21 @@ public class WorkspaceProperties {
 
     /**
      * Mongo（可选）：在 workspace 用户容器内提供本地 MongoDB（同一用户容器仅一个 mongod 实例）
-     * 隔离方式：同一个 mongod 下按 appId 使用不同 dbName（默认前缀 app_）。
+     * 隔离方式：同一个 mongod 下按 appId 使用不同 dbName（默认前缀 db_）。
      *
      * 约定：
      * - 宿主机使用 bind mount 持久化：{hostRoot}/{userId}/mongo/db
      * - 容器内 dbPath 默认：/data/db
      */
     private MongoProperties mongo = new MongoProperties();
+
+    /**
+     * 依赖安装缓存（最简方案）：把 npm cache 目录持久化到宿主机，并挂载到每个用户容器
+     * 目标：减少每次新项目 npm install 的下载耗时与失败率。
+     *
+     * 注意：这是“全局缓存”（跨用户共享），适合先跑通流程；后续可升级为 Verdaccio/Nexus 等企业级代理仓库。
+     */
+    private NpmCacheProperties npmCache = new NpmCacheProperties();
 
     public boolean isEnabled() {
         return enabled;
@@ -245,6 +253,14 @@ public class WorkspaceProperties {
         this.mongo = mongo;
     }
 
+    public NpmCacheProperties getNpmCache() {
+        return npmCache;
+    }
+
+    public void setNpmCache(NpmCacheProperties npmCache) {
+        this.npmCache = npmCache;
+    }
+
     public static class MongoProperties {
         /**
          * 是否启用（要求 workspace image 内包含 mongod/mongosh）
@@ -349,6 +365,87 @@ public class WorkspaceProperties {
 
         public void setLogFileName(String logFileName) {
             this.logFileName = logFileName;
+        }
+    }
+
+    public static class NpmCacheProperties {
+        /**
+         * 是否启用全局 npm cache 挂载
+         */
+        private boolean enabled = false;
+
+        /**
+         * 宿主机缓存根目录（建议放到独立数据盘上）
+         * 示例：/data/funai/cache/npm
+         */
+        private String hostDir;
+
+        /**
+         * 容器内 cache 目录（将 hostDir 绑定到这里）
+         */
+        private String containerDir = "/opt/funai/npm-cache";
+
+        /**
+         * npm 优先离线（命中缓存就不去拉网络）
+         */
+        private boolean preferOffline = true;
+
+        /**
+         * npm 拉取重试次数
+         */
+        private int fetchRetries = 5;
+
+        /**
+         * npm 拉取超时（毫秒）
+         */
+        private int fetchTimeoutMs = 120000;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public String getHostDir() {
+            return hostDir;
+        }
+
+        public void setHostDir(String hostDir) {
+            this.hostDir = hostDir;
+        }
+
+        public String getContainerDir() {
+            return containerDir;
+        }
+
+        public void setContainerDir(String containerDir) {
+            this.containerDir = containerDir;
+        }
+
+        public boolean isPreferOffline() {
+            return preferOffline;
+        }
+
+        public void setPreferOffline(boolean preferOffline) {
+            this.preferOffline = preferOffline;
+        }
+
+        public int getFetchRetries() {
+            return fetchRetries;
+        }
+
+        public void setFetchRetries(int fetchRetries) {
+            this.fetchRetries = fetchRetries;
+        }
+
+        public int getFetchTimeoutMs() {
+            return fetchTimeoutMs;
+        }
+
+        public void setFetchTimeoutMs(int fetchTimeoutMs) {
+            this.fetchTimeoutMs = fetchTimeoutMs;
         }
     }
 }
