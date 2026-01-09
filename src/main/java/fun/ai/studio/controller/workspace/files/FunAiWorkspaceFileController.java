@@ -1,4 +1,4 @@
-package fun.ai.studio.workspace.files;
+package fun.ai.studio.controller.workspace.files;
 
 import fun.ai.studio.common.Result;
 import fun.ai.studio.entity.request.FunAiWorkspaceFileWriteRequest;

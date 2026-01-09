@@ -1,4 +1,4 @@
-package fun.ai.studio.controller;
+package fun.ai.studio.controller.workspace.realtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fun.ai.studio.common.Result;

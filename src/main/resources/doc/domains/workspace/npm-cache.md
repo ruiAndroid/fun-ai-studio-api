@@ -70,3 +70,40 @@ mkdir -p /data/funai/cache/npm
 - **安全**：全局 cache 跨用户共享，适合“先跑通”。若你们对供应链安全要求更高，后续应上私有仓库并做包白名单/审计。
 
 
+固定的依赖配置如下：
+{                                                                                                                                                                               "name": "npm-warmup",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "@radix-ui/react-dialog": "1.0.5",
+    "@radix-ui/react-dropdown-menu": "2.0.6",
+    "@radix-ui/react-label": "2.0.2",
+    "@radix-ui/react-separator": "1.0.3",
+    "@radix-ui/react-slot": "1.0.2",
+    "@radix-ui/react-tabs": "1.0.4",
+    "@tailwindcss/postcss": "4.1.18",
+    "@tailwindcss/vite": "4.0.10",
+    "autoprefixer": "10.4.23",
+    "axios": "1.13.2",
+    "bcryptjs": "3.0.3",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "cors": "2.8.5",
+    "date-fns": "2.30.0",
+    "dotenv": "16.3.1",
+    "express": "4.18.2",
+    "jsonwebtoken": "9.0.3",
+    "jwt-decode": "4.0.0",
+    "lucide-react": "0.475.0",
+    "mongoose": "7.8.8",
+    "postcss": "8.5.6",
+    "prettier": "3.3.3",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "react-router-dom": "6.22.3",
+    "tailwind-merge": "3.4.0",
+    "tailwindcss": "4.1.18",
+    "typescript": "5.7.2",
+    "vite": "6.4.1"
+  }
+}

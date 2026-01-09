@@ -6,7 +6,7 @@
 
 对应控制器：
 
-- `fun.ai.studio.workspace.run.FunAiWorkspaceRunController`
+- `fun.ai.studio.controller.workspace.run.FunAiWorkspaceRunController`
 - 路由前缀：`/api/fun-ai/workspace/run`
 
 ## 核心约束

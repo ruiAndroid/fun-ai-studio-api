@@ -1,4 +1,4 @@
-package fun.ai.studio.workspace.run;
+package fun.ai.studio.controller.workspace.run;
 
 import fun.ai.studio.common.Result;
 import fun.ai.studio.entity.response.FunAiWorkspaceRunStatusResponse;

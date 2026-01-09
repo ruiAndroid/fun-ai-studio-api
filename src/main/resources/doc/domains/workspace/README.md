@@ -22,11 +22,11 @@ Workspace 域的目标：给每个用户提供一个可持久化的“在线开�
 - 主要配置：`fun.ai.studio.workspace.WorkspaceProperties`
 - 核心服务：`fun.ai.studio.service.impl.FunAiWorkspaceServiceImpl`
 - 控制器（按子域拆分）：
-  - 容器级：`fun.ai.studio.workspace.container.FunAiWorkspaceContainerController`
-  - 文件域：`fun.ai.studio.workspace.files.FunAiWorkspaceFileController`
-  - 运行态：`fun.ai.studio.workspace.run.FunAiWorkspaceRunController`
-  - internal：`fun.ai.studio.workspace.internal.FunAiWorkspaceInternalController`
-  - SSE：`fun.ai.studio.controller.FunAiWorkspaceRealtimeController`
+  - 容器级：`fun.ai.studio.controller.workspace.container.FunAiWorkspaceContainerController`
+  - 文件域：`fun.ai.studio.controller.workspace.files.FunAiWorkspaceFileController`
+  - 运行态：`fun.ai.studio.controller.workspace.run.FunAiWorkspaceRunController`
+  - internal：`fun.ai.studio.controller.workspace.internal.FunAiWorkspaceInternalController`
+  - SSE：`fun.ai.studio.controller.workspace.realtime.FunAiWorkspaceRealtimeController`
   - WebSocket 终端：`fun.ai.studio.workspace.realtime.WorkspaceTerminalWebSocketHandler`
 
 ## 常用增强能力

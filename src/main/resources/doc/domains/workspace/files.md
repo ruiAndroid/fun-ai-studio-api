@@ -6,7 +6,7 @@
 
 对应控制器：
 
-- `fun.ai.studio.workspace.files.FunAiWorkspaceFileController`
+- `fun.ai.studio.controller.workspace.files.FunAiWorkspaceFileController`
 - 路由前缀：`/api/fun-ai/workspace/files`
 
 ## 宿主机/容器路径映射

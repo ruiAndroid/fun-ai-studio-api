@@ -1,4 +1,4 @@
-package fun.ai.studio.workspace.container;
+package fun.ai.studio.controller.workspace.container;
 
 import fun.ai.studio.common.Result;
 import fun.ai.studio.entity.response.FunAiWorkspaceHeartbeatResponse;

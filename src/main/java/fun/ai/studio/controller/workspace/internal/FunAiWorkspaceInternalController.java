@@ -1,4 +1,4 @@
-package fun.ai.studio.workspace.internal;
+package fun.ai.studio.controller.workspace.internal;
 
 import fun.ai.studio.workspace.WorkspaceProperties;
 import io.swagger.v3.oas.annotations.Hidden;

@@ -1,4 +1,4 @@
-package fun.ai.studio.controller;
+package fun.ai.studio.controller.auth;
 
 import fun.ai.studio.common.Const;
 import fun.ai.studio.common.Result;

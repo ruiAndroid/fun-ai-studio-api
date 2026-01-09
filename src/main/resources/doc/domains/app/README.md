@@ -13,7 +13,7 @@
 
 ## 核心入口
 
-- 控制器：`fun.ai.studio.controller.FunAiAppController`
+- 控制器：`fun.ai.studio.controller.apps.FunAiAppController`
 - 路由前缀：`/api/fun-ai/app`
 
 ## 关键接口（高层）

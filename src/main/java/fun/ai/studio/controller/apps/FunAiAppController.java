@@ -1,4 +1,4 @@
-package fun.ai.studio.controller;
+package fun.ai.studio.controller.apps;
 
 
 import fun.ai.studio.common.Result;

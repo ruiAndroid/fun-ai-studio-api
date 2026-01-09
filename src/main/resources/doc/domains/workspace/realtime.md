@@ -9,7 +9,7 @@
 
 控制器：
 
-- `fun.ai.studio.controller.FunAiWorkspaceRealtimeController`
+- `fun.ai.studio.controller.workspace.realtime.FunAiWorkspaceRealtimeController`
 - 路由：`GET /api/fun-ai/workspace/realtime/events?userId=...&appId=...&withLog=true`
 
 事件：

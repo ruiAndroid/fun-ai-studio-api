@@ -1,4 +1,4 @@
-package fun.ai.studio.controller;
+package fun.ai.studio.controller.common;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.Hidden;

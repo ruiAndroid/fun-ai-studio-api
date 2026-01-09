@@ -6,7 +6,7 @@
 
 对应控制器：
 
-- `fun.ai.studio.workspace.container.FunAiWorkspaceContainerController`
+- `fun.ai.studio.controller.workspace.container.FunAiWorkspaceContainerController`
 - 路由前缀：`/api/fun-ai/workspace/container`
 
 ## 接口
