@@ -408,6 +408,15 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     + "export BASE_PATH=\"$BASE_PATH\"\n"
                     + "export FUNAI_USER_ID='" + userId + "'\n"
                     + "export FUNAI_APP_ID='" + appId + "'\n"
+                    + (props.getMongo() != null && props.getMongo().isEnabled()
+                    ? ""
+                    + "export MONGO_HOST='127.0.0.1'\n"
+                    + "export MONGO_PORT='" + (props.getMongo().getPort() > 0 ? props.getMongo().getPort() : 27017) + "'\n"
+                    + "export MONGO_DB_PREFIX='" + (StringUtils.hasText(props.getMongo().getDbNamePrefix()) ? props.getMongo().getDbNamePrefix() : "app_") + "'\n"
+                    + "export MONGO_DB_NAME=\"${MONGO_DB_PREFIX}" + appId + "\"\n"
+                    + "export MONGO_URL=\"mongodb://${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB_NAME}\"\n"
+                    + "export MONGODB_URI=\"$MONGO_URL\"\n"
+                    : "")
                     + "echo \"[preview] npm run start on $PORT base=$BASE_PATH\" >>\"$LOG_FILE\" 2>&1\n"
                     + "TARGET_PORT_HEX=$(printf '%04X' \"$PORT\")\n"
                     + "inode=$(awk -v p=\":$TARGET_PORT_HEX\" 'toupper($2) ~ (p\"$\") && $4==\"0A\" {print $10; exit}' /proc/net/tcp 2>/dev/null || true)\n"
@@ -1622,7 +1631,11 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                 }
                 return;
             }
-            log.warn("docker start failed: userId={}, name={}, out={}", userId, name, start.getOutput());
+            log.warn("docker start failed: userId={}, name={}, status={}, out={}", userId, name, status, start.getOutput());
+
+            // start 失败时（podman/docker 都可能发生），不要直接 docker run（会因为同名容器残留而失败）
+            // 这里尽量清理同名容器后再重建。
+            tryRemoveContainer(name);
         }
 
         // 不存在：创建并启动（长驻）
@@ -1694,8 +1707,36 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         cmd.add(buildContainerBootstrapCommand(userId));
 
         CommandResult r = commandRunner.run(Duration.ofSeconds(30), cmd);
+        if (!r.isSuccess() && isContainerNameAlreadyInUse(r.getOutput(), name)) {
+            // 典型场景：podman-docker 下同名容器（即使 EXITED）也会阻止 docker run --name
+            // 尝试清理后重试一次，提升 open-editor/ensure 的鲁棒性。
+            tryRemoveContainer(name);
+            r = commandRunner.run(Duration.ofSeconds(30), cmd);
+        }
         if (!r.isSuccess()) {
             throw new RuntimeException("创建 workspace 容器失败: userId=" + userId + ", out=" + r.getOutput());
+        }
+    }
+
+    private boolean isContainerNameAlreadyInUse(String output, String containerName) {
+        if (output == null) return false;
+        String out = output.toLowerCase();
+        // podman: the container name "xxx" is already in use ...
+        // docker:  Conflict. The container name "/xxx" is already in use ...
+        if (!out.contains("already in use") && !out.contains("is already in use")) return false;
+        if (containerName == null || containerName.isBlank()) return true;
+        return out.contains(containerName.toLowerCase());
+    }
+
+    private void tryRemoveContainer(String containerName) {
+        if (!StringUtils.hasText(containerName)) return;
+        try {
+            CommandResult rm = docker("rm", "-f", containerName);
+            if (!rm.isSuccess()) {
+                // rm 失败通常不致命（比如本来就不存在），仅记录 debug，避免误报
+                log.debug("docker rm ignored: container={}, out={}", containerName, rm.getOutput());
+            }
+        } catch (Exception ignore) {
         }
     }
 

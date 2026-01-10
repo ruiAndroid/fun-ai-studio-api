@@ -46,4 +46,6 @@
 - 宿主机：`{mongo.hostRoot}/{userId}/mongo/db`、`{mongo.hostRoot}/{userId}/mongo/log`
 - 容器：`/data/db`、`/var/log/mongodb`（可配置）
 
+更多细节（dbName 隔离规则、环境变量注入、排错等）见：`mongo.md`
+
 

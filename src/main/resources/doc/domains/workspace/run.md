@@ -109,4 +109,6 @@
 
 Node 项目只需读取 `process.env.MONGO_URL`/`process.env.MONGODB_URI` 建立连接。
 
+更完整的说明见：`mongo.md`
+
 

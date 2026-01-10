@@ -117,8 +117,18 @@ funai.workspace.npmRegistry=http://verdaccio:4873
 
 > 验收：在 `run/dev.log` 或安装输出中确认 `npm registry` 为 `http://verdaccio:4873`。
 
+如果你的 warmup 项目在宿主机目录（例如 `/tmp/npm-warmup`），且 Verdaccio 仅在容器网络 `funai-net` 内可访问，推荐用一个临时容器来执行预热（执行完自动删除，不占用长期资源）：
 
-固定的依赖配置如下：
+```bash
+docker run --rm --network funai-net \
+  -v /tmp/npm-warmup:/work -w /work \
+  <你的workspace镜像> \
+  bash -lc "npm config set registry http://verdaccio:4873 && (npm ci || npm install)"
+```
+
+> `<你的workspace镜像>` 建议直接使用你生产环境的 workspace 镜像（ACR），避免拉取 DockerHub 失败。
+
+固定的依赖配置如下（warmup 项目的 `package.json` 示例）：
 {                                                                                                                                                                               "name": "npm-warmup",
   "private": true,
   "version": "1.0.0",
