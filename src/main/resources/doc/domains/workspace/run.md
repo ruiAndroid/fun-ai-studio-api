@@ -37,7 +37,9 @@
 - stopRun（确保端口与运行态干净）
 - ensure 容器 + 目录
 - 写入 `/workspace/run/current.json`（STARTING，type=START）
-- 后台脚本执行 `npm run start`（并注入 `PORT/HOST/BASE_PATH` 等环境变量）
+- 后台脚本执行“可访问启动”（按项目 scripts 自动选择）：`start -> preview -> dev`
+  - 注入 `PORT/HOST/BASE_PATH` 等环境变量
+  - 若选择 `preview/dev`，会尽量追加 `--host/--port/--strictPort/--base` 参数（适配 Vite 常见用法）
 - 成功后写入 `/workspace/run/dev.pid` 与更新 `current.json`
 
 ### build

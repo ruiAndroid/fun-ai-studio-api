@@ -39,7 +39,7 @@ docker run -d --name verdaccio --restart=always \
   --network funai-net \
   -v /data/funai/verdaccio/conf:/verdaccio/conf \
   -v /data/funai/verdaccio/storage:/verdaccio/storage \
-  verdaccio/verdaccio:5
+  docker.io/verdaccio/verdaccio:5
 ```
 
 3) 如需“重建 Verdaccio 容器”（保留数据，仅重建容器）：
@@ -51,7 +51,7 @@ docker run -d --name verdaccio --restart=always \
   --network funai-net \
   -v /data/funai/verdaccio/conf:/verdaccio/conf \
   -v /data/funai/verdaccio/storage:/verdaccio/storage \
-  verdaccio/verdaccio:5
+  docker.io/verdaccio/verdaccio:5
 ```
 
 4) 把已有 workspace 容器加入 `funai-net`（老容器需要；新容器创建时会自动加）：
@@ -161,7 +161,151 @@ docker run --rm --network funai-net \
 
 > `<你的workspace镜像>` 建议直接使用你生产环境的 workspace 镜像（ACR），避免拉取 DockerHub 失败。
 
-固定的依赖配置如下（warmup 项目的 `package.json` 示例）：
+## 踩坑记录与排障清单（扩容服务器时可直接复用）
+
+本节记录部署过程中常见问题与对应解决方式（特别是 podman-docker 环境）。
+
+### 1) podman 运行 `verdaccio/verdaccio:5` 提示交互选择镜像来源
+
+现象：出现 `Please select an image:`，需要交互选择 `docker.io/...` 等。
+
+解决：使用**全限定镜像名**，避免短名交互：
+
+```bash
+docker.io/verdaccio/verdaccio:5
+```
+
+如果你的服务器无法稳定访问 DockerHub，建议把 verdaccio 镜像同步到你们的 ACR，再改用 ACR 镜像地址启动。
+
+### 2) DockerHub 拉取超时（包括 warmup 用的 node 镜像）
+
+现象：`i/o timeout`，或镜像站找不到 tag。
+
+解决：
+
+- **不要依赖 DockerHub 的 node 镜像**来跑 warmup，直接用你生产环境的 workspace 镜像（ACR）。
+- verdaccio 镜像也建议同步到 ACR（同理）。
+
+### 3) `funai-net` 网络不存在
+
+现象：`unable to find network with name or ID funai-net: network not found`
+
+解决：先手动创建网络（一次性）：
+
+```bash
+docker network create funai-net
+docker network ls
+```
+
+### 4) 调用 `/open-editor` 只会起用户容器，不会自动起 Verdaccio
+
+现象：已经启动 `ws-u-*`，但 `verdaccio` 容器不存在/不可用。
+
+原因：当前实现将 Verdaccio 视为**运维侧常驻基础设施**，后端不会自动拉起 `verdaccio`。
+
+解决：按本文“手动启动/重建命令”先把 Verdaccio 起好；并把老的 `ws-u-*` 容器 `network connect` 进 `funai-net`。
+
+### 5) Verdaccio 启动报 `config.yaml` 非法
+
+现象：`cannot open config file /verdaccio/conf/config.yaml: ... it does not look like a valid config file`
+
+原因：宿主机挂载的 `/data/funai/verdaccio/conf/config.yaml` 内容为空/格式错误。
+
+解决：写入一个**最小可用**配置（示例：上游指向 npmmirror）：
+
+```bash
+cat >/data/funai/verdaccio/conf/config.yaml <<'YAML'
+storage: /verdaccio/storage
+
+auth:
+  htpasswd:
+    file: /verdaccio/conf/htpasswd
+
+uplinks:
+  npmmirror:
+    url: https://registry.npmmirror.com/
+
+packages:
+  "@*/*":
+    access: $all
+    publish: $authenticated
+    proxy: npmmirror
+  "**":
+    access: $all
+    publish: $authenticated
+    proxy: npmmirror
+
+logs:
+  - {type: stdout, format: pretty, level: http}
+YAML
+```
+
+然后重建容器。
+
+### 6) Verdaccio `storage` 不增长（一直 4K），但 `npm install` 看起来成功
+
+常见原因 A：**权限问题**（最常见，podman/SELinux 环境更容易）
+
+现象：在容器内 `touch /verdaccio/storage/...` 报 `Permission denied`；`/verdaccio/storage` 显示为 `root:root`，verdaccio 进程用户是 `uid=10001`。
+
+解决：让宿主机目录对 verdaccio 用户可写（或使用 SELinux 的 `:Z` 挂载）：
+
+```bash
+docker rm -f verdaccio 2>/dev/null || true
+chown -R 10001:65533 /data/funai/verdaccio/conf /data/funai/verdaccio/storage
+
+docker run -d --name verdaccio --restart=always \
+  --network funai-net \
+  -v /data/funai/verdaccio/conf:/verdaccio/conf \
+  -v /data/funai/verdaccio/storage:/verdaccio/storage \
+  docker.io/verdaccio/verdaccio:5
+```
+
+若仍不可写（疑似 SELinux），改用：
+
+```bash
+-v /data/funai/verdaccio/conf:/verdaccio/conf:Z
+-v /data/funai/verdaccio/storage:/verdaccio/storage:Z
+```
+
+常见原因 B：**lockfile 的 `resolved` 指向外部 registry，导致绕过 Verdaccio**
+
+现象：`npm ci` 只看到 audit 请求，Verdaccio 日志没有 `.tgz` GET，请求不进入 `storage`。
+
+解决：把 `package-lock.json` 里的 `resolved` 批量改成走 Verdaccio，然后 `npm ci`：
+
+```bash
+sed -i 's#https://registry.npmmirror.com/#http://verdaccio:4873/#g' /tmp/npm-warmup/package-lock.json
+sed -i 's#https://registry.npmjs.org/#http://verdaccio:4873/#g' /tmp/npm-warmup/package-lock.json
+
+docker run --rm --network funai-net \
+  -v /tmp/npm-warmup:/work -w /work \
+  <你的workspace镜像> \
+  bash -lc "rm -rf node_modules && npm config set registry http://verdaccio:4873 && npm config set audit false && npm ci"
+```
+
+### 7) 删除 lockfile 后 `npm install` 报 ERESOLVE（peer 依赖冲突）
+
+现象：`ERESOLVE unable to resolve dependency tree`
+
+原因：删除 lockfile 会触发重新解算依赖树，可能撞 peerDependencies 冲突。
+
+解决：**不要删 lockfile**来做预热；按上面“resolved 替换 + npm ci”即可稳定预热 Verdaccio。
+
+### 8) 验证清单（确认缓存已写入 Verdaccio）
+
+```bash
+# Verdaccio 是否在跑
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
+
+# storage 是否增长（预热后通常几十/几百 MB）
+du -sh /data/funai/verdaccio/storage
+
+# 日志是否出现包请求（应看到 GET 与 .tgz）
+docker logs --tail 200 verdaccio | egrep -i 'GET |tgz' | tail -n 30
+```
+
+预热项目固定的依赖配置如下（warmup 项目的 `package.json` 示例）：
 {                                                                                                                                                                               "name": "npm-warmup",
   "private": true,
   "version": "1.0.0",

@@ -39,6 +39,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @Service
@@ -283,7 +284,23 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             stopRun(userId);
         } catch (Exception ignore) {
         }
-        return startManagedRun(userId, appId, "START");
+        // preview 语义：尽量把项目“跑起来可访问”（类似部署）。
+        // - 全栈/后端项目：通常 scripts.start
+        // - 纯前端项目：可能只有 scripts.preview 或 scripts.dev
+        // 这里做一个温和的 fallback：start -> preview -> dev；都没有则报错（避免盲跑）。
+        FunAiWorkspaceProjectDirResponse dir = ensureAppDir(userId, appId);
+        Path hostAppDir = Paths.get(dir.getHostAppDir());
+        Path pkg = findPackageJson(hostAppDir, 2);
+        if (pkg == null) {
+            throw new IllegalArgumentException("未找到 package.json（最大深度=2）：请先上传/创建项目文件");
+        }
+        String script = pickPreviewScript(pkg);
+        if (script == null) {
+            throw new IllegalArgumentException("当前项目未定义可用于预览/部署的脚本。请在 package.json 的 scripts 中添加 start 或 preview（推荐），"
+                    + "或至少提供 dev（开发模式）。");
+        }
+        // 将具体脚本名传入受控运行：START 模式统一做端口/BASE_PATH 注入。
+        return startManagedRun(userId, appId, "START:" + script);
     }
 
     @Override
@@ -321,8 +338,22 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         String logFile = runDir + "/dev.log";
         String startSh = runDir + "/managed-start.sh";
 
-        String op = (type == null ? "" : type.trim().toUpperCase());
-        if (op.isEmpty()) op = "DEV";
+        String raw = (type == null ? "" : type.trim());
+        if (raw.isEmpty()) raw = "DEV";
+        // 支持形如 "START:start" / "START:preview" / "START:dev"
+        String op = raw;
+        String selectedScript = null;
+        int idx = raw.indexOf(':');
+        if (idx > 0) {
+            op = raw.substring(0, idx).trim();
+            selectedScript = raw.substring(idx + 1).trim();
+        }
+        op = op.toUpperCase();
+        if (selectedScript != null && !selectedScript.isBlank()) {
+            selectedScript = selectedScript.trim();
+        } else {
+            selectedScript = null;
+        }
 
         String innerScript;
         if ("BUILD".equals(op)) {
@@ -392,6 +423,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     + "META_FILE='" + metaFile + "'\n"
                     + "LOG_FILE='" + logFile + "'\n"
                     + "BASE_PATH='/ws/" + userId + "/'\n"
+                    + "RUN_SCRIPT='" + (selectedScript == null ? "start" : selectedScript.replace("'", "")) + "'\n"
                     + "echo \"[preview] start at $(date -Is)\" >>\"$LOG_FILE\" 2>&1\n"
                     + "cd \"$APP_DIR\" >>\"$LOG_FILE\" 2>&1 || true\n"
                     + "if [ ! -f package.json ]; then\n"
@@ -403,6 +435,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     + "if [ -z \"$NPM_CONFIG_REGISTRY\" ] && [ -n \"$npm_config_registry\" ]; then npm config set registry \"$npm_config_registry\" >/dev/null 2>&1 || true; fi\n"
                     + "reg=$(npm config get registry 2>/dev/null || true)\n"
                     + "if [ -n \"$reg\" ]; then echo \"[preview] npm registry: $reg\" >>\"$LOG_FILE\" 2>&1; fi\n"
+                    + "if [ ! -d node_modules ]; then echo \"[preview] npm install...\" >>\"$LOG_FILE\"; npm install >>\"$LOG_FILE\" 2>&1; fi\n"
                     + "export PORT=\"$PORT\"\n"
                     + "export HOST=\"0.0.0.0\"\n"
                     + "export BASE_PATH=\"$BASE_PATH\"\n"
@@ -417,7 +450,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     + "export MONGO_URL=\"mongodb://${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB_NAME}\"\n"
                     + "export MONGODB_URI=\"$MONGO_URL\"\n"
                     : "")
-                    + "echo \"[preview] npm run start on $PORT base=$BASE_PATH\" >>\"$LOG_FILE\" 2>&1\n"
+                    + "echo \"[preview] npm run $RUN_SCRIPT on $PORT base=$BASE_PATH\" >>\"$LOG_FILE\" 2>&1\n"
                     + "TARGET_PORT_HEX=$(printf '%04X' \"$PORT\")\n"
                     + "inode=$(awk -v p=\":$TARGET_PORT_HEX\" 'toupper($2) ~ (p\"$\") && $4==\"0A\" {print $10; exit}' /proc/net/tcp 2>/dev/null || true)\n"
                     + "if [ -z \"$inode\" ]; then inode=$(awk -v p=\":$TARGET_PORT_HEX\" 'toupper($2) ~ (p\"$\") && $4==\"0A\" {print $10; exit}' /proc/net/tcp6 2>/dev/null || true); fi\n"
@@ -439,7 +472,12 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     + "    done\n"
                     + "  done\n"
                     + "fi\n"
-                    + "setsid sh -c \"npm run start\" >>\"$LOG_FILE\" 2>&1 < /dev/null &\n"
+                    // 若选择的是 preview/dev，则尽量传入 vite 常用参数（不影响不识别参数的脚本：由脚本自己决定是否使用）
+                    + "cmd=\"npm run $RUN_SCRIPT\"\n"
+                    + "if [ \"$RUN_SCRIPT\" = \"preview\" ] || [ \"$RUN_SCRIPT\" = \"dev\" ]; then\n"
+                    + "  cmd=\"npm run $RUN_SCRIPT -- --host 0.0.0.0 --port $PORT --strictPort --base $BASE_PATH\"\n"
+                    + "fi\n"
+                    + "setsid sh -c \"$cmd\" >>\"$LOG_FILE\" 2>&1 < /dev/null &\n"
                     + "pid=$!\n"
                     + "echo \"$pid\" > \"$PID_FILE\"\n"
                     + "printf '{\"appId\":" + appId + ",\"type\":\"START\",\"pid\":%s,\"startedAt\":%s,\"logPath\":\"" + logFile + "\"}' \"$pid\" \"$(date +%s)\" > \"$META_FILE\"\n";
@@ -800,6 +838,9 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     resp.setState("STARTING");
                 } else {
                     resp.setState("DEAD");
+                    if (resp.getMessage() == null || resp.getMessage().isBlank()) {
+                        resp.setMessage("预览进程已退出或未成功启动，请查看日志: " + (resp.getLogPath() == null ? "/workspace/run/dev.log" : resp.getLogPath()));
+                    }
                 }
             }
 
@@ -966,6 +1007,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         if (prefix.endsWith("/")) {
             prefix = prefix.substring(0, prefix.length() - 1);
         }
+        if (ws.getUserId() == null) return null;
         return base + prefix + "/" + ws.getUserId() + "/";
     }
 
@@ -1250,6 +1292,68 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         s.add(".next");
         s.add("target");
         return s;
+    }
+
+    /**
+     * 在宿主机应用目录中查找 package.json（支持项目根不在 apps/{appId} 根目录的情况）。
+     * @param hostAppDir apps/{appId} 目录
+     * @param maxDepth 最大下探深度（默认与前端 open-editor 的 detectPackageJson 对齐：2）
+     */
+    private Path findPackageJson(Path hostAppDir, int maxDepth) {
+        if (hostAppDir == null || Files.notExists(hostAppDir) || !Files.isDirectory(hostAppDir)) return null;
+        int depth = Math.max(0, Math.min(10, maxDepth));
+        Set<String> ignores = defaultIgnoredNames();
+        try (var stream = Files.walk(hostAppDir, depth + 1)) {
+            return stream
+                    .filter(p -> p != null && Files.isRegularFile(p))
+                    .filter(p -> "package.json".equalsIgnoreCase(p.getFileName().toString()))
+                    .filter(p -> {
+                        // ignore node_modules/.git 等目录中的 package.json
+                        Path rel;
+                        try {
+                            rel = hostAppDir.normalize().relativize(p.normalize());
+                        } catch (Exception e) {
+                            rel = null;
+                        }
+                        if (rel == null) return true;
+                        for (Path part : rel) {
+                            if (part != null && ignores.contains(part.toString())) return false;
+                        }
+                        return true;
+                    })
+                    .findFirst()
+                    .orElse(null);
+        } catch (Exception ignore) {
+            return null;
+        }
+    }
+
+    private boolean hasNpmScript(Path packageJson, String scriptName) {
+        if (packageJson == null || Files.notExists(packageJson) || !StringUtils.hasText(scriptName)) return false;
+        try {
+            String json = Files.readString(packageJson, StandardCharsets.UTF_8);
+            if (!StringUtils.hasText(json)) return false;
+            Map<?, ?> m = objectMapper.readValue(json, Map.class);
+            Object scripts = m == null ? null : m.get("scripts");
+            if (!(scripts instanceof Map<?, ?> sm)) return false;
+            Object v = sm.get(scriptName);
+            return v != null && StringUtils.hasText(String.valueOf(v));
+        } catch (Exception ignore) {
+            return false;
+        }
+    }
+
+    /**
+     * preview/部署的脚本选择策略：
+     * - start：全栈/后端常规入口
+     * - preview：纯前端常见（vite preview）
+     * - dev：兜底（至少能让用户看到页面/服务跑起来）
+     */
+    private String pickPreviewScript(Path packageJson) {
+        if (hasNpmScript(packageJson, "start")) return "start";
+        if (hasNpmScript(packageJson, "preview")) return "preview";
+        if (hasNpmScript(packageJson, "dev")) return "dev";
+        return null;
     }
 
     private List<FunAiWorkspaceFileNode> listDirRecursive(Path root, Path dir, int depth, Set<String> ignores, Counter counter) {
