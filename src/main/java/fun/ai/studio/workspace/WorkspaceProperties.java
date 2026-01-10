@@ -72,6 +72,18 @@ public class WorkspaceProperties {
      */
     private String containerNamePrefix = "ws-u-";
 
+    /**
+     * 容器网络名（podman/docker）：用于让 workspace 容器访问同机的其它服务容器（如 Verdaccio）。
+     * 建议在宿主机创建网络：docker network create funai-net
+     */
+    private String networkName = "funai-net";
+
+    /**
+     * npm registry（推荐指向同机 Verdaccio）：http://verdaccio:4873
+     * 若为空，则不做注入，脚本侧也不会强行覆盖。
+     */
+    private String npmRegistry = "http://verdaccio:4873";
+
     private String httpProxy;
     private String httpsProxy;
     private String noProxy;
@@ -100,14 +112,6 @@ public class WorkspaceProperties {
      * - 容器内 dbPath 默认：/data/db
      */
     private MongoProperties mongo = new MongoProperties();
-
-    /**
-     * 依赖安装缓存（最简方案）：把 npm cache 目录持久化到宿主机，并挂载到每个用户容器
-     * 目标：减少每次新项目 npm install 的下载耗时与失败率。
-     *
-     * 注意：这是“全局缓存”（跨用户共享），适合先跑通流程；后续可升级为 Verdaccio/Nexus 等企业级代理仓库。
-     */
-    private NpmCacheProperties npmCache = new NpmCacheProperties();
 
     public boolean isEnabled() {
         return enabled;
@@ -197,6 +201,22 @@ public class WorkspaceProperties {
         this.containerNamePrefix = containerNamePrefix;
     }
 
+    public String getNetworkName() {
+        return networkName;
+    }
+
+    public void setNetworkName(String networkName) {
+        this.networkName = networkName;
+    }
+
+    public String getNpmRegistry() {
+        return npmRegistry;
+    }
+
+    public void setNpmRegistry(String npmRegistry) {
+        this.npmRegistry = npmRegistry;
+    }
+
     public String getHttpProxy() {
         return httpProxy;
     }
@@ -251,14 +271,6 @@ public class WorkspaceProperties {
 
     public void setMongo(MongoProperties mongo) {
         this.mongo = mongo;
-    }
-
-    public NpmCacheProperties getNpmCache() {
-        return npmCache;
-    }
-
-    public void setNpmCache(NpmCacheProperties npmCache) {
-        this.npmCache = npmCache;
     }
 
     public static class MongoProperties {
@@ -365,87 +377,6 @@ public class WorkspaceProperties {
 
         public void setLogFileName(String logFileName) {
             this.logFileName = logFileName;
-        }
-    }
-
-    public static class NpmCacheProperties {
-        /**
-         * 是否启用全局 npm cache 挂载
-         */
-        private boolean enabled = false;
-
-        /**
-         * 宿主机缓存根目录（建议放到独立数据盘上）
-         * 示例：/data/funai/cache/npm
-         */
-        private String hostDir;
-
-        /**
-         * 容器内 cache 目录（将 hostDir 绑定到这里）
-         */
-        private String containerDir = "/opt/funai/npm-cache";
-
-        /**
-         * npm 优先离线（命中缓存就不去拉网络）
-         */
-        private boolean preferOffline = true;
-
-        /**
-         * npm 拉取重试次数
-         */
-        private int fetchRetries = 5;
-
-        /**
-         * npm 拉取超时（毫秒）
-         */
-        private int fetchTimeoutMs = 120000;
-
-        public boolean isEnabled() {
-            return enabled;
-        }
-
-        public void setEnabled(boolean enabled) {
-            this.enabled = enabled;
-        }
-
-        public String getHostDir() {
-            return hostDir;
-        }
-
-        public void setHostDir(String hostDir) {
-            this.hostDir = hostDir;
-        }
-
-        public String getContainerDir() {
-            return containerDir;
-        }
-
-        public void setContainerDir(String containerDir) {
-            this.containerDir = containerDir;
-        }
-
-        public boolean isPreferOffline() {
-            return preferOffline;
-        }
-
-        public void setPreferOffline(boolean preferOffline) {
-            this.preferOffline = preferOffline;
-        }
-
-        public int getFetchRetries() {
-            return fetchRetries;
-        }
-
-        public void setFetchRetries(int fetchRetries) {
-            this.fetchRetries = fetchRetries;
-        }
-
-        public int getFetchTimeoutMs() {
-            return fetchTimeoutMs;
-        }
-
-        public void setFetchTimeoutMs(int fetchTimeoutMs) {
-            this.fetchTimeoutMs = fetchTimeoutMs;
         }
     }
 }

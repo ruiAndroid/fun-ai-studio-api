@@ -98,14 +98,6 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         ensureDir(appsDir);
         ensureDir(runDir);
 
-        // 全局 npm cache（可选）：跨用户复用依赖下载缓存
-        if (props.getNpmCache() != null && props.getNpmCache().isEnabled()) {
-            if (!StringUtils.hasText(props.getNpmCache().getHostDir())) {
-                throw new IllegalArgumentException("funai.workspace.npmCache.hostDir 未配置");
-            }
-            ensureDir(Paths.get(props.getNpmCache().getHostDir()));
-        }
-
         // Mongo（可选）：用户级持久化（同一用户容器仅一个 mongod 实例）
         // 目录不应放在 workspace 下（在线编辑器实时同步会干扰 WiredTiger 文件），因此使用单独 hostRoot。
         if (props.getMongo() != null && props.getMongo().isEnabled()) {
@@ -349,9 +341,10 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     + "fi\n"
                     + "code=0\n"
                     + "if [ ! -f package.json ]; then echo \"package.json not found: $APP_DIR\" >>\"$LOG_FILE\"; code=2; else\n"
-                    + "  npm config set registry https://registry.npmmirror.com >/dev/null 2>&1 || true\n"
-                    + "  if [ -n \"$NPM_CONFIG_CACHE\" ]; then export npm_config_cache=\"$NPM_CONFIG_CACHE\"; fi\n"
-                    + "  if [ -n \"$npm_config_cache\" ]; then echo \"[build] npm cache: $npm_config_cache\" >>\"$LOG_FILE\" 2>&1; fi\n"
+                    + "  if [ -n \"$NPM_CONFIG_REGISTRY\" ]; then npm config set registry \"$NPM_CONFIG_REGISTRY\" >/dev/null 2>&1 || true; fi\n"
+                    + "  if [ -z \"$NPM_CONFIG_REGISTRY\" ] && [ -n \"$npm_config_registry\" ]; then npm config set registry \"$npm_config_registry\" >/dev/null 2>&1 || true; fi\n"
+                    + "  reg=$(npm config get registry 2>/dev/null || true)\n"
+                    + "  if [ -n \"$reg\" ]; then echo \"[build] npm registry: $reg\" >>\"$LOG_FILE\" 2>&1; fi\n"
                     + "  echo \"[build] npm run build\" >>\"$LOG_FILE\" 2>&1\n"
                     + "  set +e\n"
                     + "  npm run build >>\"$LOG_FILE\" 2>&1\n"
@@ -377,9 +370,10 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     + "fi\n"
                     + "code=0\n"
                     + "if [ ! -f package.json ]; then echo \"package.json not found: $APP_DIR\" >>\"$LOG_FILE\"; code=2; else\n"
-                    + "  npm config set registry https://registry.npmmirror.com >/dev/null 2>&1 || true\n"
-                    + "  if [ -n \"$NPM_CONFIG_CACHE\" ]; then export npm_config_cache=\"$NPM_CONFIG_CACHE\"; fi\n"
-                    + "  if [ -n \"$npm_config_cache\" ]; then echo \"[install] npm cache: $npm_config_cache\" >>\"$LOG_FILE\" 2>&1; fi\n"
+                    + "  if [ -n \"$NPM_CONFIG_REGISTRY\" ]; then npm config set registry \"$NPM_CONFIG_REGISTRY\" >/dev/null 2>&1 || true; fi\n"
+                    + "  if [ -z \"$NPM_CONFIG_REGISTRY\" ] && [ -n \"$npm_config_registry\" ]; then npm config set registry \"$npm_config_registry\" >/dev/null 2>&1 || true; fi\n"
+                    + "  reg=$(npm config get registry 2>/dev/null || true)\n"
+                    + "  if [ -n \"$reg\" ]; then echo \"[install] npm registry: $reg\" >>\"$LOG_FILE\" 2>&1; fi\n"
                     + "  echo \"[install] npm install\" >>\"$LOG_FILE\" 2>&1\n"
                     + "  set +e\n"
                     + "  npm install >>\"$LOG_FILE\" 2>&1\n"
@@ -405,9 +399,10 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     + "  if [ -n \"$pkg\" ]; then APP_DIR=$(dirname \"$pkg\"); cd \"$APP_DIR\" >>\"$LOG_FILE\" 2>&1; fi\n"
                     + "fi\n"
                     + "if [ ! -f package.json ]; then echo \"package.json not found: $APP_DIR\" >>\"$LOG_FILE\"; exit 2; fi\n"
-                    + "npm config set registry https://registry.npmmirror.com >/dev/null 2>&1 || true\n"
-                    + "if [ -n \"$NPM_CONFIG_CACHE\" ]; then export npm_config_cache=\"$NPM_CONFIG_CACHE\"; fi\n"
-                    + "if [ -n \"$npm_config_cache\" ]; then echo \"[preview] npm cache: $npm_config_cache\" >>\"$LOG_FILE\" 2>&1; fi\n"
+                    + "if [ -n \"$NPM_CONFIG_REGISTRY\" ]; then npm config set registry \"$NPM_CONFIG_REGISTRY\" >/dev/null 2>&1 || true; fi\n"
+                    + "if [ -z \"$NPM_CONFIG_REGISTRY\" ] && [ -n \"$npm_config_registry\" ]; then npm config set registry \"$npm_config_registry\" >/dev/null 2>&1 || true; fi\n"
+                    + "reg=$(npm config get registry 2>/dev/null || true)\n"
+                    + "if [ -n \"$reg\" ]; then echo \"[preview] npm registry: $reg\" >>\"$LOG_FILE\" 2>&1; fi\n"
                     + "export PORT=\"$PORT\"\n"
                     + "export HOST=\"0.0.0.0\"\n"
                     + "export BASE_PATH=\"$BASE_PATH\"\n"
@@ -470,9 +465,10 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     + "  fi\n"
                     + "fi\n"
                     + "if [ ! -f package.json ]; then echo \"package.json not found: $APP_DIR\" >>\"$LOG_FILE\"; exit 2; fi\n"
-                    + "npm config set registry https://registry.npmmirror.com >/dev/null 2>&1 || true\n"
-                    + "if [ -n \"$NPM_CONFIG_CACHE\" ]; then export npm_config_cache=\"$NPM_CONFIG_CACHE\"; fi\n"
-                    + "if [ -n \"$npm_config_cache\" ]; then echo \"[dev-start] npm cache: $npm_config_cache\" >>\"$LOG_FILE\" 2>&1; fi\n"
+                    + "if [ -n \"$NPM_CONFIG_REGISTRY\" ]; then npm config set registry \"$NPM_CONFIG_REGISTRY\" >/dev/null 2>&1 || true; fi\n"
+                    + "if [ -z \"$NPM_CONFIG_REGISTRY\" ] && [ -n \"$npm_config_registry\" ]; then npm config set registry \"$npm_config_registry\" >/dev/null 2>&1 || true; fi\n"
+                    + "reg=$(npm config get registry 2>/dev/null || true)\n"
+                    + "if [ -n \"$reg\" ]; then echo \"[dev-start] npm registry: $reg\" >>\"$LOG_FILE\" 2>&1; fi\n"
                     + "if [ ! -d node_modules ]; then echo \"[dev-start] npm install...\" >>\"$LOG_FILE\"; npm install >>\"$LOG_FILE\" 2>&1; fi\n"
                     + "echo \"[dev-start] npm run dev on $PORT\" >>\"$LOG_FILE\" 2>&1\n"
                     + "export CHOKIDAR_USEPOLLING=true\n"
@@ -1606,15 +1602,24 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
 
     private void ensureContainerRunning(Long userId, Path hostUserDir, WorkspaceMeta meta) {
         String name = meta.getContainerName();
+        String networkName = props.getNetworkName();
 
         String status = queryContainerStatus(name);
         if ("RUNNING".equalsIgnoreCase(status)) {
+            if (StringUtils.hasText(networkName)) {
+                ensureDockerNetwork(networkName);
+                tryConnectContainerNetwork(networkName, name);
+            }
             return;
         }
         if (!"NOT_CREATED".equalsIgnoreCase(status)) {
             // 容器存在但非 running：尝试启动
             CommandResult start = docker("start", name);
             if (start.isSuccess()) {
+                if (StringUtils.hasText(networkName)) {
+                    ensureDockerNetwork(networkName);
+                    tryConnectContainerNetwork(networkName, name);
+                }
                 return;
             }
             log.warn("docker start failed: userId={}, name={}, out={}", userId, name, start.getOutput());
@@ -1628,6 +1633,11 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         cmd.add("--name");
         cmd.add(name);
         cmd.add("--restart=always");
+        if (StringUtils.hasText(networkName)) {
+            ensureDockerNetwork(networkName);
+            cmd.add("--network");
+            cmd.add(networkName);
+        }
         cmd.add("-p");
         cmd.add(meta.getHostPort() + ":" + meta.getContainerPort());
         cmd.add("-v");
@@ -1635,26 +1645,12 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         cmd.add("-w");
         cmd.add(props.getContainerWorkdir());
 
-        // npm cache bind mount（可选）
-        if (props.getNpmCache() != null && props.getNpmCache().isEnabled()) {
-            String hostDir = props.getNpmCache().getHostDir();
-            String containerDir = StringUtils.hasText(props.getNpmCache().getContainerDir())
-                    ? props.getNpmCache().getContainerDir()
-                    : "/opt/funai/npm-cache";
-
-            cmd.add("-v");
-            cmd.add(hostDir + ":" + containerDir);
-
+        // npm registry（推荐 Verdaccio）：注入为 env，脚本中不再写死 registry
+        if (StringUtils.hasText(props.getNpmRegistry())) {
             cmd.add("-e");
-            cmd.add("NPM_CONFIG_CACHE=" + containerDir);
+            cmd.add("NPM_CONFIG_REGISTRY=" + props.getNpmRegistry());
             cmd.add("-e");
-            cmd.add("npm_config_cache=" + containerDir);
-            cmd.add("-e");
-            cmd.add("npm_config_prefer_offline=" + props.getNpmCache().isPreferOffline());
-            cmd.add("-e");
-            cmd.add("npm_config_fetch_retries=" + Math.max(0, props.getNpmCache().getFetchRetries()));
-            cmd.add("-e");
-            cmd.add("npm_config_fetch_timeout=" + Math.max(10_000, props.getNpmCache().getFetchTimeoutMs()));
+            cmd.add("npm_config_registry=" + props.getNpmRegistry());
         }
 
         // mongo bind mount（可选）
@@ -1701,6 +1697,29 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         if (!r.isSuccess()) {
             throw new RuntimeException("创建 workspace 容器失败: userId=" + userId + ", out=" + r.getOutput());
         }
+    }
+
+    private void ensureDockerNetwork(String networkName) {
+        if (!StringUtils.hasText(networkName)) return;
+        CommandResult inspect = docker("network", "inspect", networkName);
+        if (inspect.isSuccess()) return;
+        CommandResult create = docker("network", "create", networkName);
+        if (!create.isSuccess()) {
+            log.warn("docker network create failed: network={}, out={}", networkName, create.getOutput());
+        }
+    }
+
+    private void tryConnectContainerNetwork(String networkName, String containerName) {
+        if (!StringUtils.hasText(networkName) || !StringUtils.hasText(containerName)) return;
+        CommandResult r = docker("network", "connect", networkName, containerName);
+        if (r.isSuccess()) return;
+        String out = normalizeDockerCliOutput(r.getOutput());
+        String lower = out == null ? "" : out.toLowerCase();
+        if (lower.contains("already exists") || lower.contains("already connected")) {
+            return;
+        }
+        // podman/dokcer 的差异提示/错误信息不影响主流程（容器依旧可用），这里仅打 debug，避免误伤
+        log.debug("docker network connect ignored: network={}, container={}, out={}", networkName, containerName, r.getOutput());
     }
 
     private String buildContainerBootstrapCommand(Long userId) {

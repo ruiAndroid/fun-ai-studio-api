@@ -1,4 +1,4 @@
-# Workspace：npm 缓存（最简方案）
+# Workspace：npm 依赖安装加速（Verdaccio 代理仓库）
 
 ## 背景与目标
 
@@ -8,66 +8,114 @@
 - 容器出网不稳定时可能直接失败
 - 多人并发时会造成 CPU/IO 峰值
 
-本方案先用**最小改动**跑通流程：在宿主机提供一个**全局 npm cache 目录**，挂载到每个用户容器，让 npm 安装优先命中缓存。
+本项目推荐使用 **Verdaccio 代理仓库**作为 npm 依赖安装加速方案：把“出网下载”集中到同机的 registry proxy 上，并缓存到服务端 `storage`，workspace 容器后续安装优先命中缓存。
 
-> 说明：这是“跨用户共享”的全局缓存，属于试验性/过渡方案；后续推荐升级为 Verdaccio/Nexus/Artifactory 等企业级私有仓库（代理 + 缓存 + 审计）。
+## Verdaccio 代理仓库（同机容器网络访问）
 
-## 方案概述
+Verdaccio 的收益：
 
-- 宿主机准备目录：`/data/funai/cache/npm`
-- workspace 创建用户容器时：
-  - bind mount：`/data/funai/cache/npm` -> 容器 `/opt/funai/npm-cache`（可配置）
-  - 注入 npm 配置环境变量：`NPM_CONFIG_CACHE`、`npm_config_prefer_offline`、`npm_config_fetch_*`
-- 运行态启动 `npm install` 时：
-  - 优先使用该 cache（命中则不出网/少出网）
-  - 失败时按重试/超时策略兜底
+- **更稳**：弱网时减少大量 registry metadata 请求，失败率更低
+- **更快**：首次下载后由 Verdaccio 缓存，后续安装几乎不再出网
+- **更可控**：后续可加鉴权/白名单/审计（本项目先按单机最简方式跑通）
 
-## 配置项（Spring Boot）
+### 部署（阿里云单机，podman-docker 兼容，仅容器网络访问）
 
-在 `application-prod.properties` 配置：
-
-```properties
-funai.workspace.npmCache.enabled=true
-funai.workspace.npmCache.hostDir=/data/funai/cache/npm
-funai.workspace.npmCache.containerDir=/opt/funai/npm-cache
-funai.workspace.npmCache.preferOffline=true
-funai.workspace.npmCache.fetchRetries=5
-funai.workspace.npmCache.fetchTimeoutMs=120000
-```
-
-## 目录准备（宿主机）
+1) 创建网络（让 workspace 容器和 verdaccio 在同一“容器局域网”）：
 
 ```bash
-mkdir -p /data/funai/cache/npm
+docker network create funai-net
 ```
 
-## 容器内实际生效的关键点
+2) 启动 Verdaccio（容器名固定为 `verdaccio`，加入 `funai-net`）：
 
-当 `npmCache.enabled=true` 时，用户容器启动参数会带上：
+```bash
+mkdir -p /data/funai/verdaccio/{conf,storage}
 
-- `-v /data/funai/cache/npm:/opt/funai/npm-cache`
-- `-e NPM_CONFIG_CACHE=/opt/funai/npm-cache`
-- `-e npm_config_cache=/opt/funai/npm-cache`
-- `-e npm_config_prefer_offline=true`
-- `-e npm_config_fetch_retries=5`
-- `-e npm_config_fetch_timeout=120000`
+docker run -d --name verdaccio --restart=always \
+  --network funai-net \
+  -v /data/funai/verdaccio/conf:/verdaccio/conf \
+  -v /data/funai/verdaccio/storage:/verdaccio/storage \
+  verdaccio/verdaccio:5
+```
 
-运行态脚本在执行 `npm install` 前会输出当前 cache 路径到 `dev.log`，便于排查。
+> 说明：本方案面向 **仅容器网络访问**，因此不需要 `-p 4873:4873` 映射到宿主机。若你要给公网/内网访问，需要额外做域名/HTTPS/鉴权/限流，并慎重开放端口。
 
-## 缓存预热（建议）
+3) Verdaccio 上游（uplink）建议指向 `https://registry.npmmirror.com`，由 Verdaccio 负责缓存。
 
-为了减少首次用户安装的抖动，你可以在服务器上**预热**一批固定依赖（例如你们“定死”的依赖集合）。
+### Verdaccio 基本原理（proxy + cache）
 
-思路（任选其一）：
+- **角色**：Verdaccio 是一个 npm registry 代理（proxy registry）。
+- **工作方式**：
+  - workspace 容器的 `npm install` 请求先到 Verdaccio
+  - Verdaccio 若本地已有该包版本（命中缓存），直接返回
+  - 未命中则转发到上游 registry（例如 `npmmirror`），拿到包后写入自身 `storage`，再返回给客户端
+- **重要特性**：缓存是 **全局共享** 的（面向“包/版本”），不是“按容器/按用户”隔离的缓存桶。
 
-- 方式 A：准备一个“预热项目”（只有 `package.json` + lockfile），在任意用户容器里跑一次 `npm ci`/`npm install`，即可把依赖下载进全局 cache。
-- 方式 B：在一个临时容器里挂载 cache 目录，直接执行 `npm` 安装（同样会填充 cache）。
+### storage 是什么？存在哪里？（全局缓存）
 
-## 注意事项
+Verdaccio 的 `storage` 是它的服务端缓存与元数据存储目录。按本文部署，宿主机目录为：
 
-- **一致性**：cache 只是加速，不替代 `node_modules`；项目依赖仍以 lockfile 为准。
-- **磁盘占用**：全局 cache 会持续增长；建议配合磁盘监控与定期清理策略（按时间/大小）。
-- **安全**：全局 cache 跨用户共享，适合“先跑通”。若你们对供应链安全要求更高，后续应上私有仓库并做包白名单/审计。
+- ` /data/funai/verdaccio/storage`
+
+一般会包含：
+
+- **包元数据**（例如包的版本信息、dist-tags 等）
+- **包 tarball**（`.tgz` 等），用于后续命中缓存
+
+> 提醒：不建议直接手工删除 `storage` 下的文件来“清理缓存”，容易造成元数据不一致。删除/清理建议走 Verdaccio 的管理能力或做整体重建策略。
+
+### 我怎么知道 Verdaccio 里缓存了哪些包/版本？
+
+你可以从两个角度看：
+
+- **通过 Verdaccio UI**：如果你不做端口映射，可以临时用一次端口转发或临时暴露（仅运维时短暂使用），查看包列表与版本。
+- **直接看宿主机 storage 目录结构**：`/data/funai/verdaccio/storage` 下通常会按包名组织目录，目录中会有该包的元数据与 tarball 文件。
+
+### 我能否知道“哪些容器缓存了哪些第三方包”？
+
+Verdaccio 的缓存不是按容器归属的，因此**无法直接得到“容器A缓存了哪些包”这种天然映射**；它只能告诉你“哪些包/版本被请求过并缓存了”。
+
+如果你想追踪“是谁请求了什么”，需要看 **Verdaccio 访问日志**：
+
+- 日志能看到请求路径（包名/版本/registry API），以及请求来源（通常是容器网络里的 IP）
+- 再通过 `podman/docker inspect` 把 IP 映射回 workspace 容器名，就能追溯到“哪个容器在请求哪些依赖”
+
+### 运维建议（仅容器网络访问的最简实践）
+
+- **日志**：开启/保留 Verdaccio 的访问日志与错误日志（用于排障与追溯谁请求了什么包）。
+- **磁盘**：重点监控 ` /data/funai/verdaccio/storage` 的容量增长（Verdaccio 缓存会持续增长）。
+- **备份**：定期备份：
+  - `/data/funai/verdaccio/conf`
+  - `/data/funai/verdaccio/storage`
+
+### 后端配置（Spring Boot）
+
+在 `application-prod.properties` 增加/确认：
+
+```properties
+funai.workspace.networkName=funai-net
+funai.workspace.npmRegistry=http://verdaccio:4873
+```
+
+效果：
+
+- workspace 容器创建时会 `--network funai-net`
+- 容器内注入 `NPM_CONFIG_REGISTRY` / `npm_config_registry`
+- 运行态脚本会把 **实际 registry** 写到 `run/dev.log`，便于排查
+
+### 验收
+
+- 启动/安装时查看 `run/dev.log`：应包含 `npm registry: http://verdaccio:4873`
+- Verdaccio 日志可看到首次下载，后续命中缓存
+
+## 预热（建议）：让 Verdaccio 先缓存一批常用依赖
+
+思路：用一个临时 warmup 项目跑一次安装，但确保 registry 指向 Verdaccio，这样缓存会进入 Verdaccio `storage`：
+
+- `npm config set registry http://verdaccio:4873`
+- `npm install` 或 `npm ci`
+
+> 验收：在 `run/dev.log` 或安装输出中确认 `npm registry` 为 `http://verdaccio:4873`。
 
 
 固定的依赖配置如下：
