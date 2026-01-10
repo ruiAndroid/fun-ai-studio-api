@@ -20,13 +20,17 @@ Verdaccio 的收益：
 
 ### 部署（阿里云单机，podman-docker 兼容，仅容器网络访问）
 
-1) 创建网络（让 workspace 容器和 verdaccio 在同一“容器局域网”）：
+> 重要：Verdaccio 是**运维侧常驻基础设施**。当前后端只负责创建/管理 `ws-u-{userId}` 的 workspace 用户容器，不会自动拉起 `verdaccio` 容器。
+
+#### 手动启动/重建命令（可直接复制执行）
+
+1) 创建网络（一次性）：
 
 ```bash
 docker network create funai-net
 ```
 
-2) 启动 Verdaccio（容器名固定为 `verdaccio`，加入 `funai-net`）：
+2) 启动 Verdaccio（常驻 + 持久化）：
 
 ```bash
 mkdir -p /data/funai/verdaccio/{conf,storage}
@@ -38,9 +42,38 @@ docker run -d --name verdaccio --restart=always \
   verdaccio/verdaccio:5
 ```
 
+3) 如需“重建 Verdaccio 容器”（保留数据，仅重建容器）：
+
+```bash
+docker rm -f verdaccio 2>/dev/null || true
+
+docker run -d --name verdaccio --restart=always \
+  --network funai-net \
+  -v /data/funai/verdaccio/conf:/verdaccio/conf \
+  -v /data/funai/verdaccio/storage:/verdaccio/storage \
+  verdaccio/verdaccio:5
+```
+
+4) 把已有 workspace 容器加入 `funai-net`（老容器需要；新容器创建时会自动加）：
+
+```bash
+docker network connect funai-net ws-u-10000021 2>/dev/null || true
+docker network connect funai-net ws-u-10000023 2>/dev/null || true
+```
+
+5) 基本验证（确认 Verdaccio 已启动且可访问）：
+
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
+docker logs --tail 50 verdaccio
+
+# 在任意加入 funai-net 的容器里验证（以某个 ws-u-* 容器为例）
+docker exec ws-u-10000021 bash -lc "curl -I http://verdaccio:4873 || wget -S --spider http://verdaccio:4873"
+```
+
 > 说明：本方案面向 **仅容器网络访问**，因此不需要 `-p 4873:4873` 映射到宿主机。若你要给公网/内网访问，需要额外做域名/HTTPS/鉴权/限流，并慎重开放端口。
 
-3) Verdaccio 上游（uplink）建议指向 `https://registry.npmmirror.com`，由 Verdaccio 负责缓存。
+Verdaccio 上游（uplink）建议指向 `https://registry.npmmirror.com`，由 Verdaccio 负责缓存。
 
 ### Verdaccio 基本原理（proxy + cache）
 

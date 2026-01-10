@@ -526,8 +526,12 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     + "printf '{\"appId\":" + appId + ",\"type\":\"DEV\",\"pid\":%s,\"startedAt\":%s,\"logPath\":\"" + logFile + "\"}' \"$pid\" \"$(date +%s)\" > \"$META_FILE\"\n";
         }
 
-        // 外层脚本：只做互斥与写入 STARTING/BULDING meta，然后后台启动 innerScript
+        // 外层脚本：做互斥 + 写入初始 meta（pid=null）+ 后台启动 innerScript。
+        // 重要：DEV/START 的“长期 pid”应由 innerScript（setsid 启动的进程组）写入 current.json，
+        // 否则外层 nohup/bash pid 很快退出，会导致 /run/status 误判为 DEAD，从而不返回 previewUrl。
         String initialState = "BUILD".equals(op) ? "BUILDING" : ("INSTALL".equals(op) ? "INSTALLING" : "STARTING");
+        boolean managedLongRunning = "DEV".equals(op) || "START".equals(op);
+
         String script = ""
                 + "set -e\n"
                 + "RUN_DIR='" + runDir + "'\n"
@@ -544,7 +548,8 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                 + "  fi\n"
                 + "fi\n"
                 + "rm -f \"$PID_FILE\" || true\n"
-                + "printf '{\"appId\":" + appId + ",\"type\":\"" + op + "\",\"pid\":null,\"startedAt\":'\"$(date +%s)\"',\"logPath\":\"" + logFile + "\"}' > \"$META_FILE\"\n"
+                + "ts=$(date +%s)\n"
+                + "echo '{\"appId\":" + appId + ",\"type\":\"" + op + "\",\"pid\":null,\"startedAt\":'\"$ts\"',\"logPath\":\"" + logFile + "\"}' > \"$META_FILE\"\n"
                 + "cat > \"$START_SH\" <<'EOS'\n"
                 + innerScript
                 + "EOS\n"
@@ -552,7 +557,9 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                 + "nohup bash \"$START_SH\" >>\"$LOG_FILE\" 2>&1 &\n"
                 + "pid=$!\n"
                 + "echo \"$pid\" > \"$PID_FILE\"\n"
-                + "printf '{\"appId\":" + appId + ",\"type\":\"" + op + "\",\"pid\":%s,\"startedAt\":%s,\"logPath\":\"" + logFile + "\"}' \"$pid\" \"$(date +%s)\" > \"$META_FILE\"\n"
+                + (managedLongRunning
+                ? ""
+                : "echo '{\"appId\":" + appId + ",\"type\":\"" + op + "\",\"pid\":'\"$pid\"',\"startedAt\":'\"$ts\"',\"logPath\":\"" + logFile + "\"}' > \"$META_FILE\"\n")
                 + "echo \"LAUNCHED:" + initialState + "\"\n";
 
         CommandResult r = docker("exec", containerName, "bash", "-lc", script);

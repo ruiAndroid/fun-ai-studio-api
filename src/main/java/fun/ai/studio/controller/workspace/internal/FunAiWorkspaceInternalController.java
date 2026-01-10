@@ -1,6 +1,7 @@
 package fun.ai.studio.controller.workspace.internal;
 
 import fun.ai.studio.workspace.WorkspaceProperties;
+import fun.ai.studio.workspace.WorkspaceActivityTracker;
 import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -27,13 +28,16 @@ public class FunAiWorkspaceInternalController {
 
     private final fun.ai.studio.service.impl.FunAiWorkspaceServiceImpl workspaceServiceImpl;
     private final WorkspaceProperties workspaceProperties;
+    private final WorkspaceActivityTracker activityTracker;
 
     public FunAiWorkspaceInternalController(
             fun.ai.studio.service.impl.FunAiWorkspaceServiceImpl workspaceServiceImpl,
-            WorkspaceProperties workspaceProperties
+            WorkspaceProperties workspaceProperties,
+            WorkspaceActivityTracker activityTracker
     ) {
         this.workspaceServiceImpl = workspaceServiceImpl;
         this.workspaceProperties = workspaceProperties;
+        this.activityTracker = activityTracker;
     }
 
     @GetMapping("/nginx/port")
@@ -61,6 +65,11 @@ public class FunAiWorkspaceInternalController {
                 if (remote == null || !(remote.equals("127.0.0.1") || remote.equals("::1") || remote.equals("0:0:0:0:0:0:0:1"))) {
                     return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
                 }
+            }
+
+            // 预览流量保活：nginx auth_request 会高频调用该接口；touch 仅更新内存时间戳，无副作用。
+            if (activityTracker != null) {
+                activityTracker.touch(userId);
             }
             Integer port = workspaceServiceImpl.getHostPortForNginx(userId);
             if (port == null || port <= 0) {
