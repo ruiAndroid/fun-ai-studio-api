@@ -92,6 +92,22 @@ public class FunAiWorkspaceContainerController {
             return Result.error("heartbeat failed: " + e.getMessage());
         }
     }
+
+    @PostMapping("/remove")
+    @Operation(summary = "删除 workspace 容器", description = "删除 ws-u-{userId} 容器（docker rm -f）。默认只删容器，不删宿主机持久化目录。")
+    public Result<FunAiWorkspaceStatusResponse> remove(
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId
+    ) {
+        try {
+            activityTracker.touch(userId);
+            return Result.success(workspaceService.removeWorkspaceContainer(userId));
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            log.error("remove workspace container failed: userId={}, error={}", userId, e.getMessage(), e);
+            return Result.error("remove workspace container failed: " + e.getMessage());
+        }
+    }
 }
 
 

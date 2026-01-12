@@ -1598,6 +1598,49 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
     }
 
     @Override
+    public FunAiWorkspaceStatusResponse removeWorkspaceContainer(Long userId) {
+        assertEnabled();
+        if (userId == null) {
+            throw new IllegalArgumentException("userId 不能为空");
+        }
+        Path hostUserDir = resolveHostWorkspaceDir(userId);
+        String containerName = containerNameFromMetaOrDefault(hostUserDir, userId);
+
+        // 1) 尽量先 stopRun 元数据（不拉起容器）
+        try {
+            stopRunForIdle(userId);
+        } catch (Exception ignore) {
+        }
+
+        // 2) 删除容器（强制）
+        try {
+            docker("rm", "-f", containerName);
+        } catch (Exception ignore) {
+        }
+
+        // 3) 刷新 last-known：容器状态应为 NOT_CREATED
+        FunAiWorkspaceStatusResponse resp = new FunAiWorkspaceStatusResponse();
+        resp.setUserId(userId);
+        resp.setContainerName(containerName);
+        resp.setHostWorkspaceDir(hostUserDir.toString());
+        resp.setContainerPort(props.getContainerPort());
+        resp.setContainerStatus(queryContainerStatus(containerName));
+
+        FunAiWorkspaceRun r = new FunAiWorkspaceRun();
+        r.setUserId(userId);
+        r.setContainerName(containerName);
+        r.setContainerPort(props.getContainerPort());
+        r.setContainerStatus(resp.getContainerStatus());
+        r.setRunState("IDLE");
+        r.setRunPid(null);
+        r.setPreviewUrl(null);
+        r.setLogPath(null);
+        r.setLastError("container removed by api");
+        upsertWorkspaceRun(r);
+        return resp;
+    }
+
+    @Override
     public void cleanupWorkspaceOnAppDeleted(Long userId, Long appId) {
         // 注意：此方法不做 DB 归属校验；由调用方（删除应用接口）保证已校验 app 归属
         if (userId == null || appId == null) return;

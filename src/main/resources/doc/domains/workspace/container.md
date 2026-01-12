@@ -39,6 +39,19 @@
 
 - 维持“该用户活跃”的最后时间，用于 idle 回收策略（先 stop run，再 stop container）。
 
+### remove（删除用户容器）
+
+- `POST /api/fun-ai/workspace/container/remove?userId=...`
+
+用途：
+
+- 当容器进入异常状态（例如挂载/环境变量变更需要重建）时，允许通过 API 主动删除 `ws-u-{userId}` 容器，替代手工 `podman rm -f ws-u-...`
+
+重要说明：
+
+- **默认只删除容器本身**（`docker rm -f`），不会删除宿主机持久化目录 `{hostRoot}/{userId}`，因此项目代码/运行日志等仍会保留。
+- 删除后再次调用 `container/ensure` 或 `open-editor` 会自动重建容器。
+
 ## 与 Mongo（可选）的关系
 
 当配置启用 `funai.workspace.mongo.enabled=true` 时，容器 ensure 过程会额外准备并挂载用户级 Mongo 持久化目录（建议与 workspace 目录分离）：

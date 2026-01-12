@@ -118,6 +118,14 @@ public interface FunAiWorkspaceService {
     void stopContainerForIdle(Long userId);
 
     /**
+     * 删除用户 workspace 容器（docker rm -f ws-u-{userId}）。
+     * <p>
+     * 默认只删除容器本身，不删除宿主机持久化目录（{hostRoot}/{userId}），避免误伤代码与数据。
+     * 返回删除后的容器状态（通常为 NOT_CREATED）。
+     */
+    FunAiWorkspaceStatusResponse removeWorkspaceContainer(Long userId);
+
+    /**
      * 应用被删除后的 workspace 清理（无 DB 归属校验：调用方需确保已校验 app 归属）
      * - 若该 app 正在运行：尝试 stopRun（仅当容器处于 RUNNING 时）
      * - 删除宿主机目录：{hostRoot}/{userId}/apps/{appId}
