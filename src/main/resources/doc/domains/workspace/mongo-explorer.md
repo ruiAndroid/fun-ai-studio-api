@@ -126,4 +126,13 @@ Api-->>Browser: Result{code,message,data}
 3. 返回“mongosh 执行失败 / 无输出”
    - 进入容器查看 `mongod` 是否启动、查看 `{containerLogDir}/{logFileName}` 日志
 
+## 资源占用提示（重要）
+
+MongoDB（WiredTiger）默认会根据可用内存估算较大的 cache（常见约 50%），在 2GiB 机器上会导致“常态内存占用很高”。\n
+建议在生产环境显式设置：
+
+- `funai.workspace.mongo.wiredTigerCacheSizeGB=0.25`（约 256MB，2GiB 机器推荐起点）
+
+该配置会注入到容器内 mongod 启动参数：`--wiredTigerCacheSizeGB`。
+
 

@@ -1830,6 +1830,25 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         cmd.add("--name");
         cmd.add(name);
         cmd.add("--restart=always");
+
+        // 资源限制（可选）：不配置则保持历史行为
+        if (StringUtils.hasText(props.getDockerMemory())) {
+            cmd.add("--memory");
+            cmd.add(props.getDockerMemory().trim());
+        }
+        if (StringUtils.hasText(props.getDockerMemorySwap())) {
+            cmd.add("--memory-swap");
+            cmd.add(props.getDockerMemorySwap().trim());
+        }
+        if (props.getDockerCpus() != null && props.getDockerCpus() > 0) {
+            cmd.add("--cpus");
+            cmd.add(String.valueOf(props.getDockerCpus()));
+        }
+        if (props.getPidsLimit() != null && props.getPidsLimit() > 0) {
+            cmd.add("--pids-limit");
+            cmd.add(String.valueOf(props.getPidsLimit()));
+        }
+
         if (StringUtils.hasText(networkName)) {
             ensureDockerNetwork(networkName);
             cmd.add("--network");
@@ -2003,6 +2022,8 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         String logFile = logDir + "/" + (StringUtils.hasText(props.getMongo().getLogFileName()) ? props.getMongo().getLogFileName() : "mongod.log");
         String bindIp = StringUtils.hasText(props.getMongo().getBindIp()) ? props.getMongo().getBindIp() : "127.0.0.1";
         int port = props.getMongo().getPort() > 0 ? props.getMongo().getPort() : 27017;
+        Double wtCacheGb = props.getMongo().getWiredTigerCacheSizeGB();
+        String wtArg = (wtCacheGb != null && wtCacheGb > 0) ? (" --wiredTigerCacheSizeGB " + wtCacheGb) : "";
 
         return ""
                 + "set -e\n"
@@ -2010,7 +2031,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                 + "if command -v mongod >/dev/null 2>&1; then\n"
                 + "  mkdir -p '" + dbPath + "' '" + logDir + "'\n"
                 + "  echo \"[bootstrap] starting mongod...\" \n"
-                + "  (mongod --dbpath '" + dbPath + "' --bind_ip '" + bindIp + "' --port " + port + " --logpath '" + logFile + "' --logappend >/dev/null 2>&1 &) || true\n"
+                + "  (mongod --dbpath '" + dbPath + "' --bind_ip '" + bindIp + "' --port " + port + " --logpath '" + logFile + "' --logappend" + wtArg + " >/dev/null 2>&1 &) || true\n"
                 + "else\n"
                 + "  echo \"[bootstrap] mongod not found in image, skip\" \n"
                 + "fi\n"

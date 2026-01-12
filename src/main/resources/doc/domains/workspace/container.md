@@ -48,4 +48,21 @@
 
 更多细节（dbName 隔离规则、环境变量注入、排错等）见：`mongo.md`
 
+## 资源限制（推荐生产环境显式配置）
+
+当前 workspace 容器默认为长驻（`--restart=always`），在小规格机器（如 2c2g）上建议对单用户容器加资源上限，避免 `npm install/build` 或常驻 `mongod` 把宿主机打满。
+
+新增配置（可选，不配置则不生效）：
+
+- `funai.workspace.dockerMemory`: 注入 `docker run --memory`，示例 `1400m`
+- `funai.workspace.dockerMemorySwap`: 注入 `docker run --memory-swap`，示例 `1400m`
+- `funai.workspace.dockerCpus`: 注入 `docker run --cpus`，示例 `1.5`
+- `funai.workspace.pidsLimit`: 注入 `docker run --pids-limit`，示例 `512`
+
+2c2g 推荐起点（仅供参考，按业务压测调整）：
+
+- `funai.workspace.dockerMemory=1400m`
+- `funai.workspace.dockerCpus=1.5`
+- `funai.workspace.pidsLimit=512`
+
 

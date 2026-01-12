@@ -89,6 +89,34 @@ public class WorkspaceProperties {
     private String noProxy;
 
     /**
+     * docker run 资源限制（可选）
+     * <p>
+     * 说明：
+     * - 不配置则不注入任何限制（保持历史行为）
+     * - 典型值：dockerMemory=1400m, dockerCpus=1.5, pidsLimit=512
+     */
+    private String dockerMemory;
+
+    /**
+     * docker run --memory-swap（可选）
+     * - 例如：1400m、2g
+     * - Docker 语义：memory+swap 的总量上限（不同运行时实现可能略有差异）
+     */
+    private String dockerMemorySwap;
+
+    /**
+     * docker run --cpus（可选）
+     * 例如：1.0 / 1.5 / 2.0
+     */
+    private Double dockerCpus;
+
+    /**
+     * docker run --pids-limit（可选）
+     * 防止 fork 炸弹或依赖安装时创建过多进程把宿主机拖死。
+     */
+    private Integer pidsLimit;
+
+    /**
      * 无操作多少分钟后自动 stop run（默认 10 分钟）
      */
     private int idleStopRunMinutes = 10;
@@ -241,6 +269,38 @@ public class WorkspaceProperties {
         this.noProxy = noProxy;
     }
 
+    public String getDockerMemory() {
+        return dockerMemory;
+    }
+
+    public void setDockerMemory(String dockerMemory) {
+        this.dockerMemory = dockerMemory;
+    }
+
+    public String getDockerMemorySwap() {
+        return dockerMemorySwap;
+    }
+
+    public void setDockerMemorySwap(String dockerMemorySwap) {
+        this.dockerMemorySwap = dockerMemorySwap;
+    }
+
+    public Double getDockerCpus() {
+        return dockerCpus;
+    }
+
+    public void setDockerCpus(Double dockerCpus) {
+        this.dockerCpus = dockerCpus;
+    }
+
+    public Integer getPidsLimit() {
+        return pidsLimit;
+    }
+
+    public void setPidsLimit(Integer pidsLimit) {
+        this.pidsLimit = pidsLimit;
+    }
+
     public int getIdleStopRunMinutes() {
         return idleStopRunMinutes;
     }
@@ -315,6 +375,15 @@ public class WorkspaceProperties {
          */
         private String logFileName = "mongod.log";
 
+        /**
+         * mongod WiredTiger cache 大小（GB，可选）
+         * <p>
+         * MongoDB 默认会按可用内存估算一个较大的 cache（常见约 50%），在 2GiB 机器上会导致“常态内存占用很高”。\n
+         * 建议 2GiB：0.25（约 256MB）或更小。\n
+         * 该值会注入到启动参数：--wiredTigerCacheSizeGB
+         */
+        private Double wiredTigerCacheSizeGB;
+
         public boolean isEnabled() {
             return enabled;
         }
@@ -377,6 +446,14 @@ public class WorkspaceProperties {
 
         public void setLogFileName(String logFileName) {
             this.logFileName = logFileName;
+        }
+
+        public Double getWiredTigerCacheSizeGB() {
+            return wiredTigerCacheSizeGB;
+        }
+
+        public void setWiredTigerCacheSizeGB(Double wiredTigerCacheSizeGB) {
+            this.wiredTigerCacheSizeGB = wiredTigerCacheSizeGB;
         }
     }
 }
