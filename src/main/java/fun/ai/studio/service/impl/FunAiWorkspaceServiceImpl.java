@@ -100,6 +100,16 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         ensureDir(appsDir);
         ensureDir(runDir);
 
+        // 兜底清理历史 run 日志（按 userId+type 全局保留 N 份；忽略 appId）
+        // 说明：用户频繁切换 appId 时，如果仅按 appId 清理，run 目录仍会持续增长。
+        int keep = Math.max(0, props.getRunLogKeepPerType());
+        if (keep > 0) {
+            try { pruneRunLogs(userId, "BUILD", keep); } catch (Exception ignore) {}
+            try { pruneRunLogs(userId, "INSTALL", keep); } catch (Exception ignore) {}
+            try { pruneRunLogs(userId, "START", keep); } catch (Exception ignore) {}
+            try { pruneRunLogs(userId, "DEV", keep); } catch (Exception ignore) {}
+        }
+
         // Mongo（可选）：用户级持久化（同一用户容器仅一个 mongod 实例）
         // 目录不应放在 workspace 下（在线编辑器实时同步会干扰 WiredTiger 文件），因此使用单独 hostRoot。
         if (props.getMongo() != null && props.getMongo().isEnabled()) {
@@ -355,9 +365,9 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             selectedScript = null;
         }
 
-        // 日志保留策略：同一 type 仅保留最近 N 份（避免 run 目录无限增长）
+        // 日志保留策略：同一 userId + type 仅保留最近 N 份（忽略 appId，避免 run 目录随着 appId 增长而无限增长）
         try {
-            pruneRunLogs(userId, appId, op, Math.max(0, props.getRunLogKeepPerType()));
+            pruneRunLogs(userId, op, Math.max(0, props.getRunLogKeepPerType()));
         } catch (Exception ignore) {
         }
 
@@ -971,10 +981,10 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         }
     }
 
-    private void pruneRunLogs(Long userId, Long appId, String type, int keep) {
+    private void pruneRunLogs(Long userId, String type, int keep) {
         // keep<=0：不清理
         if (keep <= 0) return;
-        if (userId == null || appId == null || !StringUtils.hasText(type)) return;
+        if (userId == null || !StringUtils.hasText(type)) return;
         if (!StringUtils.hasText(props.getHostRoot())) return;
 
         String op = type.trim().toLowerCase();
@@ -982,7 +992,9 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         Path hostRunDir = hostUserDir.resolve("run");
         if (Files.notExists(hostRunDir) || !Files.isDirectory(hostRunDir)) return;
 
-        String prefix = "run-" + op + "-" + appId + "-";
+        // run/run-{type}-{appId}-{timestamp}.log
+        // 这里按 userId + type 维度清理：run-{type}-*-{timestamp}.log
+        String prefix = "run-" + op + "-";
         String suffix = ".log";
 
         class Item {
@@ -998,7 +1010,10 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     if (p == null || !Files.isRegularFile(p)) return;
                     String name = p.getFileName().toString();
                     if (!name.startsWith(prefix) || !name.endsWith(suffix)) return;
-                    String tsPart = name.substring(prefix.length(), name.length() - suffix.length());
+                    String base = name.substring(0, name.length() - suffix.length());
+                    int lastDash = base.lastIndexOf('-');
+                    if (lastDash < 0 || lastDash + 1 >= base.length()) return;
+                    String tsPart = base.substring(lastDash + 1);
                     long ts = Long.parseLong(tsPart);
                     items.add(new Item(p, ts));
                 } catch (Exception ignore) {

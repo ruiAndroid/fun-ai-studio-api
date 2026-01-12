@@ -132,10 +132,12 @@ public class WorkspaceProperties {
     private int runStartingTimeoutSeconds = 300;
 
     /**
-     * 受控任务日志保留策略：同一 userId + appId + type（BUILD/INSTALL/START/DEV）最多保留最近 N 份日志文件。
+     * 受控任务日志保留策略：同一 userId + type（BUILD/INSTALL/START/DEV）最多保留最近 N 份日志文件（忽略 appId）。
      * <p>
      * 日志文件名形如：run/run-{type}-{appId}-{timestamp}.log
      * - 设置为 0 或负数：不做清理（可能导致 run 目录日志无限增长）
+     * <p>
+     * 说明：用户可能频繁切换不同 appId，如果按 appId 维度保留，run 目录总体仍会持续增长。
      */
     private int runLogKeepPerType = 3;
 
