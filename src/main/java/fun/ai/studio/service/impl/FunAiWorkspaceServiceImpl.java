@@ -1756,11 +1756,31 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
 
         String status = queryContainerStatus(name);
         if ("RUNNING".equalsIgnoreCase(status)) {
+            // 若启用 Mongo：确保 mongo 的 bind-mount 存在，否则数据会写到容器层导致“重启即丢”
+            if (props.getMongo() != null && props.getMongo().isEnabled()) {
+                boolean ok = hasExpectedMongoMounts(userId, name);
+                if (!ok) {
+                    log.warn("mongo mounts missing, recreate workspace container: userId={}, name={}", userId, name);
+                    tryRemoveContainer(name);
+                    status = "NOT_CREATED";
+                }
+            }
             if (StringUtils.hasText(networkName)) {
                 ensureDockerNetwork(networkName);
                 tryConnectContainerNetwork(networkName, name);
             }
             return;
+        }
+        if (!"NOT_CREATED".equalsIgnoreCase(status)) {
+            // 容器存在但非 running：若启用 Mongo 且 mount 缺失，直接重建
+            if (props.getMongo() != null && props.getMongo().isEnabled()) {
+                boolean ok = hasExpectedMongoMounts(userId, name);
+                if (!ok) {
+                    log.warn("mongo mounts missing (not running), recreate workspace container: userId={}, name={}, status={}", userId, name, status);
+                    tryRemoveContainer(name);
+                    status = "NOT_CREATED";
+                }
+            }
         }
         if (!"NOT_CREATED".equalsIgnoreCase(status)) {
             // 容器存在但非 running：尝试启动
@@ -1878,6 +1898,44 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                 log.debug("docker rm ignored: container={}, out={}", containerName, rm.getOutput());
             }
         } catch (Exception ignore) {
+        }
+    }
+
+    private boolean hasExpectedMongoMounts(Long userId, String containerName) {
+        try {
+            if (userId == null || !StringUtils.hasText(containerName)) return true;
+            if (props.getMongo() == null || !props.getMongo().isEnabled()) return true;
+            // 若未配置 hostRoot，则 ensureWorkspace 早已抛错；这里不再重复阻断
+            Path hostMongoDb = resolveHostMongoDbDir(userId);
+            Path hostMongoLog = resolveHostMongoLogDir(userId);
+            String dbDest = props.getMongo().getContainerDbPath();
+            String logDest = props.getMongo().getContainerLogDir();
+            return hasExpectedMount(containerName, hostMongoDb, dbDest) && hasExpectedMount(containerName, hostMongoLog, logDest);
+        } catch (Exception ignore) {
+            return true;
+        }
+    }
+
+    private boolean hasExpectedMount(String containerName, Path hostPath, String containerDest) {
+        try {
+            if (!StringUtils.hasText(containerName) || hostPath == null || !StringUtils.hasText(containerDest)) return true;
+            CommandResult r = docker("inspect", "-f", "{{range .Mounts}}{{.Source}}::{{.Destination}}\n{{end}}", containerName);
+            if (!r.isSuccess() || r.getOutput() == null) return true;
+            String expectedSrc = hostPath.toString().trim();
+            String expectedDst = containerDest.trim();
+            for (String line : r.getOutput().split("\\r?\\n")) {
+                String s = line == null ? "" : line.trim();
+                if (s.isEmpty() || !s.contains("::")) continue;
+                String[] parts = s.split("::", 2);
+                String src = parts[0] == null ? "" : parts[0].trim();
+                String dst = parts[1] == null ? "" : parts[1].trim();
+                if (dst.equals(expectedDst)) {
+                    return src.equals(expectedSrc);
+                }
+            }
+            return false;
+        } catch (Exception ignore) {
+            return true;
         }
     }
 
