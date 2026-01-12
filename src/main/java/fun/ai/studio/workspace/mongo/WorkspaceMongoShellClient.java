@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.time.Duration;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +27,7 @@ import java.util.regex.Pattern;
 public class WorkspaceMongoShellClient {
     private static final Duration CMD_TIMEOUT = Duration.ofSeconds(8);
     private static final int DEFAULT_MAX_TIME_MS = 3000;
+    private static final long SHELL_CACHE_TTL_MS = 10 * 60 * 1000L; // 10min
 
     // 只允许“常见安全字符”的集合名，避免注入/路径穿越/奇怪字符导致的边界问题
     private static final Pattern SAFE_COLLECTION = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$");
@@ -33,6 +35,8 @@ public class WorkspaceMongoShellClient {
     private final CommandRunner commandRunner;
     private final ObjectMapper objectMapper;
     private final WorkspaceProperties workspaceProperties;
+
+    private final ConcurrentHashMap<String, CachedShell> shellCache = new ConcurrentHashMap<>();
 
     public WorkspaceMongoShellClient(CommandRunner commandRunner, ObjectMapper objectMapper, WorkspaceProperties workspaceProperties) {
         this.commandRunner = commandRunner;
@@ -44,7 +48,7 @@ public class WorkspaceMongoShellClient {
         assertMongoEnabled();
         assertContainerName(containerName);
         assertDbName(dbName);
-        MongoShell shell = detectShell(containerName);
+        MongoShell shell = getShellCached(containerName);
 
         String script = shell.isMongosh()
                 ? ""
@@ -58,7 +62,7 @@ public class WorkspaceMongoShellClient {
                 + "var cols=db2.getCollectionNames().sort();\n"
                 + "print(JSON.stringify({dbName:dbName,collections:cols}));\n";
 
-        Map<?, ?> r = runMongoShellJson(shell, containerName, dbName, script);
+        Map<?, ?> r = runMongoShellJson(shell, containerName, dbName, script, true);
         Object cols = r == null ? null : r.get("collections");
         if (!(cols instanceof List<?> list)) return List.of();
         return list.stream()
@@ -79,7 +83,7 @@ public class WorkspaceMongoShellClient {
         assertContainerName(containerName);
         assertDbName(dbName);
         assertCollectionName(collection);
-        MongoShell shell = detectShell(containerName);
+        MongoShell shell = getShellCached(containerName);
 
         int lim = clamp(limit == null ? 50 : limit, 1, 200);
         int sk = clamp(skip == null ? 0 : skip, 0, 10000);
@@ -118,7 +122,7 @@ public class WorkspaceMongoShellClient {
                 + "var items=cur.toArray();\n"
                 + "print(JSON.stringify({dbName:dbName,collection:collName,limit:" + lim + ",skip:" + sk + ",returned:items.length,items:items}));\n";
 
-        Map<?, ?> r = runMongoShellJson(shell, containerName, dbName, script);
+        Map<?, ?> r = runMongoShellJson(shell, containerName, dbName, script, true);
         if (r == null) return Map.of();
         Map<String, Object> out = new LinkedHashMap<>();
         out.putAll(toStringObjectMap(r));
@@ -131,7 +135,7 @@ public class WorkspaceMongoShellClient {
         assertDbName(dbName);
         assertCollectionName(collection);
         if (!StringUtils.hasText(id)) throw new IllegalArgumentException("id 不能为空");
-        MongoShell shell = detectShell(containerName);
+        MongoShell shell = getShellCached(containerName);
 
         String script = shell.isMongosh()
                 ? ""
@@ -153,14 +157,14 @@ public class WorkspaceMongoShellClient {
                 + "var doc=db2.getCollection(collName).findOne({_id:_id});\n"
                 + "print(JSON.stringify({dbName:dbName,collection:collName,id:idStr,doc:doc}));\n";
 
-        Map<?, ?> r = runMongoShellJson(shell, containerName, dbName, script);
+        Map<?, ?> r = runMongoShellJson(shell, containerName, dbName, script, true);
         if (r == null) return Map.of();
         Map<String, Object> out = new LinkedHashMap<>();
         out.putAll(toStringObjectMap(r));
         return out;
     }
 
-    private Map<?, ?> runMongoShellJson(MongoShell shell, String containerName, String dbName, String script) {
+    private Map<?, ?> runMongoShellJson(MongoShell shell, String containerName, String dbName, String script, boolean allowRetry) {
         // 连接串用 localhost，避免依赖容器网络/端口映射
         String uri = "mongodb://127.0.0.1:" + mongoPort() + "/" + dbName;
         List<String> cmd = List.of(
@@ -171,8 +175,18 @@ public class WorkspaceMongoShellClient {
         );
         CommandResult r = commandRunner.run(CMD_TIMEOUT, cmd);
         if (!r.isSuccess()) {
+            // 若容器被重建/镜像升级导致 shell 变化，尝试清理缓存并重试一次（避免每次都 detectShell）
+            String out = r.getOutput() == null ? "" : r.getOutput();
+            String lower = out.toLowerCase();
+            if (allowRetry && (lower.contains("executable file not found")
+                    || lower.contains("not found")
+                    || lower.contains("no such file or directory"))) {
+                shellCache.remove(containerName);
+                MongoShell retryShell = getShellCached(containerName);
+                return runMongoShellJson(retryShell, containerName, dbName, script, false);
+            }
             throw new IllegalStateException(shell.bin + " 执行失败（exitCode=" + r.getExitCode() + "）："
-                    + truncate(r.getOutput(), 500));
+                    + truncate(out, 500));
         }
         // podman-docker 可能会把告警打印到 stdout，取最后一行非空输出作为 JSON
         String out = lastNonEmptyLine(r.getOutput());
@@ -204,6 +218,17 @@ public class WorkspaceMongoShellClient {
         if ("mongo".equals(bin)) return new MongoShell("mongo", false);
         throw new IllegalStateException("容器镜像未包含 mongosh/mongo：请使用包含 Mongo 工具链的 workspace image（推荐 mongosh），" +
                 "或在镜像构建时安装 mongosh（Debian/Ubuntu 常见做法：apt-get install -y mongodb-mongosh 或 mongosh）。");
+    }
+
+    private MongoShell getShellCached(String containerName) {
+        long now = System.currentTimeMillis();
+        CachedShell c = shellCache.get(containerName);
+        if (c != null && now - c.cachedAtMs <= SHELL_CACHE_TTL_MS && c.shell != null) {
+            return c.shell;
+        }
+        MongoShell shell = detectShell(containerName);
+        shellCache.put(containerName, new CachedShell(shell, now));
+        return shell;
     }
 
     private void assertMongoEnabled() {
@@ -291,6 +316,16 @@ public class WorkspaceMongoShellClient {
 
         private boolean isMongosh() {
             return mongosh;
+        }
+    }
+
+    private static final class CachedShell {
+        private final MongoShell shell;
+        private final long cachedAtMs;
+
+        private CachedShell(MongoShell shell, long cachedAtMs) {
+            this.shell = shell;
+            this.cachedAtMs = cachedAtMs;
         }
     }
 }

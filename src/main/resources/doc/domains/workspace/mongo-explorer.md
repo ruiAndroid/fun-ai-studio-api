@@ -18,6 +18,7 @@
 - **用户级**：每用户一个 workspace 容器（`ws-u-{userId}`），Mongo 默认仅容器内可访问
 - **项目级（db 隔离）**：强制只访问
   - `dbName = {dbNamePrefix}{appId}`（默认 `db_{appId}`）
+- **运行态前置（关键约束）**：必须先对该 app 点击 **preview**，且运行态为 `RUNNING + type=START` 才允许访问数据库
 - **只读**：V1 仅提供
   - 列出集合（collections）
   - 查询列表（find）

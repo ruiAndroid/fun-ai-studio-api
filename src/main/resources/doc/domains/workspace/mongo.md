@@ -116,6 +116,10 @@ workspace 容器镜像可选内置 MongoDB（`mongod`/`mongosh`），用于给�
 
 如果用户需要“可视化浏览/查询数据库”，推荐使用平台自带的 Mongo Explorer（不暴露 27017，后端通过 `docker exec + mongosh` 受控代理）。
 
+关键约束：
+
+- **必须先 preview**：仅允许在 `RUNNING + type=START`（preview）运行态访问数据库，避免绕过平台运行态控制/回收策略。
+
 - 说明文档：`mongo-explorer.md`
 - 简易页面入口：`/workspace-mongo.html`
 

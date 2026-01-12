@@ -1,7 +1,9 @@
 package fun.ai.studio.controller.workspace.mongo;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import fun.ai.studio.common.Result;
 import fun.ai.studio.entity.request.WorkspaceMongoFindRequest;
+import fun.ai.studio.entity.response.FunAiWorkspaceRunMeta;
 import fun.ai.studio.entity.response.WorkspaceMongoCollectionsResponse;
 import fun.ai.studio.entity.response.WorkspaceMongoDocResponse;
 import fun.ai.studio.entity.response.WorkspaceMongoFindResponse;
@@ -23,6 +25,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -44,17 +50,20 @@ public class FunAiWorkspaceMongoController {
     private final WorkspaceProperties workspaceProperties;
     private final WorkspaceActivityTracker activityTracker;
     private final WorkspaceMongoShellClient mongoShellClient;
+    private final ObjectMapper objectMapper;
 
     public FunAiWorkspaceMongoController(FunAiWorkspaceService workspaceService,
                                          FunAiAppService funAiAppService,
                                          WorkspaceProperties workspaceProperties,
                                          WorkspaceActivityTracker activityTracker,
-                                         WorkspaceMongoShellClient mongoShellClient) {
+                                         WorkspaceMongoShellClient mongoShellClient,
+                                         ObjectMapper objectMapper) {
         this.workspaceService = workspaceService;
         this.funAiAppService = funAiAppService;
         this.workspaceProperties = workspaceProperties;
         this.activityTracker = activityTracker;
         this.mongoShellClient = mongoShellClient;
+        this.objectMapper = objectMapper;
     }
 
     @GetMapping("/collections")
@@ -66,11 +75,12 @@ public class FunAiWorkspaceMongoController {
         try {
             assertAppOwned(userId, appId);
             activityTracker.touch(userId);
-            // 确保容器存在且运行（DB Explorer 属于交互操作，允许有副作用）
-            workspaceService.ensureAppDir(userId, appId);
-
             String containerName = containerName(userId);
             String dbName = dbNameForApp(appId);
+
+            // 强制要求：必须先 preview（START）并处于 RUNNING 才允许访问数据库
+            assertPreviewRunning(userId, appId);
+
             List<String> cols = mongoShellClient.listCollections(containerName, dbName);
 
             WorkspaceMongoCollectionsResponse resp = new WorkspaceMongoCollectionsResponse();
@@ -97,12 +107,12 @@ public class FunAiWorkspaceMongoController {
         try {
             assertAppOwned(userId, appId);
             activityTracker.touch(userId);
-            workspaceService.ensureAppDir(userId, appId);
-
             if (req == null) throw new IllegalArgumentException("body 不能为空");
 
             String containerName = containerName(userId);
             String dbName = dbNameForApp(appId);
+
+            assertPreviewRunning(userId, appId);
 
             Map<String, Object> out = mongoShellClient.find(
                     containerName,
@@ -144,10 +154,10 @@ public class FunAiWorkspaceMongoController {
         try {
             assertAppOwned(userId, appId);
             activityTracker.touch(userId);
-            workspaceService.ensureAppDir(userId, appId);
-
             String containerName = containerName(userId);
             String dbName = dbNameForApp(appId);
+
+            assertPreviewRunning(userId, appId);
 
             Map<String, Object> out = mongoShellClient.findOneById(containerName, dbName, collection, id);
 
@@ -221,6 +231,64 @@ public class FunAiWorkspaceMongoController {
             out.put(k, e.getValue());
         }
         return out;
+    }
+
+    /**
+     * 强制要求：必须先 preview（START）且处于 RUNNING，才允许进行 Mongo Explorer 查询。
+     */
+    private void assertPreviewRunning(Long userId, Long appId) {
+        if (userId == null || appId == null) throw new IllegalArgumentException("userId/appId 不能为空");
+
+        // 1) 容器必须 RUNNING（不做 ensure，避免“没 preview 也把容器拉起来”）
+        String cStatus;
+        try {
+            cStatus = workspaceService.getStatus(userId).getContainerStatus();
+        } catch (Exception e) {
+            throw new IllegalArgumentException("请先打开项目并点击 preview");
+        }
+        if (cStatus == null || !"RUNNING".equalsIgnoreCase(cStatus)) {
+            throw new IllegalArgumentException("请先打开项目并点击 preview（当前容器状态=" + cStatus + "）");
+        }
+
+        // 2) 运行态必须存在且为 START，且 appId 匹配
+        Path metaPath = resolveHostRunMeta(userId);
+        if (Files.notExists(metaPath)) {
+            throw new IllegalArgumentException("请先打开项目并点击 preview（当前没有运行态元数据）");
+        }
+        FunAiWorkspaceRunMeta meta;
+        try {
+            String json = Files.readString(metaPath, StandardCharsets.UTF_8);
+            meta = objectMapper.readValue(json, FunAiWorkspaceRunMeta.class);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("运行态元数据解析失败，请重新 preview 后重试");
+        }
+        if (meta == null || meta.getAppId() == null) {
+            throw new IllegalArgumentException("请先打开项目并点击 preview（运行态缺少 appId）");
+        }
+        if (!meta.getAppId().equals(appId)) {
+            throw new IllegalArgumentException("当前正在预览其它应用(appId=" + meta.getAppId() + ")，请切换到目标应用后点击 preview");
+        }
+        String t = meta.getType() == null ? "" : meta.getType().trim().toUpperCase();
+        if (!"START".equals(t)) {
+            throw new IllegalArgumentException("仅允许在 preview（START）运行态访问数据库；当前运行态=" + (t.isEmpty() ? "UNKNOWN" : t));
+        }
+        if (meta.getPid() == null) {
+            throw new IllegalArgumentException("preview 启动中（尚未就绪），请稍后重试");
+        }
+    }
+
+    private Path resolveHostRunMeta(Long userId) {
+        String root = workspaceProperties == null ? null : workspaceProperties.getHostRoot();
+        root = sanitizePath(root);
+        if (!StringUtils.hasText(root)) {
+            throw new IllegalArgumentException("workspace.hostRoot 未配置，无法读取运行态元数据");
+        }
+        return Paths.get(root, String.valueOf(userId), "run", "current.json");
+    }
+
+    private String sanitizePath(String p) {
+        if (p == null) return null;
+        return p.trim().replaceAll("^[\"']|[\"']$", "");
     }
 }
 
