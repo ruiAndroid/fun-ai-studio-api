@@ -29,19 +29,19 @@
 
 ```mermaid
 sequenceDiagram
-participant Browser as BrowserUI
-participant Api as FunAiStudioAPI
-participant Docker as DockerEngine
-participant WsContainer as WorkspaceContainer
-participant Mongo as mongod
+participant Browser as "浏览器(BrowserUI)"
+participant Api as "后端API(FunAiStudioAPI)"
+participant Docker as "容器运行时(DockerEngine)"
+participant WsContainer as "用户容器(WorkspaceContainer)"
+participant Mongo as "数据库(mongod)"
 
-Browser->>Api: GET /workspace-mongo.html
+Browser->>Api: GET /workspace-mongo.html(Mongo页面)
 Browser->>Api: GET /api/fun-ai/workspace/mongo/collections?userId&appId
 Api->>Api: appOwned校验(userId,appId)
 Api->>Api: ensureAppDir(触发容器就绪)
 Api->>Docker: docker exec ws-u-{userId} mongosh --eval
 Docker->>WsContainer: exec mongosh
-WsContainer->>Mongo: query(127.0.0.1:27017)
+WsContainer->>Mongo: query(查询)(127.0.0.1:27017)
 Mongo-->>WsContainer: result
 WsContainer-->>Docker: stdout(JSON)
 Docker-->>Api: stdout

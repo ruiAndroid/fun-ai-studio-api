@@ -137,12 +137,15 @@ public class DocController {
                 + "code{background:#f6f8fa;padding:2px 6px;border-radius:6px}"
                 + "table{border-collapse:collapse} td,th{border:1px solid #d0d7de;padding:6px 10px}"
                 + "blockquote{border-left:4px solid #d0d7de;padding-left:12px;color:#57606a}"
+                + ".mermaid{background:#fff;border:1px solid #d0d7de;border-radius:10px;padding:12px;margin:12px 0;overflow:auto}"
                 + "</style></head><body>"
                 + "<div style=\"margin-bottom:16px\">"
                 + "<a href=\"/doc/\">文档首页</a> · "
                 + "<a href=\"/doc/raw/" + urlPath(title) + "\">查看原始 Markdown</a>"
                 + "</div>"
                 + bodyHtml
+                // Mermaid 渲染：用外部脚本，避免 Java 拼接长 JS 造成语法错误/截断
+                + "<script src=\"/doc-mermaid.js\" defer></script>"
                 + "</body></html>";
     }
 

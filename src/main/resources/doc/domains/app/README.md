@@ -45,19 +45,19 @@
 
 ```mermaid
 sequenceDiagram
-participant FE as Frontend
-participant AppAPI as AppController
-participant WS as WorkspaceService
+participant FE as "前端(Frontend)"
+participant AppAPI as "应用控制器(AppController)"
+participant WS as "工作区服务(WorkspaceService)"
 
-FE->>AppAPI: open-editor(userId,appId)
+FE->>AppAPI: open-editor(打开编辑器)(userId,appId)
 AppAPI->>WS: ensureAppDir(userId,appId)
-AppAPI->>AppAPI: detect package.json (host dir)
-alt hasPackageJson
-  AppAPI->>WS: startDev(userId,appId) (non-blocking)
-else noPackageJson
+AppAPI->>AppAPI: detect package.json(检测)(host dir)
+alt hasPackageJson(有package.json)
+  AppAPI->>WS: startDev(userId,appId) (非阻塞)(non-blocking)
+else noPackageJson(无package.json)
   AppAPI->>WS: getRunStatus(userId)
 end
-AppAPI-->>FE: runStatus + projectDir
+AppAPI-->>FE: 运行态+目录(runStatus+projectDir)
 ```
 
 关键约束：

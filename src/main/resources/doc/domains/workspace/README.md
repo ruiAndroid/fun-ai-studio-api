@@ -39,16 +39,16 @@ Workspace 域的目标：给每个用户提供一个可持久化的“在线开�
 
 ```mermaid
 sequenceDiagram
-participant FE as Frontend
-participant WSFiles as WorkspaceFilesAPI
-participant WSRun as WorkspaceRunAPI
-participant SSE as WorkspaceRealtimeAPI
+participant FE as "前端(Frontend)"
+participant WSFiles as "文件接口(WorkspaceFilesAPI)"
+participant WSRun as "运行态接口(WorkspaceRunAPI)"
+participant SSE as "实时通道(WorkspaceRealtimeAPI)"
 
-FE->>WSFiles: ensure-dir(userId,appId)
-FE->>WSFiles: upload-zip / file CRUD (可选)
-FE->>WSRun: build/install/preview (按钮触发)
-FE->>SSE: events(userId,appId,withLog=true)
-SSE-->>FE: status/log/ping events
+FE->>WSFiles: ensure-dir(确保目录)(userId,appId)
+FE->>WSFiles: upload-zip(导入) / file CRUD(文件操作) (可选)
+FE->>WSRun: build/install/preview(按钮触发)
+FE->>SSE: events(订阅)(userId,appId,withLog=true)
+SSE-->>FE: status/log/ping(状态/日志/心跳)
 ```
 
 

@@ -11,6 +11,10 @@
 
 - [应用管理（含 open-editor 聚合入口）](./app/README.md)
 
+## Architecture（系统架构）
+
+- [系统架构说明（全局架构图/关键链路/模块边界）](./architecture/README.md)
+
 ## Workspace（在线开发环境）
 
 - [Workspace 总览](./workspace/README.md)
@@ -22,5 +26,10 @@
 - [Workspace：npm 缓存（Verdaccio 代理仓库）](./workspace/npm-cache.md)
 - [Workspace：容器内 Mongo（可选）](./workspace/mongo.md)
 - [Workspace：Mongo Explorer（Web，只读）](./workspace/mongo-explorer.md)
+
+## Server（部署与扩容）
+
+- [Server 总览](./server/README.md)
+- [多机扩容方案（面向 Workspace）](./server/scaling-workspace.md)
 
 

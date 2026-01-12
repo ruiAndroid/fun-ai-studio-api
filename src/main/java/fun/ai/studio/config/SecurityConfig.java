@@ -82,6 +82,8 @@ public class SecurityConfig {
         "/favicon.ico", // 浏览器默认请求站点图标
         // Workspace Mongo Explorer（静态页面；API 仍需鉴权）
         "/workspace-mongo.html",
+        // /doc 页面 mermaid 渲染脚本（必须放行，否则会被 401 JSON 拦截导致浏览器拒绝执行）
+        "/doc-mermaid.js",
         "/chatui/**",
         "/api/fun-ai/auth/**",
         // 在线文档

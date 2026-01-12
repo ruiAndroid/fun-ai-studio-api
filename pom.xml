@@ -111,6 +111,8 @@
             <version>0.23.0</version>
         </dependency>
 
+        <!-- Mermaid 不作为 Maven 依赖引入：/doc 页面通过 doc-mermaid.js 动态从 CDN 加载（多源兜底）。 -->
+
         <!-- 添加 Spring Boot Validation 依赖 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
