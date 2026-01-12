@@ -20,5 +20,7 @@
 - [Workspace：实时通道（SSE events、WebSocket 终端）](./workspace/realtime.md)
 - [Workspace：internal（nginx auth_request 查询端口）](./workspace/internal.md)
 - [Workspace：npm 缓存（Verdaccio 代理仓库）](./workspace/npm-cache.md)
+- [Workspace：容器内 Mongo（可选）](./workspace/mongo.md)
+- [Workspace：Mongo Explorer（Web，只读）](./workspace/mongo-explorer.md)
 
 

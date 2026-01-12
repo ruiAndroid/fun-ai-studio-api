@@ -80,6 +80,8 @@ public class SecurityConfig {
         "/swagger-ui/**",//Swagger UI 新路径
         "/swagger-ui/index.html",//Swagger UI 首页
         "/favicon.ico", // 浏览器默认请求站点图标
+        // Workspace Mongo Explorer（静态页面；API 仍需鉴权）
+        "/workspace-mongo.html",
         "/chatui/**",
         "/api/fun-ai/auth/**",
         // 在线文档

@@ -33,6 +33,7 @@ Workspace 域的目标：给每个用户提供一个可持久化的“在线开�
 
 - [npm 缓存（最简方案）](./npm-cache.md)
 - [容器内 Mongo（可选）](./mongo.md)
+- [Mongo Explorer（Web，只读）](./mongo-explorer.md)
 
 ## 典型链路（在线编辑器进入）
 

@@ -112,4 +112,11 @@ workspace 容器镜像可选内置 MongoDB（`mongod`/`mongosh`），用于给�
   - 用户级：通过容器与用户级持久化目录隔离
   - 项目级：通过 `dbNamePrefix + appId` 的 database 隔离
 
+## Mongo Explorer（Web，只读）
+
+如果用户需要“可视化浏览/查询数据库”，推荐使用平台自带的 Mongo Explorer（不暴露 27017，后端通过 `docker exec + mongosh` 受控代理）。
+
+- 说明文档：`mongo-explorer.md`
+- 简易页面入口：`/workspace-mongo.html`
+
 
