@@ -1714,7 +1714,16 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             }
         } catch (Exception e) {
             log.warn("cleanup workspace app dir failed: userId={}, appId={}, dir={}, err={}",
-                    userId, appId, hostAppDir, e.getMessage());
+                    userId, appId, hostAppDir, e.getMessage(), e);
+        }
+        try {
+            if (Files.exists(hostAppDir)) {
+                log.warn("workspace app dir still exists after cleanup: userId={}, appId={}, dir={}",
+                        userId, appId, hostAppDir);
+            } else {
+                log.info("workspace app dir cleaned: userId={}, appId={}, dir={}", userId, appId, hostAppDir);
+            }
+        } catch (Exception ignore) {
         }
     }
 

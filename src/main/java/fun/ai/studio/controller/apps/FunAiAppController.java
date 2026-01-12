@@ -254,12 +254,17 @@ public class FunAiAppController {
             }
             // workspace 清理（宿主机 /data/funai/workspaces/{userId}/apps/{appId}）
             // 注意：deleteApp 已做归属校验，这里不再重复校验，且清理失败不影响删除结果
+            String cleanupWarn = null;
             try {
                 if (funAiWorkspaceService != null && workspaceProperties != null && workspaceProperties.isEnabled()) {
                     funAiWorkspaceService.cleanupWorkspaceOnAppDeleted(userId, appId);
                 }
             } catch (Exception e) {
-                logger.warn("cleanup workspace after delete app failed: userId={}, appId={}, err={}", userId, appId, e.getMessage());
+                cleanupWarn = e.getMessage();
+                logger.warn("cleanup workspace after delete app failed: userId={}, appId={}, err={}", userId, appId, e.getMessage(), e);
+            }
+            if (cleanupWarn != null && !cleanupWarn.isBlank()) {
+                return Result.success("删除应用成功（磁盘目录清理失败：" + cleanupWarn + "）");
             }
             return Result.success("删除应用成功");
         } catch (IllegalArgumentException e) {

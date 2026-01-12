@@ -4,7 +4,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.InputStream;
 import java.nio.file.*;
-import java.util.Comparator;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Set;
 import java.util.zip.ZipOutputStream;
 import java.util.zip.ZipEntry;
@@ -18,14 +18,22 @@ public final class ZipUtils {
 
     public static void deleteDirectoryRecursively(Path dir) throws IOException {
         if (dir == null || Files.notExists(dir)) return;
-        try (var walk = Files.walk(dir)) {
-            walk.sorted(Comparator.reverseOrder()).forEach(p -> {
-                try {
-                    Files.deleteIfExists(p);
-                } catch (Exception ignore) {
-                }
-            });
-        }
+        // 不吞异常：删除失败必须显式暴露，否则调用方会误以为已清理成功但磁盘仍残留
+        // 默认不跟随软链（Files.walkFileTree 未指定 FOLLOW_LINKS）
+        Files.walkFileTree(dir, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                Files.deleteIfExists(file);
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult postVisitDirectory(Path d, IOException exc) throws IOException {
+                if (exc != null) throw exc;
+                Files.deleteIfExists(d);
+                return FileVisitResult.CONTINUE;
+            }
+        });
     }
 
     public static void unzipSafely(InputStream zipStream, Path destDir) throws IOException {
