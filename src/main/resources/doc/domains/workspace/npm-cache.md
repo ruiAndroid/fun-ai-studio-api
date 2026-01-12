@@ -292,7 +292,57 @@ docker run --rm --network funai-net \
 
 解决：**不要删 lockfile**来做预热；按上面“resolved 替换 + npm ci”即可稳定预热 Verdaccio。
 
-### 8) 验证清单（确认缓存已写入 Verdaccio）
+### 8) `npm install` 报 403（Verdaccio/代理/镜像站导致）
+
+现象（容器内）：
+
+- `npm error 403 Forbidden - GET http://verdaccio:4873/@scope%2Fpkg`
+
+排查思路（关键命令）：
+
+1) 看 Verdaccio 是否真的返回 403，还是“上游/uplink 透传”：
+
+```bash
+# 跟踪 verdaccio 日志（http level）
+podman logs -f verdaccio
+
+# 触发一次查询（在 workspace 容器内）
+podman exec -it ws-u-10000021 sh -lc 'npm view @radix-ui/react-dialog --registry http://verdaccio:4873'
+```
+
+2) 若 workspace 镜像内没有 curl，可用 node 验证 registry 连通性（不依赖 curl/wget）：
+
+```bash
+podman exec -it ws-u-10000021 sh -lc 'node -e "require(\"dns\").lookup(\"verdaccio\",(e,a)=>console.log(e||a))"'
+podman exec -it ws-u-10000021 sh -lc 'node -e "require(\"http\").get(\"http://verdaccio:4873/-/ping\",r=>{console.log(r.statusCode);r.resume();}).on(\"error\",e=>console.error(e));"'
+```
+
+3) 常见根因：容器内启用了 `HTTP_PROXY/HTTPS_PROXY`，但 `no_proxy/NO_PROXY` 没包含 `verdaccio`，npm 会走代理导致被拦截成 403。
+
+- 解决：确保 `funai.workspace.noProxy` 包含 `verdaccio`（以及必要时其解析 IP），并重建 workspace 容器让 env 生效。
+
+```bash
+podman exec -it ws-u-10000021 sh -lc 'env | sort | grep -iE "http_proxy|https_proxy|no_proxy|npm_config_.*proxy"'
+```
+
+### 9) `npm install` 报 ERESOLVE（依赖树冲突，npm v7+）
+
+现象：
+
+- `ERESOLVE unable to resolve dependency tree`
+
+可用的止血命令（npm v7+ 常见）：
+
+```bash
+npm install --include=dev --legacy-peer-deps
+```
+
+说明：
+
+- `--legacy-peer-deps` 会放松 peer 依赖约束，提升“可安装成功率”（但可能隐藏真实冲突，建议后续再按项目要求修正依赖）。
+- 在平台“受控 install/build/preview”链路中，建议遇到 ERESOLVE 时自动重试一次 `--legacy-peer-deps`。
+
+### 10) 验证清单（确认缓存已写入 Verdaccio）
 
 ```bash
 # Verdaccio 是否在跑

@@ -13,7 +13,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -35,7 +34,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final UserDetailsService userDetailsService;
 
     private final JwtUtil jwtUtil;
-    private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
     public JwtAuthenticationFilter(UserDetailsService userDetailsService, JwtUtil jwtUtil) {
         this.userDetailsService = userDetailsService;
@@ -126,8 +124,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         return;
                     }
                 } catch (Exception e) {
-                    logger.warn("用户认证失败: {}", e.getMessage());
-                    sendErrorResponse(response, "用户认证失败");
+                    // MySQL 挂掉/连接拒绝时，这里会抛异常（selectOne 无法执行）。
+                    // 不应误报为 401（无权限），而应返回 503 提示“认证后端不可用”。
+                    if (isLikelyDbDown(e)) {
+                        logger.warn("用户认证失败（疑似数据库不可用）: {}", e.getMessage());
+                        sendErrorResponse(response, HttpStatus.SERVICE_UNAVAILABLE, 503, "认证服务不可用（数据库连接失败），请稍后重试");
+                    } else {
+                        logger.warn("用户认证失败: {}", e.getMessage());
+                        sendErrorResponse(response, HttpStatus.UNAUTHORIZED, 401, "用户认证失败");
+                    }
                     return;
                 }
             }
@@ -138,11 +143,43 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private void sendErrorResponse(HttpServletResponse response, String message) throws IOException {
-        response.setStatus(HttpStatus.UNAUTHORIZED.value());
+        sendErrorResponse(response, HttpStatus.UNAUTHORIZED, 401, message);
+    }
+
+    private void sendErrorResponse(HttpServletResponse response, HttpStatus httpStatus, int code, String message) throws IOException {
+        response.setStatus(httpStatus.value());
         response.setContentType("application/json;charset=UTF-8");
         
-        Result<Object> errorResult = Result.error(401, message);
+        Result<Object> errorResult = Result.error(code, message);
         ObjectMapper objectMapper = new ObjectMapper();
         response.getWriter().write(objectMapper.writeValueAsString(errorResult));
+    }
+
+    private boolean isLikelyDbDown(Throwable t) {
+        // 不强依赖具体驱动类，避免编译期耦合：用类名/消息粗略判断
+        Throwable cur = t;
+        int depth = 0;
+        while (cur != null && depth++ < 8) {
+            String cn = cur.getClass().getName();
+            String msg = cur.getMessage();
+            if (cn != null) {
+                if (cn.contains("CommunicationsException")
+                        || cn.contains("CJCommunicationsException")
+                        || cn.contains("SQLNonTransientConnectionException")) {
+                    return true;
+                }
+            }
+            if (msg != null) {
+                String m = msg.toLowerCase();
+                if (m.contains("communications link failure")
+                        || m.contains("connection refused")
+                        || m.contains("could not open connection")
+                        || m.contains("connection is closed")) {
+                    return true;
+                }
+            }
+            cur = cur.getCause();
+        }
+        return false;
     }
 }
