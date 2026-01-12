@@ -90,8 +90,24 @@ Api-->>Browser: Result{code,message,data}
 ## 运行前置条件
 
 - 已启用 workspace mongo：`funai.workspace.mongo.enabled=true`
-- workspace 镜像内包含 `mongod` 与 `mongosh`
-  - 若 `mongosh` 缺失，API 会返回明确错误提示
+- workspace 镜像内包含 `mongod` 与 **Mongo Shell 工具链**
+  - 推荐：`mongosh`
+  - 兼容兜底：`mongo`（旧版 shell，能力可能受限）
+  - 若两者都缺失，API 会返回明确错误提示
+
+### 如何在容器里快速验证
+
+进入对应用户容器执行：
+
+- `command -v mongosh || echo mongosh_not_found`
+- `command -v mongo || echo mongo_not_found`
+
+### 镜像构建时安装建议（示例）
+
+不同基础镜像/发行版包名可能不同，但目标是：最终容器里存在 `mongosh` 命令。
+
+- Debian/Ubuntu 常见方式（示例）：
+  - `apt-get update && apt-get install -y mongodb-mongosh`（或 `mongosh`）
 
 ## 安全与限流策略（V1）
 

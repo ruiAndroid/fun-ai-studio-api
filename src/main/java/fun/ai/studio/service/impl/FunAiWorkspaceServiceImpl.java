@@ -1689,6 +1689,15 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
     private WorkspaceMeta loadOrInitMeta(Long userId, Path hostUserDir) {
         WorkspaceMeta meta = tryLoadMeta(hostUserDir);
         if (meta != null && meta.getHostPort() != null && meta.getContainerPort() != null && StringUtils.hasText(meta.getContainerName())) {
+            // 镜像允许随配置演进：若配置镜像与 meta 不一致，则更新 meta（后续 ensureContainerRunning 会按需重建容器）
+            try {
+                String desired = props.getImage();
+                if (StringUtils.hasText(desired) && (meta.getImage() == null || !desired.equals(meta.getImage()))) {
+                    meta.setImage(desired);
+                    persistMeta(hostUserDir, meta);
+                }
+            } catch (Exception ignore) {
+            }
             return meta;
         }
 
@@ -1755,6 +1764,20 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         String networkName = props.getNetworkName();
 
         String status = queryContainerStatus(name);
+        // 镜像升级：若容器当前镜像与 meta 期望镜像不一致，则重建容器（确保新镜像能力生效，例如 mongosh）
+        if (!"NOT_CREATED".equalsIgnoreCase(status)) {
+            try {
+                String desired = meta.getImage();
+                String current = queryContainerImage(name);
+                if (StringUtils.hasText(desired) && StringUtils.hasText(current) && !desired.equals(current)) {
+                    log.warn("workspace container image changed, recreate: userId={}, name={}, currentImage={}, desiredImage={}",
+                            userId, name, current, desired);
+                    tryRemoveContainer(name);
+                    status = "NOT_CREATED";
+                }
+            } catch (Exception ignore) {
+            }
+        }
         if ("RUNNING".equalsIgnoreCase(status)) {
             // 若启用 Mongo：确保 mongo 的 bind-mount 存在，否则数据会写到容器层导致“重启即丢”
             if (props.getMongo() != null && props.getMongo().isEnabled()) {
@@ -1914,6 +1937,12 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         } catch (Exception ignore) {
             return true;
         }
+    }
+
+    private String queryContainerImage(String containerName) {
+        CommandResult r = docker("inspect", "-f", "{{.Config.Image}}", containerName);
+        if (!r.isSuccess()) return "";
+        return normalizeDockerCliOutput(r.getOutput());
     }
 
     private boolean hasExpectedMount(String containerName, Path hostPath, String containerDest) {

@@ -44,15 +44,21 @@ public class WorkspaceMongoShellClient {
         assertMongoEnabled();
         assertContainerName(containerName);
         assertDbName(dbName);
-        assertMongoshExists(containerName);
+        MongoShell shell = detectShell(containerName);
 
-        String script = ""
+        String script = shell.isMongosh()
+                ? ""
                 + "const dbName='" + jsSingleQuoted(dbName) + "';\n"
                 + "const db2=db.getSiblingDB(dbName);\n"
                 + "const cols=db2.getCollectionNames().sort();\n"
-                + "print(EJSON.stringify({dbName:dbName,collections:cols},{relaxed:true}));\n";
+                + "print(EJSON.stringify({dbName:dbName,collections:cols},{relaxed:true}));\n"
+                : ""
+                + "var dbName='" + jsSingleQuoted(dbName) + "';\n"
+                + "var db2=db.getSiblingDB(dbName);\n"
+                + "var cols=db2.getCollectionNames().sort();\n"
+                + "print(JSON.stringify({dbName:dbName,collections:cols}));\n";
 
-        Map<?, ?> r = runMongoshJson(containerName, dbName, script);
+        Map<?, ?> r = runMongoShellJson(shell, containerName, dbName, script);
         Object cols = r == null ? null : r.get("collections");
         if (!(cols instanceof List<?> list)) return List.of();
         return list.stream()
@@ -73,7 +79,7 @@ public class WorkspaceMongoShellClient {
         assertContainerName(containerName);
         assertDbName(dbName);
         assertCollectionName(collection);
-        assertMongoshExists(containerName);
+        MongoShell shell = detectShell(containerName);
 
         int lim = clamp(limit == null ? 50 : limit, 1, 200);
         int sk = clamp(skip == null ? 0 : skip, 0, 10000);
@@ -82,7 +88,8 @@ public class WorkspaceMongoShellClient {
         String proj = StringUtils.hasText(projectionJson) ? projectionJson : "null";
         String sort = StringUtils.hasText(sortJson) ? sortJson : "null";
 
-        String script = ""
+        String script = shell.isMongosh()
+                ? ""
                 + "const dbName='" + jsSingleQuoted(dbName) + "';\n"
                 + "const collName='" + jsSingleQuoted(collection) + "';\n"
                 + "const db2=db.getSiblingDB(dbName);\n"
@@ -95,9 +102,23 @@ public class WorkspaceMongoShellClient {
                 + "if(sortObj){cur=cur.sort(sortObj);} \n"
                 + "cur=cur.skip(" + sk + ").limit(" + lim + ");\n"
                 + "const items=cur.toArray();\n"
-                + "print(EJSON.stringify({dbName:dbName,collection:collName,limit:" + lim + ",skip:" + sk + ",returned:items.length,items:items},{relaxed:true}));\n";
+                + "print(EJSON.stringify({dbName:dbName,collection:collName,limit:" + lim + ",skip:" + sk + ",returned:items.length,items:items},{relaxed:true}));\n"
+                : ""
+                + "var dbName='" + jsSingleQuoted(dbName) + "';\n"
+                + "var collName='" + jsSingleQuoted(collection) + "';\n"
+                + "var db2=db.getSiblingDB(dbName);\n"
+                + "var filter=JSON.parse('" + jsSingleQuoted(filter) + "');\n"
+                + "var projTxt='" + jsSingleQuoted(proj) + "';\n"
+                + "var sortTxt='" + jsSingleQuoted(sort) + "';\n"
+                + "var projection=(projTxt==='null'||projTxt==='')?null:JSON.parse(projTxt);\n"
+                + "var sortObj=(sortTxt==='null'||sortTxt==='')?null:JSON.parse(sortTxt);\n"
+                + "var cur=db2.getCollection(collName).find(filter, projection);\n"
+                + "if(sortObj){cur=cur.sort(sortObj);} \n"
+                + "cur=cur.skip(" + sk + ").limit(" + lim + ");\n"
+                + "var items=cur.toArray();\n"
+                + "print(JSON.stringify({dbName:dbName,collection:collName,limit:" + lim + ",skip:" + sk + ",returned:items.length,items:items}));\n";
 
-        Map<?, ?> r = runMongoshJson(containerName, dbName, script);
+        Map<?, ?> r = runMongoShellJson(shell, containerName, dbName, script);
         if (r == null) return Map.of();
         Map<String, Object> out = new LinkedHashMap<>();
         out.putAll(toStringObjectMap(r));
@@ -110,9 +131,10 @@ public class WorkspaceMongoShellClient {
         assertDbName(dbName);
         assertCollectionName(collection);
         if (!StringUtils.hasText(id)) throw new IllegalArgumentException("id 不能为空");
-        assertMongoshExists(containerName);
+        MongoShell shell = detectShell(containerName);
 
-        String script = ""
+        String script = shell.isMongosh()
+                ? ""
                 + "const dbName='" + jsSingleQuoted(dbName) + "';\n"
                 + "const collName='" + jsSingleQuoted(collection) + "';\n"
                 + "const idStr='" + jsSingleQuoted(id.trim()) + "';\n"
@@ -120,48 +142,68 @@ public class WorkspaceMongoShellClient {
                 + "let _id;\n"
                 + "try{ _id=new ObjectId(idStr); }catch(e){ _id=idStr; }\n"
                 + "const doc=db2.getCollection(collName).findOne({_id:_id},{maxTimeMS:" + DEFAULT_MAX_TIME_MS + "});\n"
-                + "print(EJSON.stringify({dbName:dbName,collection:collName,id:idStr,doc:doc},{relaxed:true}));\n";
+                + "print(EJSON.stringify({dbName:dbName,collection:collName,id:idStr,doc:doc},{relaxed:true}));\n"
+                : ""
+                + "var dbName='" + jsSingleQuoted(dbName) + "';\n"
+                + "var collName='" + jsSingleQuoted(collection) + "';\n"
+                + "var idStr='" + jsSingleQuoted(id.trim()) + "';\n"
+                + "var db2=db.getSiblingDB(dbName);\n"
+                + "var _id;\n"
+                + "try{ _id=ObjectId(idStr); }catch(e){ _id=idStr; }\n"
+                + "var doc=db2.getCollection(collName).findOne({_id:_id});\n"
+                + "print(JSON.stringify({dbName:dbName,collection:collName,id:idStr,doc:doc}));\n";
 
-        Map<?, ?> r = runMongoshJson(containerName, dbName, script);
+        Map<?, ?> r = runMongoShellJson(shell, containerName, dbName, script);
         if (r == null) return Map.of();
         Map<String, Object> out = new LinkedHashMap<>();
         out.putAll(toStringObjectMap(r));
         return out;
     }
 
-    private Map<?, ?> runMongoshJson(String containerName, String dbName, String script) {
+    private Map<?, ?> runMongoShellJson(MongoShell shell, String containerName, String dbName, String script) {
         // 连接串用 localhost，避免依赖容器网络/端口映射
         String uri = "mongodb://127.0.0.1:" + mongoPort() + "/" + dbName;
         List<String> cmd = List.of(
                 "docker", "exec", "-i", containerName,
-                "mongosh", uri,
+                shell.bin, uri,
                 "--quiet",
                 "--eval", script
         );
         CommandResult r = commandRunner.run(CMD_TIMEOUT, cmd);
         if (!r.isSuccess()) {
-            throw new IllegalStateException("mongosh 执行失败（exitCode=" + r.getExitCode() + "）："
+            throw new IllegalStateException(shell.bin + " 执行失败（exitCode=" + r.getExitCode() + "）："
                     + truncate(r.getOutput(), 500));
         }
-        String out = (r.getOutput() == null ? "" : r.getOutput()).trim();
+        // podman-docker 可能会把告警打印到 stdout，取最后一行非空输出作为 JSON
+        String out = lastNonEmptyLine(r.getOutput());
         if (!StringUtils.hasText(out)) {
-            throw new IllegalStateException("mongosh 无输出：请确认容器内 mongod 正常运行");
+            throw new IllegalStateException(shell.bin + " 无输出：请确认容器内 mongod 正常运行");
         }
         // CommandRunner 最多抓 32KB，若 JSON 被截断，这里会解析失败并给出可操作提示
         try {
             return objectMapper.readValue(out, Map.class);
         } catch (Exception e) {
-            throw new IllegalStateException("解析 mongosh 输出失败（可能输出过大被截断）：请降低 limit 或使用 projection。原始输出片段："
+            throw new IllegalStateException("解析 " + shell.bin + " 输出失败（可能输出过大被截断/或被 podman 告警干扰）：请降低 limit 或使用 projection。原始输出片段："
                     + truncate(out, 500));
         }
     }
 
-    private void assertMongoshExists(String containerName) {
-        List<String> cmd = List.of("docker", "exec", "-i", containerName, "bash", "-lc", "command -v mongosh >/dev/null 2>&1");
+    private MongoShell detectShell(String containerName) {
+        // 优先 mongosh，其次 mongo（老版本 shell）；都没有则给出可操作报错
+        List<String> cmd = List.of(
+                "docker", "exec", "-i", containerName,
+                "bash", "-lc",
+                "if command -v mongosh >/dev/null 2>&1; then echo mongosh; " +
+                        "elif command -v mongo >/dev/null 2>&1; then echo mongo; " +
+                        "else echo none; fi"
+        );
         CommandResult r = commandRunner.run(Duration.ofSeconds(3), cmd);
-        if (!r.isSuccess()) {
-            throw new IllegalStateException("容器镜像未包含 mongosh：请使用包含 Mongo 工具链的 workspace image（mongosh/mongod）");
-        }
+        String out = lastNonEmptyLine(r.getOutput());
+        String bin = (out == null ? "" : out.trim());
+        if ("mongosh".equals(bin)) return new MongoShell("mongosh", true);
+        if ("mongo".equals(bin)) return new MongoShell("mongo", false);
+        throw new IllegalStateException("容器镜像未包含 mongosh/mongo：请使用包含 Mongo 工具链的 workspace image（推荐 mongosh），" +
+                "或在镜像构建时安装 mongosh（Debian/Ubuntu 常见做法：apt-get install -y mongodb-mongosh 或 mongosh）。");
     }
 
     private void assertMongoEnabled() {
@@ -218,6 +260,16 @@ public class WorkspaceMongoShellClient {
         return s.substring(0, max) + "...(truncated)";
     }
 
+    private static String lastNonEmptyLine(String output) {
+        if (output == null) return "";
+        String[] lines = output.split("\\r?\\n");
+        for (int i = lines.length - 1; i >= 0; i--) {
+            String line = lines[i] == null ? "" : lines[i].trim();
+            if (!line.isEmpty()) return line;
+        }
+        return "";
+    }
+
     private static Map<String, Object> toStringObjectMap(Map<?, ?> m) {
         Map<String, Object> out = new LinkedHashMap<>();
         if (m == null) return out;
@@ -226,6 +278,20 @@ public class WorkspaceMongoShellClient {
             out.put(k, e.getValue());
         }
         return out;
+    }
+
+    private static final class MongoShell {
+        private final String bin;
+        private final boolean mongosh;
+
+        private MongoShell(String bin, boolean mongosh) {
+            this.bin = bin;
+            this.mongosh = mongosh;
+        }
+
+        private boolean isMongosh() {
+            return mongosh;
+        }
     }
 }
 
