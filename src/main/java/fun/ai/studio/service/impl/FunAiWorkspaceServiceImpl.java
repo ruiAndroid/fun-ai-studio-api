@@ -29,6 +29,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -1955,9 +1956,17 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             cmd.add("-e");
             cmd.add("HTTPS_PROXY=" + props.getHttpsProxy());
         }
-        if (StringUtils.hasText(props.getNoProxy())) {
+        String noProxy = buildNoProxy(props.getNoProxy(), props.getNpmRegistry());
+        if (StringUtils.hasText(noProxy)) {
             cmd.add("-e");
-            cmd.add("NO_PROXY=" + props.getNoProxy());
+            cmd.add("NO_PROXY=" + noProxy);
+            // 兼容：很多工具/镜像只认小写 no_proxy；npm 也支持 npm_config_noproxy
+            cmd.add("-e");
+            cmd.add("no_proxy=" + noProxy);
+            cmd.add("-e");
+            cmd.add("NPM_CONFIG_NOPROXY=" + noProxy);
+            cmd.add("-e");
+            cmd.add("npm_config_noproxy=" + noProxy);
         }
 
         cmd.add(meta.getImage());
@@ -1998,6 +2007,51 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             }
         } catch (Exception ignore) {
         }
+    }
+
+    /**
+     * 将 noProxy 与 npmRegistry host 合并，避免漏配导致 npm 访问内部 registry（例如 verdaccio）走代理被 403。
+     */
+    private String buildNoProxy(String configured, String npmRegistry) {
+        // 基础默认值（不强制覆盖配置，只做补齐）
+        Set<String> s = new HashSet<>();
+        addNoProxyToken(s, "localhost");
+        addNoProxyToken(s, "127.0.0.1");
+        addNoProxyToken(s, "host.containers.internal");
+
+        // 合并用户配置
+        if (StringUtils.hasText(configured)) {
+            for (String part : configured.split(",")) {
+                addNoProxyToken(s, part);
+            }
+        }
+
+        // 从 npmRegistry 解析 host（如 http://verdaccio:4873 -> verdaccio）
+        try {
+            if (StringUtils.hasText(npmRegistry)) {
+                String u = npmRegistry.trim();
+                if (!u.contains("://")) u = "http://" + u;
+                URI uri = URI.create(u);
+                String host = uri.getHost();
+                if (StringUtils.hasText(host)) {
+                    addNoProxyToken(s, host);
+                }
+            }
+        } catch (Exception ignore) {
+        }
+
+        if (s.isEmpty()) return null;
+        return String.join(",", s);
+    }
+
+    private void addNoProxyToken(Set<String> set, String token) {
+        if (set == null || token == null) return;
+        String t = token.trim();
+        if (t.isEmpty()) return;
+        // 去掉可能的端口
+        int idx = t.indexOf(':');
+        if (idx > 0) t = t.substring(0, idx);
+        if (!t.isEmpty()) set.add(t);
     }
 
     private boolean hasExpectedMongoMounts(Long userId, String containerName) {
