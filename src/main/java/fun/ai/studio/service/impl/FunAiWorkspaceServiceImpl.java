@@ -354,6 +354,12 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             selectedScript = null;
         }
 
+        // 日志保留策略：同一 type 仅保留最近 N 份（避免 run 目录无限增长）
+        try {
+            pruneRunLogs(userId, appId, op, Math.max(0, props.getRunLogKeepPerType()));
+        } catch (Exception ignore) {
+        }
+
         // 每次受控任务使用独立日志文件，避免 build/install/preview/dev 混在同一个 dev.log（前端无法区分）
         long logTs = System.currentTimeMillis();
         String logFile = runDir + "/run-" + op.toLowerCase() + "-" + appId + "-" + logTs + ".log";
@@ -379,6 +385,8 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     + "  if [ -z \"$NPM_CONFIG_REGISTRY\" ] && [ -n \"$npm_config_registry\" ]; then npm config set registry \"$npm_config_registry\" >/dev/null 2>&1 || true; fi\n"
                     + "  reg=$(npm config get registry 2>/dev/null || true)\n"
                     + "  if [ -n \"$reg\" ]; then echo \"[build] npm registry: $reg\" >>\"$LOG_FILE\" 2>&1; fi\n"
+                    + "  if [ ! -d node_modules ]; then echo \"[build] npm install (include dev)...\" >>\"$LOG_FILE\"; npm install --include=dev >>\"$LOG_FILE\" 2>&1; fi\n"
+                    + "  if [ ! -x node_modules/.bin/tsc ]; then echo \"[build] tsc not found, npm install (include dev)...\" >>\"$LOG_FILE\"; npm install --include=dev >>\"$LOG_FILE\" 2>&1; fi\n"
                     + "  echo \"[build] npm run build\" >>\"$LOG_FILE\" 2>&1\n"
                     + "  set +e\n"
                     + "  npm run build >>\"$LOG_FILE\" 2>&1\n"
@@ -408,9 +416,9 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     + "  if [ -z \"$NPM_CONFIG_REGISTRY\" ] && [ -n \"$npm_config_registry\" ]; then npm config set registry \"$npm_config_registry\" >/dev/null 2>&1 || true; fi\n"
                     + "  reg=$(npm config get registry 2>/dev/null || true)\n"
                     + "  if [ -n \"$reg\" ]; then echo \"[install] npm registry: $reg\" >>\"$LOG_FILE\" 2>&1; fi\n"
-                    + "  echo \"[install] npm install\" >>\"$LOG_FILE\" 2>&1\n"
+                    + "  echo \"[install] npm install (include dev)\" >>\"$LOG_FILE\" 2>&1\n"
                     + "  set +e\n"
-                    + "  npm install >>\"$LOG_FILE\" 2>&1\n"
+                    + "  npm install --include=dev >>\"$LOG_FILE\" 2>&1\n"
                     + "  code=$?\n"
                     + "  set -e\n"
                     + "fi\n"
@@ -438,7 +446,8 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     + "if [ -z \"$NPM_CONFIG_REGISTRY\" ] && [ -n \"$npm_config_registry\" ]; then npm config set registry \"$npm_config_registry\" >/dev/null 2>&1 || true; fi\n"
                     + "reg=$(npm config get registry 2>/dev/null || true)\n"
                     + "if [ -n \"$reg\" ]; then echo \"[preview] npm registry: $reg\" >>\"$LOG_FILE\" 2>&1; fi\n"
-                    + "if [ ! -d node_modules ]; then echo \"[preview] npm install...\" >>\"$LOG_FILE\"; npm install >>\"$LOG_FILE\" 2>&1; fi\n"
+                    + "if [ ! -d node_modules ]; then echo \"[preview] npm install (include dev)...\" >>\"$LOG_FILE\"; npm install --include=dev >>\"$LOG_FILE\" 2>&1; fi\n"
+                    + "if [ \"$RUN_SCRIPT\" = \"server\" ] && [ ! -x node_modules/.bin/tsx ]; then echo \"[preview] tsx not found, npm install (include dev)...\" >>\"$LOG_FILE\"; npm install --include=dev >>\"$LOG_FILE\" 2>&1; fi\n"
                     + "export PORT=\"$PORT\"\n"
                     + "export HOST=\"0.0.0.0\"\n"
                     + "export BASE_PATH=\"$BASE_PATH\"\n"
@@ -519,7 +528,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     + "if [ -z \"$NPM_CONFIG_REGISTRY\" ] && [ -n \"$npm_config_registry\" ]; then npm config set registry \"$npm_config_registry\" >/dev/null 2>&1 || true; fi\n"
                     + "reg=$(npm config get registry 2>/dev/null || true)\n"
                     + "if [ -n \"$reg\" ]; then echo \"[dev-start] npm registry: $reg\" >>\"$LOG_FILE\" 2>&1; fi\n"
-                    + "if [ ! -d node_modules ]; then echo \"[dev-start] npm install...\" >>\"$LOG_FILE\"; npm install >>\"$LOG_FILE\" 2>&1; fi\n"
+                    + "if [ ! -d node_modules ]; then echo \"[dev-start] npm install (include dev)...\" >>\"$LOG_FILE\"; npm install --include=dev >>\"$LOG_FILE\" 2>&1; fi\n"
                     + "echo \"[dev-start] npm run dev on $PORT\" >>\"$LOG_FILE\" 2>&1\n"
                     + "export CHOKIDAR_USEPOLLING=true\n"
                     + "export CHOKIDAR_INTERVAL=1000\n"
@@ -961,6 +970,52 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         }
     }
 
+    private void pruneRunLogs(Long userId, Long appId, String type, int keep) {
+        // keep<=0：不清理
+        if (keep <= 0) return;
+        if (userId == null || appId == null || !StringUtils.hasText(type)) return;
+        if (!StringUtils.hasText(props.getHostRoot())) return;
+
+        String op = type.trim().toLowerCase();
+        Path hostUserDir = resolveHostWorkspaceDir(userId);
+        Path hostRunDir = hostUserDir.resolve("run");
+        if (Files.notExists(hostRunDir) || !Files.isDirectory(hostRunDir)) return;
+
+        String prefix = "run-" + op + "-" + appId + "-";
+        String suffix = ".log";
+
+        class Item {
+            final Path path;
+            final long ts;
+            Item(Path path, long ts) { this.path = path; this.ts = ts; }
+        }
+
+        List<Item> items = new ArrayList<>();
+        try (var s = Files.list(hostRunDir)) {
+            s.forEach(p -> {
+                try {
+                    if (p == null || !Files.isRegularFile(p)) return;
+                    String name = p.getFileName().toString();
+                    if (!name.startsWith(prefix) || !name.endsWith(suffix)) return;
+                    String tsPart = name.substring(prefix.length(), name.length() - suffix.length());
+                    long ts = Long.parseLong(tsPart);
+                    items.add(new Item(p, ts));
+                } catch (Exception ignore) {
+                }
+            });
+        } catch (Exception ignore) {
+            return;
+        }
+        if (items.size() <= keep) return;
+        items.sort((a, b) -> Long.compare(b.ts, a.ts)); // newest first
+        for (int i = keep; i < items.size(); i++) {
+            try {
+                Files.deleteIfExists(items.get(i).path);
+            } catch (Exception ignore) {
+            }
+        }
+    }
+
     /**
      * 查询容器内指定端口（LISTEN）对应的 pid。
      * 不依赖 ps/ss/lsof（精简镜像常缺失），通过 /proc/net/tcp(+tcp6) + /proc/<pid>/fd 反查 socket inode。
@@ -1381,6 +1436,8 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
      */
     private String pickPreviewScript(Path packageJson) {
         if (hasNpmScript(packageJson, "start")) return "start";
+        // 全栈一体项目常用：scripts.server 启动后端（例如 tsx/express）
+        if (hasNpmScript(packageJson, "server")) return "server";
         if (hasNpmScript(packageJson, "preview")) return "preview";
         if (hasNpmScript(packageJson, "dev")) return "dev";
         return null;

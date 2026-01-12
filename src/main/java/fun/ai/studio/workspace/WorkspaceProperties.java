@@ -132,6 +132,14 @@ public class WorkspaceProperties {
     private int runStartingTimeoutSeconds = 300;
 
     /**
+     * 受控任务日志保留策略：同一 userId + appId + type（BUILD/INSTALL/START/DEV）最多保留最近 N 份日志文件。
+     * <p>
+     * 日志文件名形如：run/run-{type}-{appId}-{timestamp}.log
+     * - 设置为 0 或负数：不做清理（可能导致 run 目录日志无限增长）
+     */
+    private int runLogKeepPerType = 3;
+
+    /**
      * Mongo（可选）：在 workspace 用户容器内提供本地 MongoDB（同一用户容器仅一个 mongod 实例）
      * 隔离方式：同一个 mongod 下按 appId 使用不同 dbName（默认前缀 db_）。
      *
@@ -323,6 +331,14 @@ public class WorkspaceProperties {
 
     public void setRunStartingTimeoutSeconds(int runStartingTimeoutSeconds) {
         this.runStartingTimeoutSeconds = runStartingTimeoutSeconds;
+    }
+
+    public int getRunLogKeepPerType() {
+        return runLogKeepPerType;
+    }
+
+    public void setRunLogKeepPerType(int runLogKeepPerType) {
+        this.runLogKeepPerType = runLogKeepPerType;
     }
 
     public MongoProperties getMongo() {
