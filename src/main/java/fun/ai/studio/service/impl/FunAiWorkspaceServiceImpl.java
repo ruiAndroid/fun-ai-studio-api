@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.InputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -211,21 +212,39 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         Path hostAppDir = Paths.get(dir.getHostAppDir());
 
         try {
-            if (overwrite && Files.exists(hostAppDir)) {
-                // 保留应用目录本身，清空内容
+            ensureDir(hostAppDir);
+
+            // overwrite=true：严格清空旧内容；任何删除失败都视为失败（避免“返回成功但内容没换干净”）
+            if (overwrite) {
                 try (var stream = Files.list(hostAppDir)) {
-                    stream.forEach(p -> {
-                        try {
-                            ZipUtils.deleteDirectoryRecursively(p);
-                        } catch (Exception ignore) {
-                        }
-                    });
+                    for (Path p : (Iterable<Path>) stream::iterator) {
+                        ZipUtils.deleteDirectoryRecursively(p);
+                    }
                 }
             } else {
-                ensureDir(hostAppDir);
+                // overwrite=false：若目录非空则拒绝（避免合并覆盖导致不可预期）
+                try (var stream = Files.list(hostAppDir)) {
+                    if (stream.findAny().isPresent()) {
+                        throw new IllegalArgumentException("应用目录已存在且非空，overwrite=false 时不允许覆盖");
+                    }
+                }
             }
 
-            ZipUtils.unzipSafely(file.getInputStream(), hostAppDir);
+            // 解压必须同步完成后才返回；中途失败则回滚清理（删除残留内容）
+            try (InputStream in = file.getInputStream()) {
+                ZipUtils.unzipSafely(in, hostAppDir);
+            } catch (Exception unzipErr) {
+                try {
+                    // best-effort：清理解压残留
+                    try (var stream = Files.list(hostAppDir)) {
+                        for (Path p : (Iterable<Path>) stream::iterator) {
+                            ZipUtils.deleteDirectoryRecursively(p);
+                        }
+                    }
+                } catch (Exception ignore) {
+                }
+                throw unzipErr;
+            }
             return dir;
         } catch (Exception e) {
             log.error("upload app zip failed: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
