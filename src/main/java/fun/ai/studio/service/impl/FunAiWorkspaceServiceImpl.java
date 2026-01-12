@@ -335,7 +335,6 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         String runDir = Paths.get(containerWorkdir, "run").toString().replace("\\", "/");
         String pidFile = runDir + "/dev.pid";
         String metaFile = runDir + "/current.json";
-        String logFile = runDir + "/dev.log";
         String startSh = runDir + "/managed-start.sh";
 
         String raw = (type == null ? "" : type.trim());
@@ -354,6 +353,10 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         } else {
             selectedScript = null;
         }
+
+        // 每次受控任务使用独立日志文件，避免 build/install/preview/dev 混在同一个 dev.log（前端无法区分）
+        long logTs = System.currentTimeMillis();
+        String logFile = runDir + "/run-" + op.toLowerCase() + "-" + appId + "-" + logTs + ".log";
 
         String innerScript;
         if ("BUILD".equals(op)) {
@@ -907,7 +910,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         Path hostUserDir = resolveHostWorkspaceDir(userId);
         Path runDir = hostUserDir.resolve("run");
         Path metaPath = runDir.resolve("current.json");
-        Path logPath = runDir.resolve("dev.log");
+        Path logPath = runDir.resolve("dev.log"); // 兼容旧逻辑：若 current.json 没有 logPath，则退回 dev.log
 
         // 防误清：若存在 current.json 且 appId 不匹配，则拒绝
         try {
@@ -915,6 +918,11 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                 FunAiWorkspaceRunMeta meta = objectMapper.readValue(Files.readString(metaPath, StandardCharsets.UTF_8), FunAiWorkspaceRunMeta.class);
                 if (meta != null && meta.getAppId() != null && !meta.getAppId().equals(appId)) {
                     throw new IllegalArgumentException("当前正在运行其它应用(appId=" + meta.getAppId() + ")，请先停止或传入当前运行应用的 appId");
+                }
+                // 优先清理 current.json 指向的日志文件（每次任务独立日志）
+                if (meta != null && meta.getLogPath() != null && !meta.getLogPath().isBlank()) {
+                    Path p = resolveHostPathFromContainerPath(hostUserDir, meta.getLogPath());
+                    if (p != null) logPath = p;
                 }
             }
         } catch (IllegalArgumentException e) {
@@ -928,6 +936,28 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             Files.write(logPath, new byte[0], StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         } catch (Exception e) {
             throw new RuntimeException("清除日志失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 将容器内路径（如 /workspace/run/xxx.log）映射为宿主机路径（{hostRoot}/{userId}/run/xxx.log）。
+     * 若路径不符合预期，则返回 null。
+     */
+    private Path resolveHostPathFromContainerPath(Path hostUserDir, String containerPath) {
+        try {
+            if (hostUserDir == null || containerPath == null) return null;
+            String p = containerPath.trim();
+            if (p.isEmpty()) return null;
+            String workdir = props.getContainerWorkdir();
+            if (!StringUtils.hasText(workdir)) workdir = "/workspace";
+            workdir = workdir.trim();
+            if (!p.startsWith(workdir)) return null;
+            String rel = p.substring(workdir.length());
+            while (rel.startsWith("/")) rel = rel.substring(1);
+            if (rel.isEmpty()) return null;
+            return hostUserDir.resolve(rel);
+        } catch (Exception ignore) {
+            return null;
         }
     }
 

@@ -67,7 +67,25 @@ Api-->>Browser: Result{code,message,data}
 - **访问路径**：`/workspace-mongo.html`
 - **鉴权策略**：
   - 页面本身放入白名单（便于直接打开）
-  - API 仍走 JWT 鉴权（页面中需粘贴 `Authorization: Bearer ...`）
+  - API 仍走 JWT 鉴权
+
+### 推荐使用方式（URL 注入参数）
+
+为了对新手更友好，页面支持从 URL 自动注入 `userId/appId/token(auth)`，无需手动粘贴输入框。
+
+- **推荐（更安全）**：`userId/appId` 放 query，`token` 放 hash（不会出现在 queryString，也更不容易被网关/access log 记录）
+
+`/workspace-mongo.html?userId=10000021&appId=20000086#token=Bearer%20<JWT>`
+
+- **也支持**：使用 `auth` 参数名（等价于 token）
+
+`/workspace-mongo.html?userId=10000021&appId=20000086#auth=Bearer%20<JWT>`
+
+说明：
+
+- token 里有空格（`Bearer `），需要写成 `Bearer%20`
+- 如果你只传纯 JWT（不带 `Bearer `），页面会自动补 `Bearer `
+- 如果 URL 同时注入了 `userId+appId+token/auth`，页面会自动填入并锁定输入，直接点击“加载集合”即可
 
 ## 运行前置条件
 

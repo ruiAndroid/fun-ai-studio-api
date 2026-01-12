@@ -34,7 +34,8 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/fun-ai/workspace/mongo")
-@Tag(name = "Fun AI Workspace Mongo Explorer", description = "Mongo Explorer（只读）：collections/find/doc")
+@Tag(name = "Fun AI Workspace Mongo Explorer", 
+description = "Mongo Explorer（只读）访问地址 http://{{公网ip}}/workspace-mongo.html?userId={{userId}}&appId={{appId}}#token={{token}} ")
 public class FunAiWorkspaceMongoController {
     private static final Logger log = LoggerFactory.getLogger(FunAiWorkspaceMongoController.class);
 

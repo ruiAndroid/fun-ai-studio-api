@@ -11,19 +11,21 @@
 
 - `fun.ai.studio.controller.workspace.realtime.FunAiWorkspaceRealtimeController`
 - 路由：`GET /api/fun-ai/workspace/realtime/events?userId=...&appId=...&withLog=true`
+  - 可选：只订阅某类日志（便于前端分 tab 展示）：`&type=BUILD|INSTALL|PREVIEW`
 
 事件：
 
 - `status`：运行态变化时推送（JSON）
-- `log`：`dev.log` 增量（每次最多 32KB）
-- `ping`：保持连接
+- `log`：当前运行任务日志增量（每次最多 32KB）
+- `log_meta`：日志文件切换时推送一次（JSON，包含 `type/state/logPath`，其中 type 为 `BUILD/INSTALL/PREVIEW`）
+- （无事件 keep-alive）：服务端会周期性发送 SSE comment 行保持连接（前端无需处理）
 - `error`：异常
 
 关键设计点：
 
 - 先做 `appId` 归属校验，避免被滥用。
 - SSE 长连接会周期性触发 `activityTracker.touch(userId)`，避免 idle 回收误伤活跃用户。
-- 日志读取的文件为 `run/dev.log`：受控任务（build/install/preview/dev）都会写入该日志，便于统一观测。
+- 日志按任务拆分为独立文件（`run/run-{type}-{appId}-{timestamp}.log`），SSE 会根据 `current.json.logPath` 自动切换。
 
 ## WebSocket（在线终端）
 
