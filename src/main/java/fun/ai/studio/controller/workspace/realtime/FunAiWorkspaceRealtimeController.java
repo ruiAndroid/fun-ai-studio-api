@@ -173,67 +173,65 @@ public class FunAiWorkspaceRealtimeController {
             summary = "获取运行日志文件（非实时）",
             description = "直接返回对应日志文件内容（不做 SSE 增量推送）。优先按 type+appId 选择最新的日志文件；type 取 BUILD/INSTALL/PREVIEW。"
     )
-    public ResponseEntity<?> getLog(
+    public ResponseEntity<StreamingResponseBody> getLog(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
             @Parameter(description = "日志类型（BUILD/INSTALL/PREVIEW），默认 PREVIEW") @RequestParam(required = false) String type,
             @Parameter(description = "可选：仅返回末尾 N 字节（用于大日志快速查看），默认 0=返回全量") @RequestParam(defaultValue = "0") long tailBytes
     ) {
-        try {
-            if (userId == null || appId == null) {
-                return ResponseEntity.badRequest().contentType(MediaType.APPLICATION_JSON).body(Result.error("userId/appId 不能为空"));
-            }
-            if (funAiAppService.getAppByIdAndUserId(appId, userId) == null) {
-                return ResponseEntity.status(403).contentType(MediaType.APPLICATION_JSON).body(Result.error("应用不存在或无权限操作"));
-            }
-            activityTracker.touch(userId);
+        // 注意：返回类型必须是 ResponseEntity<StreamingResponseBody>，否则 Spring 会按“普通对象 + text/plain”
+        // 走 HttpMessageConverter，导致报错：No converter for [Lambda] with preset Content-Type 'text/plain'
+        if (userId == null || appId == null) {
+            throw new IllegalArgumentException("userId/appId 不能为空");
+        }
+        if (funAiAppService.getAppByIdAndUserId(appId, userId) == null) {
+            throw new IllegalArgumentException("应用不存在或无权限操作");
+        }
+        activityTracker.touch(userId);
 
-            String uiType = normalizeUiType(type);
-            if (uiType == null) uiType = "PREVIEW";
-            String op = mapUiTypeToOp(uiType); // BUILD/INSTALL/START
-            Path logFile = findLatestLogFile(userId, appId, op);
-            if (logFile == null || Files.notExists(logFile) || !Files.isRegularFile(logFile)) {
-                return ResponseEntity.status(404).contentType(MediaType.APPLICATION_JSON).body(Result.error("日志文件不存在"));
-            }
+        String uiType = normalizeUiType(type);
+        if (uiType == null) uiType = "PREVIEW";
+        String op = mapUiTypeToOp(uiType); // BUILD/INSTALL/START
+        Path logFile = findLatestLogFile(userId, appId, op);
+        if (logFile == null || Files.notExists(logFile) || !Files.isRegularFile(logFile)) {
+            throw new IllegalArgumentException("日志文件不存在");
+        }
 
-            HttpHeaders headers = new HttpHeaders();
-            headers.add(HttpHeaders.CACHE_CONTROL, "no-cache");
-            headers.add("X-Accel-Buffering", "no");
-            headers.setContentType(MediaType.TEXT_PLAIN);
-            headers.add(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + logFile.getFileName().toString() + "\"");
+        HttpHeaders headers = new HttpHeaders();
+        headers.add(HttpHeaders.CACHE_CONTROL, "no-cache");
+        headers.add("X-Accel-Buffering", "no");
+        headers.setContentType(MediaType.TEXT_PLAIN);
+        headers.add(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + logFile.getFileName().toString() + "\"");
 
-            if (tailBytes > 0) {
-                long tb = tailBytes;
-                StreamingResponseBody body = out -> {
-                    try (RandomAccessFile raf = new RandomAccessFile(logFile.toFile(), "r")) {
-                        long size = raf.length();
-                        long start = Math.max(0L, size - tb);
-                        raf.seek(start);
-                        byte[] buf = new byte[64 * 1024];
-                        int n;
-                        while ((n = raf.read(buf)) > 0) {
-                            out.write(buf, 0, n);
-                            out.flush();
-                        }
-                    }
-                };
-                return ResponseEntity.ok().headers(headers).body(body);
-            }
-
+        if (tailBytes > 0) {
+            long tb = tailBytes;
             StreamingResponseBody body = out -> {
-                try (InputStream in = Files.newInputStream(logFile)) {
+                try (RandomAccessFile raf = new RandomAccessFile(logFile.toFile(), "r")) {
+                    long size = raf.length();
+                    long start = Math.max(0L, size - tb);
+                    raf.seek(start);
                     byte[] buf = new byte[64 * 1024];
                     int n;
-                    while ((n = in.read(buf)) > 0) {
+                    while ((n = raf.read(buf)) > 0) {
                         out.write(buf, 0, n);
                         out.flush();
                     }
                 }
             };
             return ResponseEntity.ok().headers(headers).body(body);
-        } catch (Exception e) {
-            return ResponseEntity.status(500).contentType(MediaType.APPLICATION_JSON).body(Result.error("get log failed: " + e.getMessage()));
         }
+
+        StreamingResponseBody body = out -> {
+            try (InputStream in = Files.newInputStream(logFile)) {
+                byte[] buf = new byte[64 * 1024];
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    out.write(buf, 0, n);
+                    out.flush();
+                }
+            }
+        };
+        return ResponseEntity.ok().headers(headers).body(body);
     }
 
     @PostMapping("/log/clear")
