@@ -2,7 +2,7 @@
 
 实时通道包含两部分：
 
-1) SSE：状态/日志增量（给在线编辑器减少轮询）  
+1) SSE：状态（轻量，给在线编辑器减少轮询）  
 2) WebSocket：在线终端（docker exec -i）
 
 ## SSE（events）
@@ -10,14 +10,12 @@
 控制器：
 
 - `fun.ai.studio.controller.workspace.realtime.FunAiWorkspaceRealtimeController`
-- 路由：`GET /api/fun-ai/workspace/realtime/events?userId=...&appId=...&withLog=true`
-  - 可选：只订阅某类日志（便于前端分 tab 展示）：`&type=BUILD|INSTALL|PREVIEW`
+- 路由：`GET /api/fun-ai/workspace/realtime/events?userId=...&appId=...`
+  - 历史兼容参数：`withLog/type`（当前实现不再推送日志，参数会被忽略）
 
 事件：
 
 - `status`：运行态变化时推送（JSON）
-- `log`：当前运行任务日志增量（每次最多 32KB）
-- `log_meta`：日志文件切换时推送一次（JSON，包含 `type/state/logPath`，其中 type 为 `BUILD/INSTALL/PREVIEW`）
 - （无事件 keep-alive）：服务端会周期性发送 SSE comment 行保持连接（前端无需处理）
 - `error`：异常
 
@@ -25,7 +23,12 @@
 
 - 先做 `appId` 归属校验，避免被滥用。
 - SSE 长连接会周期性触发 `activityTracker.touch(userId)`，避免 idle 回收误伤活跃用户。
-- 日志按任务拆分为独立文件（`run/run-{type}-{appId}-{timestamp}.log`），SSE 会根据 `current.json.logPath` 自动切换。
+- 日志不通过 SSE 增量推送：需要日志时通过 HTTP 拉取（见下文 `log` 接口）。
+
+## 日志（log）
+
+- `GET /api/fun-ai/workspace/realtime/log?userId=...&appId=...&type=BUILD|INSTALL|PREVIEW&tailBytes=0`
+  - `tailBytes`: 可选，仅返回末尾 N 字节（大日志快速查看）
 
 ## WebSocket（在线终端）
 

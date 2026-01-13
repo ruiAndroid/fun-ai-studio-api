@@ -20,14 +20,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import java.io.InputStream;
 import java.io.RandomAccessFile;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -35,7 +34,6 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 
 @RestController
 @RequestMapping("/api/fun-ai/workspace/realtime")
@@ -66,14 +64,15 @@ public class FunAiWorkspaceRealtimeController {
 
     @GetMapping(path = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @Operation(
-            summary = "SSE：推送运行状态与 dev.log 增量",
-            description = "用于在线编辑器减少轮询。会先做 appId 归属校验，再开始推送。事件：status/log/ping。"
+            summary = "SSE：推送运行状态（轻量）",
+            description = "用于在线编辑器减少轮询。会先做 appId 归属校验，再开始推送。事件：status/error（不再推送日志）。"
     )
     public ResponseEntity<SseEmitter> events(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
-            @Parameter(description = "是否推送日志（默认 true）") @RequestParam(defaultValue = "true") boolean withLog,
-            @Parameter(description = "可选：仅推送指定类型日志（BUILD/INSTALL/PREVIEW）") @RequestParam(required = false) String type
+            @Parameter(description = "兼容参数：历史版本可传 withLog，但当前实现不推送日志（默认 false）")
+            @RequestParam(defaultValue = "false") boolean withLog,
+            @Parameter(description = "兼容参数：历史版本用于过滤日志类型，当前实现忽略") @RequestParam(required = false) String type
     ) {
         // 关键：先校验归属，避免任何 ensure/getRunStatus 副作用
         if (userId == null || appId == null) {
@@ -100,13 +99,6 @@ public class FunAiWorkspaceRealtimeController {
         AtomicLong lastStatusHash = new AtomicLong(0L);
         AtomicLong lastKeepAliveMs = new AtomicLong(System.currentTimeMillis());
 
-        // log tail：根据 current.json 的 logPath 动态切换（每次任务一个独立日志文件）
-        AtomicReference<String> currentLogPath = new AtomicReference<>(null);
-        AtomicLong logPos = new AtomicLong(0L);
-        AtomicLong lastLogModified = new AtomicLong(0L);
-        AtomicBoolean notifiedNoLog = new AtomicBoolean(false);
-        String expectType = normalizeUiType(type);
-
         Runnable tick = () -> {
             if (closed.get()) return;
             try {
@@ -124,12 +116,14 @@ public class FunAiWorkspaceRealtimeController {
                     }
                 }
 
-                // 2) status：每秒推一次（或变化即推）
+                // 2) status：仅在变化时推送（避免无意义刷屏/序列化开销）
                 FunAiWorkspaceRunStatusResponse status = funAiWorkspaceService.getRunStatus(userId);
                 long h = Objects.hash(status == null ? null : status.getState(),
                         status == null ? null : status.getAppId(),
+                        status == null ? null : status.getType(),
                         status == null ? null : status.getPid(),
                         status == null ? null : status.getPreviewUrl(),
+                        status == null ? null : status.getLogPath(),
                         status == null ? null : status.getMessage());
                 if (h != lastStatusHash.get()) {
                     lastStatusHash.set(h);
@@ -137,34 +131,7 @@ public class FunAiWorkspaceRealtimeController {
                     emitter.send(SseEmitter.event().name("status").data(json, MediaType.APPLICATION_JSON));
                 }
 
-                // 3) log：增量读取（按 current.json.logPath），避免 build/install/preview 混流
-                if (withLog) {
-                    String lp = status == null ? null : status.getLogPath();
-                    Path hostLog = resolveHostLogPath(userId, lp);
-                    String prev = currentLogPath.get();
-                    String nowLp = lp == null ? null : lp.trim();
-                    if (!Objects.equals(prev, nowLp)) {
-                        currentLogPath.set(nowLp);
-                        // 切换日志文件：重置读取位置，并告知前端这段日志属于哪个任务(type)
-                        logPos.set(0L);
-                        lastLogModified.set(0L);
-                        notifiedNoLog.set(false);
-                        Map<String, Object> meta = new HashMap<>();
-                        meta.put("userId", userId);
-                        meta.put("appId", status == null ? null : status.getAppId());
-                        meta.put("type", normalizeUiType(status == null ? null : status.getType()));
-                        meta.put("state", status == null ? null : status.getState());
-                        meta.put("logPath", nowLp);
-                        emitter.send(SseEmitter.event().name("log_meta").data(objectMapper.writeValueAsString(meta), MediaType.APPLICATION_JSON));
-                    }
-                    String curType = normalizeUiType(status == null ? null : status.getType());
-                    // 若前端指定了 type，则只推送该类型的日志（status/ping 仍然推送）
-                    if (expectType == null || Objects.equals(expectType, curType)) {
-                        pushLogDelta(emitter, hostLog, logPos, lastLogModified, notifiedNoLog);
-                    }
-                }
-
-                // 4) keep-alive：用 SSE comment 保持连接（前端不会收到 ping 事件）
+                // 3) keep-alive：用 SSE comment 保持连接（前端不会收到 ping 事件）
                 if (now - lastKeepAliveMs.get() >= 25_000L) {
                     lastKeepAliveMs.set(now);
                     // 注释行格式：": xxx\n\n"（EventSource 不会触发 message 事件）
@@ -180,7 +147,8 @@ public class FunAiWorkspaceRealtimeController {
         };
 
         // 用 fixedDelay 避免 tick 发生卡顿时堆积（例如 docker exec 偶发变慢）
-        ScheduledFuture<?> future = scheduler.scheduleWithFixedDelay(tick, 0L, 1000L, TimeUnit.MILLISECONDS);
+        // 仅推送 status，因此可把频率降低到 2s，显著降低 CPU/IO 压力
+        ScheduledFuture<?> future = scheduler.scheduleWithFixedDelay(tick, 0L, 2000L, TimeUnit.MILLISECONDS);
 
         emitter.onCompletion(() -> safeClose(emitter, scheduler, closed));
         emitter.onTimeout(() -> safeClose(emitter, scheduler, closed));
@@ -198,6 +166,74 @@ public class FunAiWorkspaceRealtimeController {
         headers.add(HttpHeaders.CACHE_CONTROL, "no-cache");
         headers.add("X-Accel-Buffering", "no");
         return ResponseEntity.ok().headers(headers).body(emitter);
+    }
+
+    @GetMapping(path = "/log", produces = MediaType.TEXT_PLAIN_VALUE)
+    @Operation(
+            summary = "获取运行日志文件（非实时）",
+            description = "直接返回对应日志文件内容（不做 SSE 增量推送）。优先按 type+appId 选择最新的日志文件；type 取 BUILD/INSTALL/PREVIEW。"
+    )
+    public ResponseEntity<?> getLog(
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
+            @Parameter(description = "日志类型（BUILD/INSTALL/PREVIEW），默认 PREVIEW") @RequestParam(required = false) String type,
+            @Parameter(description = "可选：仅返回末尾 N 字节（用于大日志快速查看），默认 0=返回全量") @RequestParam(defaultValue = "0") long tailBytes
+    ) {
+        try {
+            if (userId == null || appId == null) {
+                return ResponseEntity.badRequest().contentType(MediaType.APPLICATION_JSON).body(Result.error("userId/appId 不能为空"));
+            }
+            if (funAiAppService.getAppByIdAndUserId(appId, userId) == null) {
+                return ResponseEntity.status(403).contentType(MediaType.APPLICATION_JSON).body(Result.error("应用不存在或无权限操作"));
+            }
+            activityTracker.touch(userId);
+
+            String uiType = normalizeUiType(type);
+            if (uiType == null) uiType = "PREVIEW";
+            String op = mapUiTypeToOp(uiType); // BUILD/INSTALL/START
+            Path logFile = findLatestLogFile(userId, appId, op);
+            if (logFile == null || Files.notExists(logFile) || !Files.isRegularFile(logFile)) {
+                return ResponseEntity.status(404).contentType(MediaType.APPLICATION_JSON).body(Result.error("日志文件不存在"));
+            }
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.add(HttpHeaders.CACHE_CONTROL, "no-cache");
+            headers.add("X-Accel-Buffering", "no");
+            headers.setContentType(MediaType.TEXT_PLAIN);
+            headers.add(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + logFile.getFileName().toString() + "\"");
+
+            if (tailBytes > 0) {
+                long tb = tailBytes;
+                StreamingResponseBody body = out -> {
+                    try (RandomAccessFile raf = new RandomAccessFile(logFile.toFile(), "r")) {
+                        long size = raf.length();
+                        long start = Math.max(0L, size - tb);
+                        raf.seek(start);
+                        byte[] buf = new byte[64 * 1024];
+                        int n;
+                        while ((n = raf.read(buf)) > 0) {
+                            out.write(buf, 0, n);
+                            out.flush();
+                        }
+                    }
+                };
+                return ResponseEntity.ok().headers(headers).body(body);
+            }
+
+            StreamingResponseBody body = out -> {
+                try (InputStream in = Files.newInputStream(logFile)) {
+                    byte[] buf = new byte[64 * 1024];
+                    int n;
+                    while ((n = in.read(buf)) > 0) {
+                        out.write(buf, 0, n);
+                        out.flush();
+                    }
+                }
+            };
+            return ResponseEntity.ok().headers(headers).body(body);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).contentType(MediaType.APPLICATION_JSON).body(Result.error("get log failed: " + e.getMessage()));
+        }
     }
 
     @PostMapping("/log/clear")
@@ -227,92 +263,51 @@ public class FunAiWorkspaceRealtimeController {
         }
     }
 
-    private Path resolveHostLogPath(Long userId, String containerLogPath) {
+    private Path findLatestLogFile(Long userId, Long appId, String opLowerOrStart) {
         try {
             String hostRoot = workspaceProperties == null ? null : workspaceProperties.getHostRoot();
             if (hostRoot == null || hostRoot.isBlank()) return null;
             String root = hostRoot.trim().replaceAll("^[\"']|[\"']$", "");
             Path hostUserDir = Paths.get(root, String.valueOf(userId));
-            if (containerLogPath == null || containerLogPath.isBlank()) {
-                // 兼容旧逻辑：dev.log
-                return hostUserDir.resolve("run").resolve("dev.log");
+            Path runDir = hostUserDir.resolve("run");
+            if (Files.notExists(runDir) || !Files.isDirectory(runDir)) return null;
+
+            String op = (opLowerOrStart == null ? "" : opLowerOrStart.trim().toLowerCase());
+            if (op.isEmpty()) op = "start";
+            String prefix = "run-" + op + "-" + appId + "-";
+            String suffix = ".log";
+
+            long bestTs = -1L;
+            Path best = null;
+            try (var s = Files.list(runDir)) {
+                for (Path p : (Iterable<Path>) s::iterator) {
+                    if (p == null || !Files.isRegularFile(p)) continue;
+                    String name = p.getFileName().toString();
+                    if (!name.startsWith(prefix) || !name.endsWith(suffix)) continue;
+                    String base = name.substring(0, name.length() - suffix.length());
+                    int lastDash = base.lastIndexOf('-');
+                    if (lastDash < 0 || lastDash + 1 >= base.length()) continue;
+                    long ts = Long.parseLong(base.substring(lastDash + 1));
+                    if (ts > bestTs) {
+                        bestTs = ts;
+                        best = p;
+                    }
+                }
             }
-            String workdir = workspaceProperties == null ? null : workspaceProperties.getContainerWorkdir();
-            if (workdir == null || workdir.isBlank()) workdir = "/workspace";
-            String p = containerLogPath.trim();
-            if (!p.startsWith(workdir)) {
-                // 不符合预期则回退到 dev.log
-                return hostUserDir.resolve("run").resolve("dev.log");
-            }
-            String rel = p.substring(workdir.length());
-            while (rel.startsWith("/")) rel = rel.substring(1);
-            if (rel.isEmpty()) return hostUserDir.resolve("run").resolve("dev.log");
-            return hostUserDir.resolve(rel);
-        } catch (Exception e) {
+            return best;
+        } catch (Exception ignore) {
             return null;
         }
     }
 
-    private void pushLogDelta(SseEmitter emitter, Path logFile, AtomicLong pos, AtomicLong lastModified, AtomicBoolean notifiedNoLog) {
-        if (logFile == null) return;
-        try {
-            if (Files.notExists(logFile)) {
-                if (notifiedNoLog != null && notifiedNoLog.compareAndSet(false, true)) {
-                    emitter.send(SseEmitter.event().name("log").data("[log] 日志文件尚未生成（稍后会自动出现）\n", MediaType.TEXT_PLAIN));
-                }
-                return;
-            }
-            if (notifiedNoLog != null) {
-                notifiedNoLog.set(false);
-            }
-            long lm = Files.getLastModifiedTime(logFile).toMillis();
-            long prevLm = lastModified.get();
-            if (lm != prevLm) {
-                lastModified.set(lm);
-            }
-
-            long start = pos.get();
-            long size = Files.size(logFile);
-            // 日志可能被截断/清空：无论 mtime 是否变化，只要 pos 越界就重置
-            if (start > size) {
-                start = 0L;
-                pos.set(0L);
-            }
-            if (start >= size) return;
-
-            // 每次最多推 32KB，避免一次输出过大
-            long max = 32 * 1024L;
-            long end = Math.min(size, start + max);
-            int len = (int) (end - start);
-            byte[] buf = new byte[len];
-            try (RandomAccessFile raf = new RandomAccessFile(logFile.toFile(), "r")) {
-                raf.seek(start);
-                int off = 0;
-                while (off < len) {
-                    int n = raf.read(buf, off, len - off);
-                    if (n < 0) break;
-                    off += n;
-                }
-                if (off <= 0) return;
-                if (off < len) {
-                    byte[] smaller = new byte[off];
-                    System.arraycopy(buf, 0, smaller, 0, off);
-                    buf = smaller;
-                    end = start + off;
-                }
-            }
-            pos.set(end);
-            String chunk = new String(buf, StandardCharsets.UTF_8);
-            if (!chunk.isEmpty()) {
-                emitter.send(SseEmitter.event().name("log").data(chunk, MediaType.TEXT_PLAIN));
-            }
-        } catch (Exception e) {
-            // 不要因为日志读取失败而直接断开 SSE：先告知前端，等待下次 tick 重试
-            try {
-                emitter.send(SseEmitter.event().name("error").data("log tail error: " + e.getMessage(), MediaType.TEXT_PLAIN));
-            } catch (Exception ignore2) {
-            }
-        }
+    private String mapUiTypeToOp(String uiType) {
+        // UI: BUILD/INSTALL/PREVIEW
+        if (uiType == null) return "start";
+        String s = uiType.trim().toUpperCase();
+        if ("BUILD".equals(s)) return "build";
+        if ("INSTALL".equals(s)) return "install";
+        // PREVIEW 统一对应 START（受控预览）
+        return "start";
     }
 
     private void safeClose(SseEmitter emitter, ScheduledExecutorService scheduler, AtomicBoolean closed) {
