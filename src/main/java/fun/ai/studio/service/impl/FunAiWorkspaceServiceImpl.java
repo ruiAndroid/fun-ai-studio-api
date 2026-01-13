@@ -785,6 +785,48 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             resp.setType(meta.getType());
             resp.setExitCode(meta.getExitCode());
 
+            String t = meta.getType() == null ? "" : meta.getType().trim().toUpperCase();
+            // 预先做端口监听诊断（DEV/START）：即使 pid 未写入，也能通过监听端口判定“已启动”
+            // 这能覆盖如下场景：innerScript 写 pid 失败/延迟、进程绑定 IPv6 导致 /dev/tcp 探测不稳定等
+            if (!"BUILD".equals(t) && !"INSTALL".equals(t)) {
+                try {
+                    Long listenPid = tryGetListenPid(ws.getContainerName(), ws.getContainerPort());
+                    resp.setPortListenPid(listenPid);
+                    if (resp.getPid() == null && listenPid != null) {
+                        Long listenPgrp = tryGetProcessGroupId(ws.getContainerName(), listenPid);
+                        if (listenPgrp != null && listenPgrp > 1) {
+                            // 认为已启动成功：用监听进程的 pgrp 作为“可 stopRun 的进程组 leader”
+                            resp.setPid(listenPgrp);
+                            resp.setState("RUNNING");
+                            resp.setPreviewUrl(buildPreviewUrl(ws));
+                            // best-effort：回填 current.json，避免后续一直走“pid=null 分支”
+                            try {
+                                meta.setPid(listenPgrp);
+                                Files.writeString(metaPath, objectMapper.writeValueAsString(meta),
+                                        StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+                            } catch (Exception ignore) {
+                            }
+                            FunAiWorkspaceRun r = new FunAiWorkspaceRun();
+                            r.setUserId(userId);
+                            r.setAppId(resp.getAppId());
+                            r.setRunState(resp.getState());
+                            r.setRunPid(resp.getPid());
+                            r.setPreviewUrl(resp.getPreviewUrl());
+                            r.setLogPath(resp.getLogPath());
+                            r.setLastError(resp.getMessage());
+                            r.setLastStartedAt(meta.getStartedAt());
+                            r.setContainerName(ws.getContainerName());
+                            r.setHostPort(ws.getHostPort());
+                            r.setContainerPort(ws.getContainerPort());
+                            r.setContainerStatus(queryContainerStatus(ws.getContainerName()));
+                            upsertWorkspaceRun(r);
+                            return resp;
+                        }
+                    }
+                } catch (Exception ignore) {
+                }
+            }
+
             // pid 为空：说明 start 已触发，但后台脚本尚未写入 pid（npm install 进行中）
             if (meta.getPid() == null) {
                 // 先确认容器是否真的在跑：否则会出现“容器已 EXITED，但 run/status 仍一直 STARTING”的假象
@@ -809,7 +851,6 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     return resp;
                 }
 
-                String t = meta.getType() == null ? "" : meta.getType().trim().toUpperCase();
                 long nowSec = System.currentTimeMillis() / 1000L;
                 long startedAt = meta.getStartedAt() == null ? 0L : meta.getStartedAt();
                 int timeoutSec = Math.max(30, props.getRunStartingTimeoutSeconds());
@@ -864,7 +905,6 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                 return resp;
             }
 
-            String t = meta.getType() == null ? "" : meta.getType().trim().toUpperCase();
             if ("BUILD".equals(t) || "INSTALL".equals(t)) {
                 // BUILD/INSTALL：只关心进程是否存活，不做端口探测
                 String check = ""
@@ -921,9 +961,14 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             }
 
             // 诊断（仅 DEV/START）：containerPort 当前监听进程 pid（用于排查端口被旧进程占用，导致 previewUrl 指向旧内容）
-            if (!"BUILD".equals(t)) {
+            if (!"BUILD".equals(t) && !"INSTALL".equals(t)) {
                 Long listenPid = tryGetListenPid(ws.getContainerName(), ws.getContainerPort());
                 resp.setPortListenPid(listenPid);
+                // 若 /dev/tcp 探测不可靠，但端口确实在 LISTEN，则认为 RUNNING 并返回 previewUrl
+                if (!"RUNNING".equalsIgnoreCase(resp.getState()) && listenPid != null) {
+                    resp.setState("RUNNING");
+                    resp.setPreviewUrl(buildPreviewUrl(ws));
+                }
                 // 注意：current.json 的 pid 是 setsid/sh 的“进程组组长”，真正监听端口的通常是 node 子进程
                 // 因此这里用“端口监听进程的 pgrp 是否等于 current.json pid”来判断是否同一次 run
                 if (listenPid != null && resp.getPid() != null) {
