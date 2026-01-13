@@ -497,7 +497,11 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     + "PID_FILE='" + pidFile + "'\n"
                     + "META_FILE='" + metaFile + "'\n"
                     + "LOG_FILE='" + logFile + "'\n"
-                    + "BASE_PATH='/ws/" + userId + "/'\n"
+                    // 注意：外部预览入口固定为 /ws/{userId}/，但 Nginx 方案 A 会“剥离 /ws/{userId} 前缀后转发到上游”。
+                    // - 对纯前端（vite dev/preview）：仍需要 base=/ws/{userId}/，保证浏览器请求的静态资源路径带 /ws 前缀
+                    // - 对后端（server/start）：不应要求项目支持 basePath，默认用 "/"（否则上游会在 /ws 下挂载导致访问 / 404）
+                    + "BASE_PATH_ROOT='/'\n"
+                    + "BASE_PATH_WS='/ws/" + userId + "/'\n"
                     + "RUN_SCRIPT='" + (selectedScript == null ? "start" : selectedScript.replace("'", "")) + "'\n"
                     + "echo \"[preview] start at $(date -Is)\" >>\"$LOG_FILE\" 2>&1\n"
                     + "cd \"$APP_DIR\" >>\"$LOG_FILE\" 2>&1 || true\n"
@@ -514,6 +518,8 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     + "if [ \"$RUN_SCRIPT\" = \"server\" ] && [ ! -x node_modules/.bin/tsx ]; then echo \"[preview] tsx not found, npm install (include dev)...\" >>\"$LOG_FILE\"; npm install --include=dev >>\"$LOG_FILE\" 2>&1 || (echo \"[preview] npm install failed, retry with --legacy-peer-deps\" >>\"$LOG_FILE\"; npm install --include=dev --legacy-peer-deps >>\"$LOG_FILE\" 2>&1); fi\n"
                     + "export PORT=\"$PORT\"\n"
                     + "export HOST=\"0.0.0.0\"\n"
+                    + "BASE_PATH=\"$BASE_PATH_ROOT\"\n"
+                    + "if [ \"$RUN_SCRIPT\" = \"preview\" ] || [ \"$RUN_SCRIPT\" = \"dev\" ]; then BASE_PATH=\"$BASE_PATH_WS\"; fi\n"
                     + "export BASE_PATH=\"$BASE_PATH\"\n"
                     + "export FUNAI_USER_ID='" + userId + "'\n"
                     + "export FUNAI_APP_ID='" + appId + "'\n"
@@ -785,48 +791,6 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             resp.setType(meta.getType());
             resp.setExitCode(meta.getExitCode());
 
-            String t = meta.getType() == null ? "" : meta.getType().trim().toUpperCase();
-            // 预先做端口监听诊断（DEV/START）：即使 pid 未写入，也能通过监听端口判定“已启动”
-            // 这能覆盖如下场景：innerScript 写 pid 失败/延迟、进程绑定 IPv6 导致 /dev/tcp 探测不稳定等
-            if (!"BUILD".equals(t) && !"INSTALL".equals(t)) {
-                try {
-                    Long listenPid = tryGetListenPid(ws.getContainerName(), ws.getContainerPort());
-                    resp.setPortListenPid(listenPid);
-                    if (resp.getPid() == null && listenPid != null) {
-                        Long listenPgrp = tryGetProcessGroupId(ws.getContainerName(), listenPid);
-                        if (listenPgrp != null && listenPgrp > 1) {
-                            // 认为已启动成功：用监听进程的 pgrp 作为“可 stopRun 的进程组 leader”
-                            resp.setPid(listenPgrp);
-                            resp.setState("RUNNING");
-                            resp.setPreviewUrl(buildPreviewUrl(ws));
-                            // best-effort：回填 current.json，避免后续一直走“pid=null 分支”
-                            try {
-                                meta.setPid(listenPgrp);
-                                Files.writeString(metaPath, objectMapper.writeValueAsString(meta),
-                                        StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-                            } catch (Exception ignore) {
-                            }
-                            FunAiWorkspaceRun r = new FunAiWorkspaceRun();
-                            r.setUserId(userId);
-                            r.setAppId(resp.getAppId());
-                            r.setRunState(resp.getState());
-                            r.setRunPid(resp.getPid());
-                            r.setPreviewUrl(resp.getPreviewUrl());
-                            r.setLogPath(resp.getLogPath());
-                            r.setLastError(resp.getMessage());
-                            r.setLastStartedAt(meta.getStartedAt());
-                            r.setContainerName(ws.getContainerName());
-                            r.setHostPort(ws.getHostPort());
-                            r.setContainerPort(ws.getContainerPort());
-                            r.setContainerStatus(queryContainerStatus(ws.getContainerName()));
-                            upsertWorkspaceRun(r);
-                            return resp;
-                        }
-                    }
-                } catch (Exception ignore) {
-                }
-            }
-
             // pid 为空：说明 start 已触发，但后台脚本尚未写入 pid（npm install 进行中）
             if (meta.getPid() == null) {
                 // 先确认容器是否真的在跑：否则会出现“容器已 EXITED，但 run/status 仍一直 STARTING”的假象
@@ -851,6 +815,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     return resp;
                 }
 
+                String t = meta.getType() == null ? "" : meta.getType().trim().toUpperCase();
                 long nowSec = System.currentTimeMillis() / 1000L;
                 long startedAt = meta.getStartedAt() == null ? 0L : meta.getStartedAt();
                 int timeoutSec = Math.max(30, props.getRunStartingTimeoutSeconds());
@@ -905,6 +870,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                 return resp;
             }
 
+            String t = meta.getType() == null ? "" : meta.getType().trim().toUpperCase();
             if ("BUILD".equals(t) || "INSTALL".equals(t)) {
                 // BUILD/INSTALL：只关心进程是否存活，不做端口探测
                 String check = ""
@@ -961,14 +927,9 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             }
 
             // 诊断（仅 DEV/START）：containerPort 当前监听进程 pid（用于排查端口被旧进程占用，导致 previewUrl 指向旧内容）
-            if (!"BUILD".equals(t) && !"INSTALL".equals(t)) {
+            if (!"BUILD".equals(t)) {
                 Long listenPid = tryGetListenPid(ws.getContainerName(), ws.getContainerPort());
                 resp.setPortListenPid(listenPid);
-                // 若 /dev/tcp 探测不可靠，但端口确实在 LISTEN，则认为 RUNNING 并返回 previewUrl
-                if (!"RUNNING".equalsIgnoreCase(resp.getState()) && listenPid != null) {
-                    resp.setState("RUNNING");
-                    resp.setPreviewUrl(buildPreviewUrl(ws));
-                }
                 // 注意：current.json 的 pid 是 setsid/sh 的“进程组组长”，真正监听端口的通常是 node 子进程
                 // 因此这里用“端口监听进程的 pgrp 是否等于 current.json pid”来判断是否同一次 run
                 if (listenPid != null && resp.getPid() != null) {
@@ -1556,13 +1517,15 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
      * - start：全栈/后端常规入口
      * - preview：纯前端常见（vite preview）
      * - dev：兜底（至少能让用户看到页面/服务跑起来）
+     * - server：最后兜底（仅启动后端 API 的场景；很多项目不会在 / 返回页面）
      */
     private String pickPreviewScript(Path packageJson) {
         if (hasNpmScript(packageJson, "start")) return "start";
-        // 全栈一体项目常用：scripts.server 启动后端（例如 tsx/express）
-        if (hasNpmScript(packageJson, "server")) return "server";
         if (hasNpmScript(packageJson, "preview")) return "preview";
         if (hasNpmScript(packageJson, "dev")) return "dev";
+        // 全栈一体项目常用：scripts.server 启动后端（例如 tsx/express）。
+        // 注意：很多后端项目不会对 "/" 提供页面，因此放到最后兜底，避免“预览 URL 打开 404”的错觉。
+        if (hasNpmScript(packageJson, "server")) return "server";
         return null;
     }
 
