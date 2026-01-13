@@ -197,6 +197,40 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         return resp;
     }
 
+    /**
+     * 轻量确保应用目录存在（仅宿主机目录，不触发容器启动）。
+     * <p>
+     * files 子系统（如 /workspace/files/content）会高频调用，避免因 ensure-dir 拉起容器造成 CPU/资源抖动。
+     */
+    private FunAiWorkspaceProjectDirResponse ensureAppDirHostOnly(Long userId, Long appId) {
+        assertEnabled();
+        if (userId == null) throw new IllegalArgumentException("userId 不能为空");
+        if (appId == null) throw new IllegalArgumentException("appId 不能为空");
+        // 归属校验仍然保留（无容器副作用）
+        assertAppOwned(userId, appId);
+        if (!StringUtils.hasText(props.getHostRoot())) {
+            throw new IllegalArgumentException("funai.workspace.hostRoot 未配置");
+        }
+
+        Path hostUserDir = resolveHostWorkspaceDir(userId);
+        Path appsDir = hostUserDir.resolve("apps");
+        Path runDir = hostUserDir.resolve("run");
+        ensureDir(hostUserDir);
+        ensureDir(appsDir);
+        ensureDir(runDir);
+
+        Path hostAppDir = appsDir.resolve(String.valueOf(appId));
+        ensureDir(hostAppDir);
+
+        FunAiWorkspaceProjectDirResponse resp = new FunAiWorkspaceProjectDirResponse();
+        resp.setUserId(userId);
+        resp.setAppId(appId);
+        resp.setHostAppDir(hostAppDir.toString());
+        // 仅用于前端展示/拼接，不依赖容器存在
+        resp.setContainerAppDir(Paths.get(props.getContainerWorkdir(), "apps", String.valueOf(appId)).toString().replace("\\", "/"));
+        return resp;
+    }
+
     @Override
     public FunAiWorkspaceProjectDirResponse uploadAppZip(Long userId, Long appId, MultipartFile file, boolean overwrite) {
         if (file == null || file.isEmpty()) {
@@ -208,7 +242,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         }
 
         assertAppOwned(userId, appId);
-        FunAiWorkspaceProjectDirResponse dir = ensureAppDir(userId, appId);
+        FunAiWorkspaceProjectDirResponse dir = ensureAppDirHostOnly(userId, appId);
         Path hostAppDir = Paths.get(dir.getHostAppDir());
 
         try {
@@ -1172,7 +1206,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
     public FunAiWorkspaceFileTreeResponse listFileTree(Long userId, Long appId, String path, Integer maxDepth, Integer maxEntries) {
         assertEnabled();
         assertAppOwned(userId, appId);
-        FunAiWorkspaceProjectDirResponse dir = ensureAppDir(userId, appId);
+        FunAiWorkspaceProjectDirResponse dir = ensureAppDirHostOnly(userId, appId);
         Path root = Paths.get(dir.getHostAppDir());
 
         int depth = maxDepth == null ? 6 : Math.max(0, Math.min(20, maxDepth));
@@ -1212,7 +1246,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
     public FunAiWorkspaceFileReadResponse readFileContent(Long userId, Long appId, String path) {
         assertEnabled();
         assertAppOwned(userId, appId);
-        FunAiWorkspaceProjectDirResponse dir = ensureAppDir(userId, appId);
+        FunAiWorkspaceProjectDirResponse dir = ensureAppDirHostOnly(userId, appId);
         Path root = Paths.get(dir.getHostAppDir());
         Path file = resolveSafePath(root, path, false);
         if (Files.notExists(file) || Files.isDirectory(file)) {
@@ -1241,7 +1275,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
     public FunAiWorkspaceFileReadResponse writeFileContent(Long userId, Long appId, String path, String content, boolean createParents, Long expectedLastModifiedMs) {
         assertEnabled();
         assertAppOwned(userId, appId);
-        FunAiWorkspaceProjectDirResponse dir = ensureAppDir(userId, appId);
+        FunAiWorkspaceProjectDirResponse dir = ensureAppDirHostOnly(userId, appId);
         Path root = Paths.get(dir.getHostAppDir());
         Path file = resolveSafePath(root, path, false);
 
@@ -1275,7 +1309,16 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                 throw new IllegalArgumentException("内容过大（" + bytes.length + " bytes），请分拆或改为上传文件");
             }
             Files.write(file, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-            return readFileContent(userId, appId, normalizeRelPath(root, file));
+
+            // 写接口默认返回“轻响应”（不读回 content，减少 IO/CPU 与 JSON 体积）
+            FunAiWorkspaceFileReadResponse resp = new FunAiWorkspaceFileReadResponse();
+            resp.setUserId(userId);
+            resp.setAppId(appId);
+            resp.setPath(normalizeRelPath(root, file));
+            resp.setContent(null);
+            resp.setSize((long) bytes.length);
+            resp.setLastModifiedMs(Files.getLastModifiedTime(file).toMillis());
+            return resp;
         } catch (IllegalStateException e) {
             throw e;
         } catch (IOException e) {
@@ -1287,7 +1330,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
     public void createDirectory(Long userId, Long appId, String path, boolean createParents) {
         assertEnabled();
         assertAppOwned(userId, appId);
-        FunAiWorkspaceProjectDirResponse dir = ensureAppDir(userId, appId);
+        FunAiWorkspaceProjectDirResponse dir = ensureAppDirHostOnly(userId, appId);
         Path root = Paths.get(dir.getHostAppDir());
         Path d = resolveSafePath(root, path, false);
         try {
@@ -1308,7 +1351,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
     public void deletePath(Long userId, Long appId, String path) {
         assertEnabled();
         assertAppOwned(userId, appId);
-        FunAiWorkspaceProjectDirResponse dir = ensureAppDir(userId, appId);
+        FunAiWorkspaceProjectDirResponse dir = ensureAppDirHostOnly(userId, appId);
         Path root = Paths.get(dir.getHostAppDir());
         Path target = resolveSafePath(root, path, false);
         if (target.normalize().equals(root.normalize())) {
@@ -1326,7 +1369,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
     public void movePath(Long userId, Long appId, String fromPath, String toPath, boolean overwrite) {
         assertEnabled();
         assertAppOwned(userId, appId);
-        FunAiWorkspaceProjectDirResponse dir = ensureAppDir(userId, appId);
+        FunAiWorkspaceProjectDirResponse dir = ensureAppDirHostOnly(userId, appId);
         Path root = Paths.get(dir.getHostAppDir());
 
         Path from = resolveSafePath(root, fromPath, false);
@@ -1359,7 +1402,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("文件不能为空");
         }
-        FunAiWorkspaceProjectDirResponse dir = ensureAppDir(userId, appId);
+        FunAiWorkspaceProjectDirResponse dir = ensureAppDirHostOnly(userId, appId);
         Path root = Paths.get(dir.getHostAppDir());
         Path target = resolveSafePath(root, path, false);
         try {
@@ -1386,7 +1429,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
     public Path downloadFile(Long userId, Long appId, String path) {
         assertEnabled();
         assertAppOwned(userId, appId);
-        FunAiWorkspaceProjectDirResponse dir = ensureAppDir(userId, appId);
+        FunAiWorkspaceProjectDirResponse dir = ensureAppDirHostOnly(userId, appId);
         Path root = Paths.get(dir.getHostAppDir());
         Path file = resolveSafePath(root, path, false);
         if (Files.notExists(file) || Files.isDirectory(file)) {
