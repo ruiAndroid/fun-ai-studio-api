@@ -521,6 +521,14 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     + "BASE_PATH=\"$BASE_PATH_ROOT\"\n"
                     + "if [ \"$RUN_SCRIPT\" = \"preview\" ] || [ \"$RUN_SCRIPT\" = \"dev\" ]; then BASE_PATH=\"$BASE_PATH_WS\"; fi\n"
                     + "export BASE_PATH=\"$BASE_PATH\"\n"
+                    // 对全栈/后端入口（start/server）：尽量走“生产模式”，避免 HTML 引用 /@vite/client、/src/* 等开发期绝对路径
+                    // 同时尝试执行 build（若不存在 build 脚本则不报错），让后端可以提供构建后的静态资源（若项目支持）
+                    + "if [ \"$RUN_SCRIPT\" = \"server\" ] || [ \"$RUN_SCRIPT\" = \"start\" ]; then\n"
+                    + "  export NODE_ENV=production\n"
+                    + "  echo \"[preview] NODE_ENV=$NODE_ENV\" >>\"$LOG_FILE\" 2>&1\n"
+                    + "  echo \"[preview] npm run build --if-present\" >>\"$LOG_FILE\" 2>&1\n"
+                    + "  npm run build --if-present >>\"$LOG_FILE\" 2>&1 || true\n"
+                    + "fi\n"
                     + "export FUNAI_USER_ID='" + userId + "'\n"
                     + "export FUNAI_APP_ID='" + appId + "'\n"
                     + (props.getMongo() != null && props.getMongo().isEnabled()
