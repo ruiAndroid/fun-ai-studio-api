@@ -248,6 +248,12 @@ YAML
 
 现象：在容器内 `touch /verdaccio/storage/...` 报 `Permission denied`；`/verdaccio/storage` 显示为 `root:root`，verdaccio 进程用户是 `uid=10001`。
 
+你们这次踩到的更直观现象（平台侧常见）：
+
+- `npm create vite@latest ...` / `npm install` 报：`npm error 500 Internal Server Error - GET http://verdaccio:4873/<pkg>`
+- Verdaccio 容器日志出现：`EACCES: permission denied, mkdir '/verdaccio/storage/<pkg>'`
+- 根因：Verdaccio 无法写入挂载的宿主机 `storage` 目录，导致“上游请求虽成功，但无法落盘缓存”，最终对客户端返回 500。
+
 解决：让宿主机目录对 verdaccio 用户可写（或使用 SELinux 的 `:Z` 挂载）：
 
 ```bash
@@ -256,8 +262,8 @@ chown -R 10001:65533 /data/funai/verdaccio/conf /data/funai/verdaccio/storage
 
 docker run -d --name verdaccio --restart=always \
   --network funai-net \
-  -v /data/funai/verdaccio/conf:/verdaccio/conf \
-  -v /data/funai/verdaccio/storage:/verdaccio/storage \
+  -v /data/funai/verdaccio/conf:/verdaccio/conf:Z \
+  -v /data/funai/verdaccio/storage:/verdaccio/storage:Z \
   docker.io/verdaccio/verdaccio:5
 ```
 
