@@ -5,5 +5,6 @@
 ## 目录
 
 - [多机扩容方案（面向 Workspace）](./scaling-workspace.md)
+- [大机容器节点（workspace-node）部署与联调说明](./workspace-node.md)
 
 

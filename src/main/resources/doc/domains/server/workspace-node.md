@@ -1,0 +1,319 @@
+# Workspace 容器节点（大机 workspace-node）部署与联调说明
+
+本文档描述“**单机 → 双机**”后的 **大机容器节点**（workspace-node）的落地方案与自检方法，目标是：**容器/运行态/依赖缓存等重负载能力上大机**，小机保留业务 API + MySQL，并尽量减少改动、快速上线。
+
+## 1. 角色划分（双机）
+
+- **小机（轻量业务）**
+  - 对外入口：Nginx（公网/域名入口）
+  - 主业务：`fun-ai-studio-api`（Spring Boot）
+  - 数据库：MySQL
+- **大机（容器节点/重负载）**
+  - 容器节点服务：`fun-ai-studio-workspace`（workspace-node，Spring Boot，`7001`）
+  - 反向代理：Nginx（处理 `/ws/{userId}/...`）
+  - 容器运行时：Podman（兼容 docker CLI）
+  - Workspace 容器：每用户一个 `ws-u-{userId}`（端口池映射）
+  - npm 缓存：Verdaccio（容器，`4873`）
+  - Workspace 数据落盘：`/data/funai/...`
+
+> 两台机器位于不同 VPC 时，优先用公网互通 + 安全组收敛（只放行必要端口与来源 IP）。
+
+## 2. 大机关键目录与端口约定
+
+### 2.1 目录
+
+- **workspace 宿主机数据根目录**：`/data/funai/workspaces/{userId}/...`
+  - apps：`/data/funai/workspaces/{userId}/apps/{appId}`
+  - run：`/data/funai/workspaces/{userId}/run`
+  - meta：`/data/funai/workspaces/{userId}/workspace-meta.json`（记录 hostPort 等）
+- **verdaccio**
+  - 配置：`/data/funai/verdaccio/conf`
+  - 存储：`/data/funai/verdaccio/storage`
+- **workspace-node 部署（示例约定）**
+  - jar：`/opt/fun-ai-studio/app.jar`
+  - config：`/opt/fun-ai-studio/config/application-prod.properties`
+
+### 2.2 端口
+
+- **workspace-node**：`7001`（仅供本机 Nginx/本机调用；若跨机调用需收敛来源 IP）
+- **大机 Nginx**：`80`（供小机 `/ws/*` 转发；建议只允小机来源 IP）
+- **Verdaccio**：`4873`（容器网络内使用为主；如需跨机/公网使用需严格收敛）
+- **每用户 workspace 预览 hostPort**：例如 `20021`（仅本机 Nginx 反代到 `127.0.0.1:${hostPort}`，不对公网直接暴露）
+
+## 3. 大机 Nginx（/ws 预览反代）核心逻辑
+
+设计目标：外部统一访问 `/ws/{userId}/...`，Nginx 先询问 workspace-node 得到该 userId 的 `hostPort`，再反代到 `127.0.0.1:${hostPort}`。
+
+### 3.1 `auth_request` 获取端口
+
+- Nginx 子请求：`/_ws_port` → 本机 `127.0.0.1:7001/api/fun-ai/workspace/internal/nginx/port?userId=$ws_uid`
+- workspace-node 返回：Header 中携带 `X-WS-HostPort: <port>`
+- Nginx 读取 header 设置变量：`$ws_port`
+
+### 3.2 反代到用户容器 hostPort
+
+`/ws/{userId}/...` → `proxy_pass http://127.0.0.1:$ws_port;`
+
+### 3.3 “sleeping 页面”机制（很重要）
+
+当容器已存在但 **5173 没有 dev server 在监听**时，`127.0.0.1:$ws_port` 会 `connection refused`。为提升 UX，Nginx 常配置：
+
+- upstream 错误 → `error_page ... =200 /__ws_sleeping;`
+- 这会导致 `curl -I /ws/...` 看到 **200**，但 body 可能是 `workspace sleeping`（长度通常很短，比如 18 bytes）。
+
+> 判断是否真正跑起来：以 `run/status` 的 `state=RUNNING` + `portListenPid` 为准。
+
+## 3.5 小机 Nginx 只切 `/ws/*` 到大机（推荐先做，低风险）
+
+目标：先把“预览流量”（`/ws/*`）从小机转发到大机 Nginx，**不改动小机业务 API**，验证用户预览已经走大机容器节点。
+
+### 3.5.1 小机安全组最小放行建议
+
+- 大机入方向：
+  - **80/tcp**：只允许小机公网 IP（例如 `47.118.27.59`）访问（用于 `/ws/*` 转发）
+  - （可选）**7001/tcp**：只允许大机本机或小机访问（如果你未来要让小机直连 workspace-node API；不做 API 切流时可不开放）
+
+### 3.5.2 小机 Nginx 示例（`/ws/*` → 大机 Nginx）
+
+以下配置片段放在小机对外 server 块中（`server { ... }`），将 `/ws/` 前缀原样转发到大机：
+
+```nginx
+# 小机：把 /ws/ 转发到大机 Nginx
+location ^~ /ws/ {
+    proxy_http_version 1.1;
+
+    # WebSocket（在线终端）需要
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+
+    # 透传必要头（用于日志、真实来源）
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # 长连接/大响应建议
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+    proxy_buffering off;
+
+    # 指向大机 Nginx（示例 IP：39.97.61.139）
+    proxy_pass http://39.97.61.139;
+}
+```
+
+说明：
+
+- `proxy_pass http://39.97.61.139;` 不带路径，可让 `/ws/...` 原样落到大机 Nginx 的 `/ws/...`。
+- `$connection_upgrade` 需要在 `http {}` 里定义（若你们已有可跳过）：
+
+```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+```
+
+### 3.5.3 小机验证
+
+在小机或任意能访问公网入口的机器验证：
+
+```bash
+curl -I http://47.118.27.59/ws/<userId>/
+```
+
+预期：
+
+- workspace 未 RUNNING 时，可能返回 `200` 且 body 为 `workspace sleeping`（由大机 Nginx 兜底页返回）。
+- workspace RUNNING 时，应返回 200/302/200（取决于 dev server），并能在浏览器打开页面。
+
+## 4. workspace-node（7001）内部鉴权（只信任小机）
+
+大机的 workspace-node 不依赖 MySQL 进行 app 归属校验，默认信任小机已完成鉴权/鉴权后的转发。
+
+### 4.1 配置项（注意：必须 kebab-case 小写）
+
+Spring Boot 3 要求属性名是 **kebab-case 全小写**，因此使用：
+
+```properties
+workspace-node.internal.allowed-source-ip=47.118.27.59
+workspace-node.internal.shared-secret=CHANGE_ME_STRONG_SECRET
+workspace-node.internal.require-signature=false
+```
+
+说明：
+
+- `allowed-source-ip`：小机公网 IP（只放行小机来源）
+- `shared-secret`：后续启用签名校验时用于 HMAC；建议一开始就填强随机值
+- `require-signature`：先 `false` 快速跑通；小机加签后再切 `true`
+
+### 4.2 常见启动错误：配置 key 不合法
+
+若使用 `workspaceNode.internal.*`（含大写 N），启动会报：
+
+- `Configuration property name 'workspaceNode.internal' is not valid: Invalid characters: 'N'`
+
+解决：改为 `workspace-node.internal.*`（见上文）。
+
+## 5. 大机基础环境要求（Alibaba Cloud Linux 3）
+
+### 5.1 容器运行时（Podman）
+
+Alibaba Cloud Linux 3 默认是 Podman，通常安装了 `podman-docker` 后可以直接用 `docker` 命令（会提示 Emulate Docker CLI）。
+
+建议确保 socket 启动：
+
+```bash
+systemctl enable --now podman.socket
+```
+
+### 5.2 构建工具版本要求
+
+workspace-node 采用 Java 17 编译（`--release 17`），需要：
+
+- **JDK 17（含 javac）**：`java-17-openjdk-devel`
+- **Maven >= 3.6.3**（本项目使用的插件要求）
+
+常见错误与修复：
+
+- Maven 太老：
+  - 报 `maven-clean-plugin ... requires Maven version 3.6.3`
+  - 解决：升级 Maven（例如 3.9.6）
+- javac 不是 17：
+  - 报 `release version 17 not supported`
+  - 解决：安装 `java-17-openjdk-devel` 并确保 `javac -version` 为 17（必要时配置 alternatives）
+
+## 6. workspace-node 部署（systemd）
+
+### 6.1 打包
+
+```bash
+cd /opt/fun-ai-studio/fun-ai-studio-workspace
+mvn -DskipTests clean package
+cp -f target/*SNAPSHOT.jar /opt/fun-ai-studio/app.jar
+```
+
+### 6.2 systemd 单元（示例）
+
+`/etc/systemd/system/fun-ai-studio-workspace.service`
+
+```ini
+[Unit]
+Description=fun-ai-studio workspace-node (7001)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/fun-ai-studio
+Environment="JAVA_OPTS=-Xms256m -Xmx512m"
+ExecStart=/usr/bin/java $JAVA_OPTS -jar /opt/fun-ai-studio/app.jar --spring.profiles.active=prod --spring.config.location=/opt/fun-ai-studio/config/
+Restart=always
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+```
+
+启动：
+
+```bash
+systemctl daemon-reload
+systemctl enable --now fun-ai-studio-workspace
+systemctl status fun-ai-studio-workspace --no-pager -l
+```
+
+## 7. Verdaccio（npm 代理缓存）部署与踩坑记录
+
+### 7.1 典型容器启动方式
+
+```bash
+docker run -d --name verdaccio --restart=always \
+  --network funai-net \
+  -v /data/funai/verdaccio/conf:/verdaccio/conf:Z \
+  -v /data/funai/verdaccio/storage:/verdaccio/storage:Z \
+  <你的verdaccio镜像>
+```
+
+### 7.2 典型踩坑：npm 访问 verdaccio 报 500（EACCES）
+
+现象：
+
+- workspace 容器内执行 `npm create vite@latest ...` 或 `npm install` 报：
+  - `npm error 500 Internal Server Error - GET http://verdaccio:4873/<pkg>`
+- verdaccio 容器日志出现：
+  - `EACCES: permission denied, mkdir '/verdaccio/storage/<pkg>'`
+
+根因：
+
+- 挂载到容器的 `/verdaccio/storage` 在宿主机上权限不正确，verdaccio 进程用户无法写入，导致无法落盘缓存，最终返回 500。
+
+解决（示例）：
+
+```bash
+docker rm -f verdaccio 2>/dev/null || true
+chown -R 10001:65533 /data/funai/verdaccio/conf /data/funai/verdaccio/storage
+chmod -R u+rwX,g+rwX /data/funai/verdaccio/conf /data/funai/verdaccio/storage
+```
+
+验证：
+
+```bash
+docker exec ws-u-<userId> sh -lc "npm config set registry http://verdaccio:4873 && npm view create-vite version"
+```
+
+## 8. 自检清单（大机闭环）
+
+### 8.1 服务与端口
+
+```bash
+ss -lntp | grep 7001
+```
+
+### 8.2 确保用户容器存在（ensure）
+
+```bash
+curl -s -X POST "http://127.0.0.1:7001/api/fun-ai/workspace/container/ensure?userId=<uid>"
+cat /data/funai/workspaces/<uid>/workspace-meta.json
+```
+
+### 8.3 初始化 app（示例：create-vite）并启动 run
+
+当 app 目录没有 `package.json` 时，可在容器内临时初始化（仅用于验证链路）：
+
+```bash
+docker exec ws-u-<uid> sh -lc "cd /workspace/apps/<appId> && rm -rf * && npm config set registry http://verdaccio:4873 && npm create vite@latest . -- --template vanilla && npm install"
+curl -s -X POST "http://127.0.0.1:7001/api/fun-ai/workspace/run/start?userId=<uid>&appId=<appId>"
+curl -s "http://127.0.0.1:7001/api/fun-ai/workspace/run/status?userId=<uid>"
+```
+
+### 8.4 预览验证
+
+```bash
+curl -I http://127.0.0.1:<hostPort>/
+curl -I "http://127.0.0.1/ws/<uid>/" -H "Host: <BIG_PUBLIC_IP>"
+```
+
+## 9. 清理验证数据（避免污染真实 userId/appId）
+
+如果验证时使用了真实 `userId/appId` 并在容器内初始化了临时项目，建议清理：
+
+1) 停止当前 run：
+
+```bash
+curl -s -X POST "http://127.0.0.1:7001/api/fun-ai/workspace/run/stop?userId=<uid>"
+```
+
+2) 删除测试 app 目录（只删这个 appId）：
+
+```bash
+rm -rf /data/funai/workspaces/<uid>/apps/<appId>
+```
+
+3) 可选：删除用户容器（下次 ensure 会重建；数据目录仍在宿主机）：
+
+```bash
+curl -s -X POST "http://127.0.0.1:7001/api/fun-ai/workspace/container/remove?userId=<uid>"
+```
+
+
