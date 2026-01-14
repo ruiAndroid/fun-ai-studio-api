@@ -316,4 +316,57 @@ rm -rf /data/funai/workspaces/<uid>/apps/<appId>
 curl -s -X POST "http://127.0.0.1:7001/api/fun-ai/workspace/container/remove?userId=<uid>"
 ```
 
+## 10. 运维：定位并清理“单用户容器磁盘暴涨（npm 缓存）”
+
+现象：某个 `ws-u-{userId}` 容器占用磁盘达到数 GB/十几 GB，且用户删除项目后占用不下降。
+
+根因（常见）：`npm install` 默认写 `~/.npm`（`_cacache/_npx`），这是容器可写层的一部分，不会随 `apps/{appId}` 的删除而自然回收。
+
+### 10.1 宿主机快速定位“哪个容器占用大”
+
+（Podman/Docker 差异较大，以下命令择一使用）
+
+```bash
+# 1) 看容器总体（镜像+可写层）占用（podman）
+podman ps -a --size
+
+# 2) 看 docker 存储占用（docker/podman-docker）
+docker system df
+```
+
+### 10.2 定位某个用户容器的 npm 缓存占用
+
+```bash
+uid=10000021
+name="ws-u-$uid"
+
+docker exec "$name" bash -lc 'du -sh ~/.npm 2>/dev/null || true; du -sh ~/.npm/_cacache ~/.npm/_npx 2>/dev/null || true'
+```
+
+### 10.3 安全清理（推荐：只删 npm cache，不动项目代码）
+
+```bash
+uid=10000021
+name="ws-u-$uid"
+
+# 清理 npm 的大头缓存
+docker exec "$name" bash -lc 'rm -rf ~/.npm/_cacache ~/.npm/_npx 2>/dev/null || true'
+docker exec "$name" bash -lc 'du -sh ~/.npm 2>/dev/null || true'
+```
+
+### 10.4 更彻底的回收：删除用户容器（不会删宿主机 workspaces 代码目录）
+
+如果容器可写层已经膨胀严重（且你接受下次访问会重建容器），可直接删除容器释放可写层：
+
+```bash
+curl -s -X POST "http://127.0.0.1:7001/api/fun-ai/workspace/container/remove?userId=10000021"
+```
+
+### 10.5 长期治理（推荐）
+
+平台侧已支持把 npm cache 从 `~/.npm` 迁移到可控目录并限额：
+
+- `funai.workspace.npmCacheMode=APP`（缓存落到 `{APP_DIR}/.npm-cache`，删项目即可回收）
+- `funai.workspace.npmCacheMaxMb=2048`（超过阈值自动清理）
+
 

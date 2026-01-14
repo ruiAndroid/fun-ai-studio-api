@@ -12,6 +12,25 @@
 
 本项目推荐使用 **Verdaccio 代理仓库**作为 npm 依赖安装加速方案：把“出网下载”集中到同机的 registry proxy 上，并缓存到服务端 `storage`，workspace 容器后续安装优先命中缓存。
 
+## 额外说明：npm 本地缓存（~/.npm）可能导致“删项目不回收磁盘”
+
+在容器内执行 `npm install` 时，npm 默认会写本地缓存到 `~/.npm`（例如 `_cacache/_npx`）。如果 workspace 采用“每用户一个长期容器”，那么：
+
+- 即使你删除了某个项目目录（`apps/{appId}`），`~/.npm` 仍在容器可写层里持续增长
+- 结果就是：**用户容器磁盘占用越来越大（比如 15GB），删除项目也不下降**
+
+为解决这个问题，平台侧增加了 `funai.workspace.npmCacheMode` 策略（推荐 `APP`）：
+
+- `APP`（推荐）：将 npm cache 放到应用目录内：`{APP_DIR}/.npm-cache`，这样删除项目目录即可回收
+- `CONTAINER`：保持默认行为（`~/.npm`），不推荐
+- `DISABLED`：将 cache 放到临时目录并在受控任务结束后删除（最省磁盘；有 Verdaccio 时影响较小）
+
+并支持阈值清理（默认 2048MB）：
+
+- `funai.workspace.npmCacheMaxMb=2048`
+
+> 注意：这个策略只影响平台“受控任务”（build/install/preview/dev）。用户在终端里手工执行 npm 仍可能产生其它缓存（可通过运维命令清理）。
+
 ## Verdaccio 代理仓库（同机容器网络访问）
 
 Verdaccio 的收益：
