@@ -1,5 +1,7 @@
 # Workspace：Mongo Explorer（Web，只读）
 
+> 双机部署提示：Mongo Explorer 的页面通常仍由小机对外提供，但其调用的 workspace/mongo 相关 API 在双机模式下会被转发到大机容器节点（workspace-node）执行。
+
 ## 目标
 
 在不暴露 Mongo 端口（27017）、不改变 `bindIp=127.0.0.1` 安全模型的前提下，为用户提供一个 **Web 可视化** 的 Mongo 浏览/查询能力（V1：只读）。
@@ -37,7 +39,7 @@ participant Mongo as "数据库(mongod)"
 
 Browser->>Api: GET /workspace-mongo.html(Mongo页面)
 Browser->>Api: GET /api/fun-ai/workspace/mongo/collections?userId&appId
-Api->>Api: appOwned校验(userId,appId)
+Api->>Api: appOwned校验(userId,appId)（双机模式下在小机完成）
 Api->>Api: ensureAppDir(触发容器就绪)
 Api->>Docker: docker exec ws-u-{userId} mongosh --eval
 Docker->>WsContainer: exec mongosh

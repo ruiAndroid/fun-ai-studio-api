@@ -1,5 +1,7 @@
 # Workspace：npm 依赖安装加速（Verdaccio 代理仓库）
 
+> 双机部署提示：Verdaccio/依赖缓存通常部署在大机（容器节点）侧，workspace 容器通过容器网络访问 `http://verdaccio:4873`；小机侧只需要保持配置与转发链路正确。
+
 ## 背景与目标
 
 在线编辑器导入的 Node 项目通常依赖较多。如果每次新项目都在容器内全量 `npm install`：

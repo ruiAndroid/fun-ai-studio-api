@@ -6,20 +6,48 @@ import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.info.License;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
+import io.swagger.v3.oas.models.tags.Tag;
+import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
+import java.util.List;
+import java.util.Map;
+
 @Configuration
 public class SwaggerConfig implements WebMvcConfigurer {
+
+    private static final String WORKSPACE_API_PREFIX = "/api/fun-ai/workspace/";
+
+    /**
+     * 双机部署提示：Workspace 接口对外仍由小机展示/鉴权，但会转发到大机 workspace-node 执行。
+     * <p>
+     * 注意：这里的文案刻意写成“在双机部署时”，以兼容单机开发环境。
+     */
+    private static final String WORKSPACE_FORWARDED_HINT =
+            "【双机部署提示】该接口在小机上展示/鉴权；在双机部署时会转发到大机容器节点（workspace-node）执行。";
 
     @Bean
     public OpenAPI customOpenAPI() {
         return new OpenAPI()
                 .info(new Info()
                         .title("FunAiStudioApi")
-                        .description("风行Ai创作平台-Api接口文档")
+                        .description("""
+                                风行Ai创作平台-Api接口文档
+
+                                【双机部署总览】
+                                - 小机：对外入口（Nginx）、业务 API（fun-ai-studio-api）、MySQL；负责鉴权/授权与业务数据。
+                                - 大机：容器节点（workspace-node）、workspace 用户容器、verdaccio/npm 缓存、workspace 落盘目录等重负载能力。
+
+                                【接口/流量说明】
+                                - `/api/fun-ai/workspace/**`：对外仍由小机暴露（本 Swagger 可见），双机部署时会转发到大机容器节点执行。
+                                - `/ws/{userId}/...`：用户预览入口，双机部署时由小机转发到大机 Nginx，再反代到该用户容器的 hostPort。
+
+                                【排障提示】
+                                - 容器/端口池/运行日志/verdaccio/npm 安装问题：优先在大机侧排查。
+                                """)
                         .version("1.0")
                         .license(new License()
                                 .name("Apache 2.0")
@@ -34,6 +62,59 @@ public class SwaggerConfig implements WebMvcConfigurer {
                                         .bearerFormat("JWT")));
     }
     
+    /**
+     * 为 Swagger 中的 workspace 接口自动追加“双机部署转发”提示，避免访问不到大机 Swagger 时信息缺失。
+     */
+    @Bean
+    public OpenApiCustomizer workspaceForwardedHintCustomiser() {
+        return openApi -> {
+            // 1) 给 workspace 相关 paths/operations 增加说明
+            if (openApi.getPaths() != null) {
+                for (Map.Entry<String, io.swagger.v3.oas.models.PathItem> e : openApi.getPaths().entrySet()) {
+                    String path = e.getKey();
+                    if (path == null || !path.startsWith(WORKSPACE_API_PREFIX)) {
+                        continue;
+                    }
+                    io.swagger.v3.oas.models.PathItem item = e.getValue();
+                    if (item == null) {
+                        continue;
+                    }
+                    for (io.swagger.v3.oas.models.Operation op : item.readOperations()) {
+                        if (op == null) {
+                            continue;
+                        }
+                        String desc = op.getDescription();
+                        if (desc == null || desc.isBlank()) {
+                            op.setDescription(WORKSPACE_FORWARDED_HINT);
+                        } else if (!desc.contains(WORKSPACE_FORWARDED_HINT)) {
+                            op.setDescription(desc + "\n\n" + WORKSPACE_FORWARDED_HINT);
+                        }
+                    }
+                }
+            }
+
+            // 2) 给 workspace 相关 tag 增加说明（让分组页也能看到提示）
+            List<Tag> tags = openApi.getTags();
+            if (tags != null) {
+                for (Tag t : tags) {
+                    if (t == null || t.getName() == null) {
+                        continue;
+                    }
+                    // 现有 tag 命名都是 “Fun AI Workspace ...”
+                    if (!t.getName().startsWith("Fun AI Workspace")) {
+                        continue;
+                    }
+                    String desc = t.getDescription();
+                    if (desc == null || desc.isBlank()) {
+                        t.setDescription(WORKSPACE_FORWARDED_HINT);
+                    } else if (!desc.contains(WORKSPACE_FORWARDED_HINT)) {
+                        t.setDescription(desc + "\n\n" + WORKSPACE_FORWARDED_HINT);
+                    }
+                }
+            }
+        };
+    }
+
     /**
      * 配置 Swagger UI 路径重定向
      * 确保访问 /swagger-ui/ 时能正确重定向到 /swagger-ui/index.html
