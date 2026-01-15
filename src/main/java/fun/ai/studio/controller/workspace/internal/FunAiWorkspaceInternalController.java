@@ -2,6 +2,7 @@ package fun.ai.studio.controller.workspace.internal;
 
 import fun.ai.studio.workspace.WorkspaceProperties;
 import fun.ai.studio.workspace.WorkspaceActivityTracker;
+import fun.ai.studio.service.FunAiWorkspaceService;
 import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -26,16 +27,16 @@ import jakarta.servlet.http.HttpServletRequest;
 public class FunAiWorkspaceInternalController {
     private static final Logger log = LoggerFactory.getLogger(FunAiWorkspaceInternalController.class);
 
-    private final fun.ai.studio.service.impl.FunAiWorkspaceServiceImpl workspaceServiceImpl;
+    private final FunAiWorkspaceService workspaceService;
     private final WorkspaceProperties workspaceProperties;
     private final WorkspaceActivityTracker activityTracker;
 
     public FunAiWorkspaceInternalController(
-            fun.ai.studio.service.impl.FunAiWorkspaceServiceImpl workspaceServiceImpl,
+            FunAiWorkspaceService workspaceService,
             WorkspaceProperties workspaceProperties,
             WorkspaceActivityTracker activityTracker
     ) {
-        this.workspaceServiceImpl = workspaceServiceImpl;
+        this.workspaceService = workspaceService;
         this.workspaceProperties = workspaceProperties;
         this.activityTracker = activityTracker;
     }
@@ -71,7 +72,13 @@ public class FunAiWorkspaceInternalController {
             if (activityTracker != null) {
                 activityTracker.touch(userId);
             }
-            Integer port = workspaceServiceImpl.getHostPortForNginx(userId);
+
+            // 小机裁剪模式下，本机不再维护 workspace-meta.json（由大机维护）。
+            // 只有在本机 workspace 实现存在时，才支持端口查询。
+            Integer port = null;
+            if (workspaceService instanceof fun.ai.studio.service.impl.FunAiWorkspaceServiceImpl impl) {
+                port = impl.getHostPortForNginx(userId);
+            }
             if (port == null || port <= 0) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
             }
