@@ -26,9 +26,9 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * 小机侧轻量客户端：调用大机 workspace-node（带 HMAC 签名）。
+ * API 服务器（小机）侧轻量客户端：调用 Workspace 开发服务器（大机）workspace-node（带 HMAC 签名）。
  *
- * <p>用于裁剪小机的“容器/文件系统重操作”依赖：小机业务域只做鉴权与聚合展示，重操作在大机执行。</p>
+ * <p>用于裁剪 API 服务器（小机）的“容器/文件系统重操作”依赖：API 服务器（小机）业务域只做鉴权与聚合展示，重操作在 Workspace 开发服务器（大机）执行。</p>
  */
 @Component
 public class WorkspaceNodeClient {
@@ -89,7 +89,7 @@ public class WorkspaceNodeClient {
     }
 
     /**
-     * 供业务域删除应用后通知大机清理 workspace 目录（避免磁盘泄漏）。
+     * 供业务域删除应用后通知 Workspace 开发服务器（大机）清理 workspace 目录（避免磁盘泄漏）。
      */
     public void cleanupOnAppDeleted(Long userId, Long appId) {
         String path = "/api/fun-ai/workspace/internal/maintenance/app-deleted";

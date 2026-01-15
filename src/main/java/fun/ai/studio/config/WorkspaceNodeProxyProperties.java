@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 小机 -> 大机 workspace-node 反向代理配置。
+ * API 服务器（小机）-> Workspace 开发服务器（大机）workspace-node 反向代理配置。
  *
  * <p>注意：Spring Boot 3 要求配置 key 使用 kebab-case（全小写）。</p>
  *
@@ -24,17 +24,17 @@ import java.util.concurrent.TimeUnit;
 @ConfigurationProperties(prefix = "workspace-node-proxy")
 public class WorkspaceNodeProxyProperties {
     /**
-     * 是否启用小机应用层代理（代理 /api/fun-ai/workspace/** 到大机 workspace-node）。
+     * 是否启用 API 服务器（小机）应用层代理（代理 /api/fun-ai/workspace/** 到 Workspace 开发服务器（大机）workspace-node）。
      */
     private boolean enabled = false;
 
     /**
-     * 大机 workspace-node 基地址，例如 http://39.97.61.139:7001
+     * Workspace 开发服务器（大机）workspace-node 基地址，例如 http://39.97.61.139:7001
      */
     private String baseUrl = "http://127.0.0.1:7001";
 
     /**
-     * 与大机 workspace-node.internal.shared-secret 一致。
+     * 与 Workspace 开发服务器（大机）workspace-node.internal.shared-secret 一致。
      */
     private String sharedSecret = "";
 

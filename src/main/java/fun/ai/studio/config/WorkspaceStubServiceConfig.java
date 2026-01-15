@@ -17,10 +17,10 @@ import org.springframework.web.multipart.MultipartFile;
 import java.nio.file.Path;
 
 /**
- * 小机裁剪：当 workspace-node-proxy.enabled=true 时，不启用本机的容器/文件系统重实现，
+ * API 服务器（小机）裁剪：当 workspace-node-proxy.enabled=true 时，不启用本机的容器/文件系统重实现，
  * 但仍保留 controller 以展示 Swagger 文档，因此提供一个“占位”FunAiWorkspaceService 供依赖注入。
  *
- * <p>运行时请求会被 WorkspaceNodeProxyFilter 代理到大机；正常情况下不会走到这个 stub。</p>
+ * <p>运行时请求会被 WorkspaceNodeProxyFilter 代理到 Workspace 开发服务器（大机）；正常情况下不会走到这个 stub。</p>
  */
 @Configuration
 @ConditionalOnProperty(name = "workspace-node-proxy.enabled", havingValue = "true")
@@ -32,11 +32,11 @@ public class WorkspaceStubServiceConfig {
         return new FunAiWorkspaceService() {
             private RuntimeException disabled() {
                 return new WorkspaceNodeProxyException(
-                        "workspace 已迁移到大机容器节点（workspace-node）。" +
-                        "请检查：1) 小机配置 workspace-node-proxy.enabled=true；" +
-                        "2) 小机到大机 7001 的网络/安全组；" +
+                        "workspace 已迁移到 Workspace 开发服务器（大机）容器节点（workspace-node）。" +
+                        "请检查：1) API 服务器（小机）配置 workspace-node-proxy.enabled=true；" +
+                        "2) API 服务器（小机）到 Workspace 开发服务器（大机）7001 的网络/安全组；" +
                         "3) shared-secret 是否一致；" +
-                        "4) 大机 workspace-node 服务是否在线。"
+                        "4) Workspace 开发服务器（大机）workspace-node 服务是否在线。"
                 );
             }
 

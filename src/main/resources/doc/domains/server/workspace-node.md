@@ -1,14 +1,14 @@
-# Workspace 容器节点（大机 workspace-node）部署与联调说明
+# Workspace 容器节点（Workspace 开发服务器（大机）workspace-node）部署与联调说明
 
-本文档描述“**单机 → 双机**”后的 **大机容器节点**（workspace-node）的落地方案与自检方法，目标是：**容器/运行态/依赖缓存等重负载能力上大机**，小机保留业务 API + MySQL，并尽量减少改动、快速上线。
+本文档描述“**单机 → 双机**”后的 **Workspace 开发服务器（大机）容器节点**（workspace-node）的落地方案与自检方法，目标是：**容器/运行态/依赖缓存等重负载能力上 Workspace 开发服务器（大机）**，API 服务器（小机）保留业务 API + MySQL，并尽量减少改动、快速上线。
 
 ## 1. 角色划分（双机）
 
-- **小机（轻量业务）**
+- **API 服务器（小机，轻量业务）**
   - 对外入口：Nginx（公网/域名入口）
   - 主业务：`fun-ai-studio-api`（Spring Boot）
   - 数据库：MySQL
-- **大机（容器节点/重负载）**
+- **Workspace 开发服务器（大机，容器节点/重负载）**
   - 容器节点服务：`fun-ai-studio-workspace`（workspace-node，Spring Boot，`7001`）
   - 反向代理：Nginx（处理 `/ws/{userId}/...`）
   - 容器运行时：Podman（兼容 docker CLI）
@@ -16,9 +16,9 @@
   - npm 缓存：Verdaccio（容器，`4873`）
   - Workspace 数据落盘：`/data/funai/...`
 
-> 两台机器位于不同 VPC 时，优先用公网互通 + 安全组收敛（只放行必要端口与来源 IP）。
+> 两台服务器位于不同 VPC 时，优先用公网互通 + 安全组收敛（只放行必要端口与来源 IP）。
 
-## 2. 大机关键目录与端口约定
+## 2. Workspace 开发服务器（大机）关键目录与端口约定
 
 ### 2.1 目录
 
@@ -36,11 +36,11 @@
 ### 2.2 端口
 
 - **workspace-node**：`7001`（仅供本机 Nginx/本机调用；若跨机调用需收敛来源 IP）
-- **大机 Nginx**：`80`（供小机 `/ws/*` 转发；建议只允小机来源 IP）
+- **Workspace 开发服务器（大机）Nginx**：`80`（供 API 服务器（小机）`/ws/*` 转发；建议只允 API 服务器（小机）来源 IP）
 - **Verdaccio**：`4873`（容器网络内使用为主；如需跨机/公网使用需严格收敛）
 - **每用户 workspace 预览 hostPort**：例如 `20021`（仅本机 Nginx 反代到 `127.0.0.1:${hostPort}`，不对公网直接暴露）
 
-## 3. 大机 Nginx（/ws 预览反代）核心逻辑
+## 3. Workspace 开发服务器（大机）Nginx（/ws 预览反代）核心逻辑
 
 设计目标：外部统一访问 `/ws/{userId}/...`，Nginx 先询问 workspace-node 得到该 userId 的 `hostPort`，再反代到 `127.0.0.1:${hostPort}`。
 
@@ -63,22 +63,22 @@
 
 > 判断是否真正跑起来：以 `run/status` 的 `state=RUNNING` + `portListenPid` 为准。
 
-## 3.5 小机 Nginx 只切 `/ws/*` 到大机（推荐先做，低风险）
+## 3.5 API 服务器（小机）Nginx 只切 `/ws/*` 到 Workspace 开发服务器（大机）（推荐先做，低风险）
 
-目标：先把“预览流量”（`/ws/*`）从小机转发到大机 Nginx，**不改动小机业务 API**，验证用户预览已经走大机容器节点。
+目标：先把“预览流量”（`/ws/*`）从 API 服务器（小机）转发到 Workspace 开发服务器（大机）Nginx，**不改动 API 服务器（小机）业务 API**，验证用户预览已经走 Workspace 开发服务器（大机）容器节点。
 
-### 3.5.1 小机安全组最小放行建议
+### 3.5.1 安全组最小放行建议
 
-- 大机入方向：
-  - **80/tcp**：只允许小机公网 IP（例如 `47.118.27.59`）访问（用于 `/ws/*` 转发）
-  - （可选）**7001/tcp**：只允许大机本机或小机访问（如果你未来要让小机直连 workspace-node API；不做 API 切流时可不开放）
+- Workspace 开发服务器（大机）入方向：
+  - **80/tcp**：只允许 API 服务器（小机）公网 IP（例如 `47.118.27.59`）访问（用于 `/ws/*` 转发）
+  - （可选）**7001/tcp**：只允许 Workspace 开发服务器（大机）本机或 API 服务器（小机）访问（如果你未来要让 API 服务器（小机）直连 workspace-node API；不做 API 切流时可不开放）
 
-### 3.5.2 小机 Nginx 示例（`/ws/*` → 大机 Nginx）
+### 3.5.2 API 服务器（小机）Nginx 示例（`/ws/*` → Workspace 开发服务器（大机）Nginx）
 
-以下配置片段放在小机对外 server 块中（`server { ... }`），将 `/ws/` 前缀原样转发到大机：
+以下配置片段放在 API 服务器（小机）对外 server 块中（`server { ... }`），将 `/ws/` 前缀原样转发到 Workspace 开发服务器（大机）：
 
 ```nginx
-# 小机：把 /ws/ 转发到大机 Nginx
+# API 服务器（小机）：把 /ws/ 转发到 Workspace 开发服务器（大机）Nginx
 location ^~ /ws/ {
     proxy_http_version 1.1;
 
@@ -97,14 +97,14 @@ location ^~ /ws/ {
     proxy_send_timeout 3600s;
     proxy_buffering off;
 
-    # 指向大机 Nginx（示例 IP：39.97.61.139）
+    # 指向 Workspace 开发服务器（大机）Nginx（示例 IP：39.97.61.139）
     proxy_pass http://39.97.61.139;
 }
 ```
 
 说明：
 
-- `proxy_pass http://39.97.61.139;` 不带路径，可让 `/ws/...` 原样落到大机 Nginx 的 `/ws/...`。
+- `proxy_pass http://39.97.61.139;` 不带路径，可让 `/ws/...` 原样落到 Workspace 开发服务器（大机）Nginx 的 `/ws/...`。
 - `$connection_upgrade` 需要在 `http {}` 里定义（若你们已有可跳过）：
 
 ```nginx
@@ -114,9 +114,9 @@ map $http_upgrade $connection_upgrade {
 }
 ```
 
-### 3.5.3 小机验证
+### 3.5.3 API 服务器（小机）验证
 
-在小机或任意能访问公网入口的机器验证：
+在 API 服务器（小机）或任意能访问公网入口的机器验证：
 
 ```bash
 curl -I http://47.118.27.59/ws/<userId>/
@@ -124,12 +124,12 @@ curl -I http://47.118.27.59/ws/<userId>/
 
 预期：
 
-- workspace 未 RUNNING 时，可能返回 `200` 且 body 为 `workspace sleeping`（由大机 Nginx 兜底页返回）。
+- workspace 未 RUNNING 时，可能返回 `200` 且 body 为 `workspace sleeping`（由 Workspace 开发服务器（大机）Nginx 兜底页返回）。
 - workspace RUNNING 时，应返回 200/302/200（取决于 dev server），并能在浏览器打开页面。
 
-## 4. workspace-node（7001）内部鉴权（只信任小机）
+## 4. workspace-node（7001）内部鉴权（只信任 API 服务器（小机））
 
-大机的 workspace-node 不依赖 MySQL 进行 app 归属校验，默认信任小机已完成鉴权/鉴权后的转发。
+Workspace 开发服务器（大机）的 workspace-node 不依赖 MySQL 进行 app 归属校验，默认信任 API 服务器（小机）已完成鉴权/鉴权后的转发。
 
 ### 4.1 配置项（注意：必须 kebab-case 小写）
 
@@ -143,9 +143,9 @@ workspace-node.internal.require-signature=false
 
 说明：
 
-- `allowed-source-ip`：小机公网 IP（只放行小机来源）
+- `allowed-source-ip`：API 服务器（小机）公网 IP（只放行 API 服务器（小机）来源）
 - `shared-secret`：后续启用签名校验时用于 HMAC；建议一开始就填强随机值
-- `require-signature`：先 `false` 快速跑通；小机加签后再切 `true`
+- `require-signature`：先 `false` 快速跑通；API 服务器（小机）加签后再切 `true`
 
 ### 4.2 常见启动错误：配置 key 不合法
 
@@ -155,7 +155,7 @@ workspace-node.internal.require-signature=false
 
 解决：改为 `workspace-node.internal.*`（见上文）。
 
-## 5. 大机基础环境要求（Alibaba Cloud Linux 3）
+## 5. Workspace 开发服务器（大机）基础环境要求（Alibaba Cloud Linux 3）
 
 ### 5.1 容器运行时（Podman）
 
@@ -262,7 +262,7 @@ chmod -R u+rwX,g+rwX /data/funai/verdaccio/conf /data/funai/verdaccio/storage
 docker exec ws-u-<userId> sh -lc "npm config set registry http://verdaccio:4873 && npm view create-vite version"
 ```
 
-## 8. 自检清单（大机闭环）
+## 8. 自检清单（Workspace 开发服务器（大机）闭环）
 
 ### 8.1 服务与端口
 

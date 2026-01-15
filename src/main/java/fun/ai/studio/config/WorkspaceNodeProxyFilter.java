@@ -31,13 +31,13 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * 小机：应用层反向代理（/api/fun-ai/workspace/** -> 大机 workspace-node）。
+ * API 服务器（小机）：应用层反向代理（/api/fun-ai/workspace/** -> Workspace 开发服务器（大机）workspace-node）。
  *
  * - 对外 URL/参数不变
- * - 小机仍负责鉴权/授权（Spring Security）
- * - 转发时注入 X-WS-* 头以通过大机的 InternalAuthFilter（HMAC-SHA256）
+ * - API 服务器（小机）仍负责鉴权/授权（Spring Security）
+ * - 转发时注入 X-WS-* 头以通过 Workspace 开发服务器（大机）的 InternalAuthFilter（HMAC-SHA256）
  *
- * 说明：WebSocket 握手不走此 filter（由小机 Nginx 反代到大机，且大机对该路径跳过签名）。
+ * 说明：WebSocket 握手不走此 filter（由 API 服务器（小机）Nginx 反代到 Workspace 开发服务器（大机），且 Workspace 开发服务器（大机）对该路径跳过签名）。
  */
 public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
     private static final String WORKSPACE_API_PREFIX = "/api/fun-ai/workspace/";
@@ -78,7 +78,7 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
         String uri = request.getRequestURI();
         if (uri == null) return true;
         if (!uri.startsWith(WORKSPACE_API_PREFIX)) return true;
-        // WebSocket 握手由 Nginx 直转发到大机（HTTP client 无法代理 Upgrade）
+        // WebSocket 握手由 Nginx 直转发到 Workspace 开发服务器（大机）（HTTP client 无法代理 Upgrade）
         return uri.startsWith("/api/fun-ai/workspace/ws/");
     }
 

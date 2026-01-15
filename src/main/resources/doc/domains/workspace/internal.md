@@ -1,6 +1,6 @@
 # Workspace：internal 子系统（仅内部使用）
 
-> 双机部署提示：在双机模式下，`/api/fun-ai/workspace/internal/nginx/port` 一般由**大机 Nginx**以 `auth_request` 的方式调用（本机回环或受限来源），不建议对公网直接暴露。
+> 双机部署提示：在双机模式下，`/api/fun-ai/workspace/internal/nginx/port` 一般由 **Workspace 开发服务器（大机）Nginx** 以 `auth_request` 的方式调用（本机回环或受限来源），不建议对公网直接暴露。
 
 ## 职责
 

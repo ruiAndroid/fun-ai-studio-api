@@ -1,6 +1,6 @@
 # Workspace：运行态（run 子系统）
 
-> 双机部署提示：本页接口对外仍由小机暴露，但在双机模式下会被小机网关/Nginx 转发到大机容器节点（workspace-node）执行。
+> 双机部署提示：本页接口对外仍由 API 服务器（小机）暴露，但在双机模式下会被 API 服务器（小机）网关/Nginx 转发到 Workspace 开发服务器（大机）容器节点（workspace-node）执行。
 
 ## 职责
 

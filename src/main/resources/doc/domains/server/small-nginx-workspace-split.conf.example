@@ -1,12 +1,12 @@
-# 小机 Nginx：workspace 双机拆分（示例，仅供复制）
+# API 服务器（小机）Nginx：workspace 双机拆分（示例，仅供复制）
 #
 # 目标：
-# - /ws/* 与 WebSocket 终端握手路径转发到大机 Nginx（大机负责 auth_request + 反代到 hostPort）
-# - /api/fun-ai/workspace/** 不在 Nginx 层直转发（因为需要 HMAC 签名），由小机 Spring Boot 的 proxy filter 转发
+# - /ws/* 与 WebSocket 终端握手路径转发到 Workspace 开发服务器（大机）Nginx（Workspace 开发服务器（大机）负责 auth_request + 反代到 hostPort）
+# - /api/fun-ai/workspace/** 不在 Nginx 层直转发（因为需要 HMAC 签名），由 API 服务器（小机）Spring Boot 的 proxy filter 转发
 #
 # 注意：
-# - 该文件是示例，实际请放到小机 /etc/nginx/conf.d/*.conf 的对应 server 块内
-# - BIG_IP 替换为大机公网 IP，例如 39.97.61.139
+# - 该文件是示例，实际请放到 API 服务器（小机）/etc/nginx/conf.d/*.conf 的对应 server 块内
+# - BIG_IP 替换为 Workspace 开发服务器（大机）公网 IP，例如 39.97.61.139
 
 # WebSocket Upgrade 需要的 map（若 http{} 已配置可忽略）
 map $http_upgrade $connection_upgrade {
@@ -33,7 +33,7 @@ location ^~ /ws/ {
     proxy_pass http://BIG_IP;
 }
 
-# 2) 在线终端：WebSocket 握手也需转发到大机（大机节点直接处理 /api/fun-ai/workspace/ws/terminal）
+# 2) 在线终端：WebSocket 握手也需转发到 Workspace 开发服务器（大机）（Workspace 开发服务器（大机）节点直接处理 /api/fun-ai/workspace/ws/terminal）
 location = /api/fun-ai/workspace/ws/terminal {
     proxy_http_version 1.1;
 

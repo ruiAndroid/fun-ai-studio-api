@@ -74,7 +74,7 @@ public class FunAiAppController {
     private void fillRuntimeFields(Long userId, List<FunAiApp> apps) {
         if (apps == null || apps.isEmpty()) return;
         try {
-            // 双机模式：运行态/文件系统在大机；小机只聚合展示
+            // 双机模式：运行态/文件系统在 Workspace 开发服务器（大机）；API 服务器（小机）只聚合展示
             FunAiWorkspaceRunStatusResponse remoteStatus = null;
             if (workspaceNodeClient != null && workspaceNodeClient.isEnabled()) {
                 try {
@@ -112,7 +112,7 @@ public class FunAiAppController {
                     app.setWorkspaceLastError(null);
                 }
 
-                // 双机模式：小机不再直接读宿主机目录（目录在大机）。
+                // 双机模式：API 服务器（小机）不再直接读宿主机目录（目录在 Workspace 开发服务器（大机））。
                 // 如需展示，可后续增加“批量查询 hasPackageJson”接口或在列表页延迟加载。
                 app.setWorkspaceHasProjectDir(null);
                 app.setWorkspaceHasPackageJson(null);
@@ -205,7 +205,7 @@ public class FunAiAppController {
             boolean hasPkg;
             FunAiWorkspaceRunStatusResponse runStatus;
 
-            // 双机模式：open-editor 需要的“目录/是否有 package.json/运行态”都从大机获取
+            // 双机模式：open-editor 需要的“目录/是否有 package.json/运行态”都从 Workspace 开发服务器（大机）获取
             if (remoteEnabled) {
                 dir = workspaceNodeClient.ensureDir(userId, appId);
                 hasPkg = workspaceNodeClient.hasPackageJson(userId, appId);
@@ -273,7 +273,7 @@ public class FunAiAppController {
             String cleanupWarn = null;
             try {
                 if (workspaceNodeClient != null && workspaceNodeClient.isEnabled()) {
-                    // 双机模式：通知大机清理 workspace app 目录（与小机 funai.workspace.enabled 无关）
+                    // 双机模式：通知 Workspace 开发服务器（大机）清理 workspace app 目录（与 API 服务器（小机）funai.workspace.enabled 无关）
                     workspaceNodeClient.cleanupOnAppDeleted(userId, appId);
                 } else if (funAiWorkspaceService != null && workspaceProperties != null && workspaceProperties.isEnabled()) {
                     funAiWorkspaceService.cleanupWorkspaceOnAppDeleted(userId, appId);

@@ -6,7 +6,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 
 /**
- * 注册小机 -> 大机 workspace-node 的应用层代理 filter。
+ * 注册 API 服务器（小机）-> Workspace 开发服务器（大机）workspace-node 的应用层代理 filter。
  *
  * <p>注意：必须让 Spring Security 先执行鉴权，再进入本 filter 转发。
  * Spring Security 的过滤器通常 order 更小（优先执行）；这里设置为较大的 order。</p>

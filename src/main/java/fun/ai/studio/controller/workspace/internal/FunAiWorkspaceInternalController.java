@@ -73,7 +73,7 @@ public class FunAiWorkspaceInternalController {
                 activityTracker.touch(userId);
             }
 
-            // 小机裁剪模式下，本机不再维护 workspace-meta.json（由大机维护）。
+            // API 服务器（小机）裁剪模式下，本机不再维护 workspace-meta.json（由 Workspace 开发服务器（大机）维护）。
             // 只有在本机 workspace 实现存在时，才支持端口查询。
             Integer port = null;
             if (workspaceService instanceof fun.ai.studio.service.impl.FunAiWorkspaceServiceImpl impl) {

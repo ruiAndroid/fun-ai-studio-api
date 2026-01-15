@@ -195,8 +195,8 @@ public class FunAiWorkspaceMongoController {
     private WorkspaceMongoShellClient requireMongoShellClient() {
         WorkspaceMongoShellClient c = mongoShellClientProvider == null ? null : mongoShellClientProvider.getIfAvailable();
         if (c == null) {
-            // 小机裁剪模式下不加载 docker/mongosh 执行链路；该功能应由大机 workspace-node 承载
-            throw new WorkspaceNodeProxyException("Mongo Explorer 相关能力已迁移到大机容器节点（workspace-node）；请检查小机到大机的转发链路。");
+            // API 服务器（小机）裁剪模式下不加载 docker/mongosh 执行链路；该功能应由 Workspace 开发服务器（大机）workspace-node 承载
+            throw new WorkspaceNodeProxyException("Mongo Explorer 相关能力已迁移到 Workspace 开发服务器（大机）容器节点（workspace-node）；请检查 API 服务器（小机）到 Workspace 开发服务器（大机）的转发链路。");
         }
         return c;
     }

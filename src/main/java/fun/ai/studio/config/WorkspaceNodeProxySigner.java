@@ -7,7 +7,7 @@ import java.security.MessageDigest;
 import java.util.Base64;
 
 /**
- * 与大机 workspace-node InternalAuthFilter 对齐的签名生成器。
+ * 与 Workspace 开发服务器（大机）workspace-node InternalAuthFilter 对齐的签名生成器。
  *
  * canonical:
  * method \n path \n query \n bodySha256Hex \n ts \n nonce

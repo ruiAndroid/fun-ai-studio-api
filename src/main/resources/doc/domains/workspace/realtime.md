@@ -1,6 +1,6 @@
 # Workspace：实时通道（realtime 子系统）
 
-> 双机部署提示：本页接口对外仍由小机暴露，但在双机模式下会被小机网关/Nginx 转发到大机容器节点（workspace-node）执行。
+> 双机部署提示：本页接口对外仍由 API 服务器（小机）暴露，但在双机模式下会被 API 服务器（小机）网关/Nginx 转发到 Workspace 开发服务器（大机）容器节点（workspace-node）执行。
 
 实时通道包含两部分：
 
@@ -23,7 +23,7 @@
 
 关键设计点：
 
-- 双机模式下 `appId` 归属校验建议在小机完成；大机仅信任小机转发并通过 allowlist/共享密钥限制来源。
+- 双机模式下 `appId` 归属校验建议在 API 服务器（小机）完成；Workspace 开发服务器（大机）仅信任 API 服务器（小机）转发并通过 allowlist/共享密钥限制来源。
 - SSE 长连接会周期性触发 `activityTracker.touch(userId)`，避免 idle 回收误伤活跃用户。
 - 日志不通过 SSE 增量推送：需要日志时通过 HTTP 拉取（见下文 `log` 接口）。
 
