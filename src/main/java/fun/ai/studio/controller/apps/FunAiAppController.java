@@ -114,8 +114,8 @@ public class FunAiAppController {
 
                 // 双机模式：API 服务器（小机）不再直接读宿主机目录（目录在 Workspace 开发服务器（大机））。
                 // 如需展示，可后续增加“批量查询 hasPackageJson”接口或在列表页延迟加载。
-                app.setWorkspaceHasProjectDir(null);
-                app.setWorkspaceHasPackageJson(null);
+                    app.setWorkspaceHasProjectDir(null);
+                    app.setWorkspaceHasPackageJson(null);
             }
         } catch (Exception e) {
             logger.warn("fill runtime fields failed: userId={}, error={}", userId, e.getMessage());
@@ -213,9 +213,9 @@ public class FunAiAppController {
             } else {
                 // 单机 fallback：本机 ensure + 本机磁盘探测
                 dir = funAiWorkspaceService.ensureAppDir(userId, appId);
-                Path hostAppDir = Paths.get(dir.getHostAppDir());
+            Path hostAppDir = Paths.get(dir.getHostAppDir());
                 hasPkg = detectPackageJson(hostAppDir);
-                // 不自动启动（避免与 WS 终端自由命令并发导致进程错乱）
+            // 不自动启动（避免与 WS 终端自由命令并发导致进程错乱）
                 runStatus = funAiWorkspaceService.getRunStatus(userId);
             }
 
