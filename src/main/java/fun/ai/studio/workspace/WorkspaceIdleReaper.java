@@ -3,6 +3,7 @@ package fun.ai.studio.workspace;
 import fun.ai.studio.service.FunAiWorkspaceService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -14,6 +15,7 @@ import java.util.Map;
  * - 20 分钟无操作：stop 容器
  */
 @Component
+@ConditionalOnProperty(name = "workspace-node-proxy.enabled", havingValue = "false", matchIfMissing = true)
 public class WorkspaceIdleReaper {
     private static final Logger log = LoggerFactory.getLogger(WorkspaceIdleReaper.class);
 

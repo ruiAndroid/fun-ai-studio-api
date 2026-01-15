@@ -27,6 +27,12 @@ public class GlobalExceptionHandler {
         return Result.error(e.getMessage());
     }
 
+    @ExceptionHandler(WorkspaceNodeProxyException.class)
+    public Result<?> handleWorkspaceNodeProxyException(WorkspaceNodeProxyException e) {
+        // 这里统一返回 502：语义上更接近“上游（workspace-node）不可用/代理链路异常”
+        return Result.error(502, e.getMessage());
+    }
+
     @ExceptionHandler(Exception.class)
     public Result<?> handleException(Exception e) {
         return Result.error("系统错误：" + e.getMessage());

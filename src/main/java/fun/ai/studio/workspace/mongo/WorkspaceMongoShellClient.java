@@ -6,6 +6,7 @@ import fun.ai.studio.workspace.CommandRunner;
 import fun.ai.studio.workspace.WorkspaceProperties;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
@@ -24,6 +25,7 @@ import java.util.regex.Pattern;
  * - 不接受任意 JS eval（只接受结构化参数，由后端拼固定模板脚本）
  */
 @Component
+@ConditionalOnProperty(name = "workspace-node-proxy.enabled", havingValue = "false", matchIfMissing = true)
 public class WorkspaceMongoShellClient {
     private static final Duration CMD_TIMEOUT = Duration.ofSeconds(8);
     private static final int DEFAULT_MAX_TIME_MS = 3000;

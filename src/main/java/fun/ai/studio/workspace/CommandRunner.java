@@ -2,6 +2,7 @@ package fun.ai.studio.workspace;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
@@ -16,6 +17,7 @@ import java.util.concurrent.TimeUnit;
  * 轻量命令执行器（用于调用 docker/podman 等）
  */
 @Component
+@ConditionalOnProperty(name = "workspace-node-proxy.enabled", havingValue = "false", matchIfMissing = true)
 public class CommandRunner {
     private static final Logger log = LoggerFactory.getLogger(CommandRunner.class);
 

@@ -5,6 +5,7 @@ import fun.ai.studio.service.FunAiAppService;
 import fun.ai.studio.service.FunAiWorkspaceService;
 import fun.ai.studio.workspace.WorkspaceActivityTracker;
 import fun.ai.studio.workspace.WorkspaceProperties;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
@@ -12,6 +13,7 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 
 @Configuration
 @EnableWebSocket
+@ConditionalOnProperty(name = "workspace-node-proxy.enabled", havingValue = "false", matchIfMissing = true)
 public class WorkspaceTerminalWebSocketConfig implements WebSocketConfigurer {
     private final FunAiAppService funAiAppService;
     private final FunAiWorkspaceService workspaceService;

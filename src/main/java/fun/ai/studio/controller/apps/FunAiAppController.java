@@ -13,6 +13,7 @@ import fun.ai.studio.service.FunAiAppService;
 import fun.ai.studio.service.FunAiWorkspaceService;
 import fun.ai.studio.service.FunAiWorkspaceRunService;
 import fun.ai.studio.workspace.WorkspaceProperties;
+import fun.ai.studio.workspace.WorkspaceNodeClient;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -55,10 +56,8 @@ public class FunAiAppController {
     @Autowired(required = false)
     private FunAiWorkspaceService funAiWorkspaceService;
 
-    private String sanitizePath(String p) {
-        if (p == null) return null;
-        return p.trim().replaceAll("^[\"']|[\"']$", "");
-    }
+    @Autowired(required = false)
+    private WorkspaceNodeClient workspaceNodeClient;
 
     private boolean detectPackageJson(Path appDir) {
         if (appDir == null || !Files.isDirectory(appDir)) return false;
@@ -75,12 +74,17 @@ public class FunAiAppController {
     private void fillRuntimeFields(Long userId, List<FunAiApp> apps) {
         if (apps == null || apps.isEmpty()) return;
         try {
-            // 1) workspace 运行态（last-known）
-            FunAiWorkspaceRun run = (funAiWorkspaceRunService == null) ? null : funAiWorkspaceRunService.getByUserId(userId);
+            // 双机模式：运行态/文件系统在大机；小机只聚合展示
+            FunAiWorkspaceRunStatusResponse remoteStatus = null;
+            if (workspaceNodeClient != null && workspaceNodeClient.isEnabled()) {
+                try {
+                    remoteStatus = workspaceNodeClient.getRunStatus(userId);
+                } catch (Exception ignore) {
+                }
+            }
 
-            // 2) 代码是否已同步到 workspace（无副作用：仅检查宿主机目录）
-            String hostRoot = workspaceProperties == null ? null : sanitizePath(workspaceProperties.getHostRoot());
-            Path userAppsDir = (hostRoot == null || hostRoot.isBlank()) ? null : Paths.get(hostRoot, String.valueOf(userId), "apps");
+            // 单机/兼容：保留 DB last-known（若存在）
+            FunAiWorkspaceRun run = (funAiWorkspaceRunService == null) ? null : funAiWorkspaceRunService.getByUserId(userId);
 
             for (FunAiApp app : apps) {
                 if (app == null) continue;
@@ -90,7 +94,13 @@ public class FunAiAppController {
                 }
 
                 // 只有“当前运行的 app”才填 runState/previewUrl/log
-                if (run != null && run.getAppId() != null && app.getId() != null && run.getAppId().equals(app.getId())) {
+                if (remoteStatus != null && remoteStatus.getAppId() != null && app.getId() != null && remoteStatus.getAppId().equals(app.getId())) {
+                    app.setWorkspaceRunState(remoteStatus.getState());
+                    app.setWorkspacePreviewUrl(remoteStatus.getPreviewUrl());
+                    app.setWorkspaceLogPath(remoteStatus.getLogPath());
+                    app.setWorkspaceLastError(remoteStatus.getMessage());
+                } else if (run != null && run.getAppId() != null && app.getId() != null && run.getAppId().equals(app.getId())) {
+                    // fallback：单机模式
                     app.setWorkspaceRunState(run.getRunState());
                     app.setWorkspacePreviewUrl(run.getPreviewUrl());
                     app.setWorkspaceLogPath(run.getLogPath());
@@ -102,16 +112,10 @@ public class FunAiAppController {
                     app.setWorkspaceLastError(null);
                 }
 
-                // 项目目录存在性与 package.json 检测
-                if (userAppsDir != null && app.getId() != null) {
-                    Path appDir = userAppsDir.resolve(String.valueOf(app.getId()));
-                    boolean hasDir = Files.isDirectory(appDir);
-                    app.setWorkspaceHasProjectDir(hasDir);
-                    app.setWorkspaceHasPackageJson(hasDir && detectPackageJson(appDir));
-                } else {
-                    app.setWorkspaceHasProjectDir(null);
-                    app.setWorkspaceHasPackageJson(null);
-                }
+                // 双机模式：小机不再直接读宿主机目录（目录在大机）。
+                // 如需展示，可后续增加“批量查询 hasPackageJson”接口或在列表页延迟加载。
+                app.setWorkspaceHasProjectDir(null);
+                app.setWorkspaceHasPackageJson(null);
             }
         } catch (Exception e) {
             logger.warn("fill runtime fields failed: userId={}, error={}", userId, e.getMessage());
@@ -186,7 +190,9 @@ public class FunAiAppController {
             if (userId == null || appId == null) {
                 return Result.error("userId/appId 不能为空");
             }
-            if (funAiWorkspaceService == null) {
+            boolean remoteEnabled = (workspaceNodeClient != null && workspaceNodeClient.isEnabled());
+            boolean localEnabled = (funAiWorkspaceService != null && workspaceProperties != null && workspaceProperties.isEnabled());
+            if (!remoteEnabled && !localEnabled) {
                 return Result.error("workspace 功能未启用");
             }
 
@@ -195,13 +201,23 @@ public class FunAiAppController {
                 return Result.error("应用不存在或无权限操作");
             }
 
-            // 关键：ensureAppDir 内部已做归属校验，且会确保容器运行并创建宿主机目录（目录挂载到容器 /workspace）
-            FunAiWorkspaceProjectDirResponse dir = funAiWorkspaceService.ensureAppDir(userId, appId);
-            Path hostAppDir = Paths.get(dir.getHostAppDir());
-            boolean hasPkg = detectPackageJson(hostAppDir);
+            FunAiWorkspaceProjectDirResponse dir;
+            boolean hasPkg;
+            FunAiWorkspaceRunStatusResponse runStatus;
 
-            // 不自动启动（避免与 WS 终端自由命令并发导致进程错乱）
-            FunAiWorkspaceRunStatusResponse runStatus = funAiWorkspaceService.getRunStatus(userId); // 通常为 IDLE/STARTING/RUNNING/DEAD
+            // 双机模式：open-editor 需要的“目录/是否有 package.json/运行态”都从大机获取
+            if (remoteEnabled) {
+                dir = workspaceNodeClient.ensureDir(userId, appId);
+                hasPkg = workspaceNodeClient.hasPackageJson(userId, appId);
+                runStatus = workspaceNodeClient.getRunStatus(userId);
+            } else {
+                // 单机 fallback：本机 ensure + 本机磁盘探测
+                dir = funAiWorkspaceService.ensureAppDir(userId, appId);
+                Path hostAppDir = Paths.get(dir.getHostAppDir());
+                hasPkg = detectPackageJson(hostAppDir);
+                // 不自动启动（避免与 WS 终端自由命令并发导致进程错乱）
+                runStatus = funAiWorkspaceService.getRunStatus(userId);
+            }
 
             // 补充 runtime 字段（previewUrl/runState 等）
             fillRuntimeFields(userId, List.of(app));
@@ -256,7 +272,10 @@ public class FunAiAppController {
             // 注意：deleteApp 已做归属校验，这里不再重复校验，且清理失败不影响删除结果
             String cleanupWarn = null;
             try {
-                if (funAiWorkspaceService != null && workspaceProperties != null && workspaceProperties.isEnabled()) {
+                if (workspaceNodeClient != null && workspaceNodeClient.isEnabled()) {
+                    // 双机模式：通知大机清理 workspace app 目录（与小机 funai.workspace.enabled 无关）
+                    workspaceNodeClient.cleanupOnAppDeleted(userId, appId);
+                } else if (funAiWorkspaceService != null && workspaceProperties != null && workspaceProperties.isEnabled()) {
                     funAiWorkspaceService.cleanupWorkspaceOnAppDeleted(userId, appId);
                 }
             } catch (Exception e) {

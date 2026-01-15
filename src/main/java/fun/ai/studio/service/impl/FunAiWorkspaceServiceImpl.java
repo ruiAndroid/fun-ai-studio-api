@@ -20,6 +20,7 @@ import fun.ai.studio.workspace.WorkspaceProperties;
 import fun.ai.studio.workspace.ZipUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -45,6 +46,7 @@ import java.util.Map;
 import java.util.Set;
 
 @Service
+@ConditionalOnProperty(name = "workspace-node-proxy.enabled", havingValue = "false", matchIfMissing = true)
 public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
     private static final Logger log = LoggerFactory.getLogger(FunAiWorkspaceServiceImpl.class);
 
@@ -412,7 +414,7 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             selectedScript = raw.substring(idx + 1).trim();
         }
         op = op.toUpperCase();
-        if (selectedScript != null && !selectedScript.isBlank()) {
+        if (selectedScript != null && !selectedScript.isBlank()) {           
             selectedScript = selectedScript.trim();
         } else {
             selectedScript = null;

@@ -27,7 +27,12 @@ public class SwaggerConfig implements WebMvcConfigurer {
      * 注意：这里的文案刻意写成“在双机部署时”，以兼容单机开发环境。
      */
     private static final String WORKSPACE_FORWARDED_HINT =
-            "【双机部署提示】该接口在小机上展示/鉴权；在双机部署时会转发到大机容器节点（workspace-node）执行。";
+            "【双机部署提示】该接口在小机上展示/鉴权；在双机部署时会转发到大机容器节点（workspace-node）执行。\n\n"
+            + "【常见错误提示】如果你看到 code=502，通常表示“代理链路未生效或大机不可用”。请依次检查：\n"
+            + "1) 小机配置：workspace-node-proxy.enabled=true\n"
+            + "2) 小机到大机 7001 的网络/安全组是否放行\n"
+            + "3) shared-secret 是否一致（小机 workspace-node-proxy.shared-secret 与大机 workspace-node.internal.shared-secret）\n"
+            + "4) 大机 workspace-node 服务是否在线（7001）";
 
     @Bean
     public OpenAPI customOpenAPI() {
