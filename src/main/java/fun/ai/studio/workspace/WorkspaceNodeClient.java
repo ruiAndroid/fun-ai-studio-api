@@ -9,6 +9,10 @@ import fun.ai.studio.entity.response.FunAiWorkspaceFileNode;
 import fun.ai.studio.entity.response.FunAiWorkspaceFileTreeResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceProjectDirResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceRunStatusResponse;
+import fun.ai.studio.entity.request.WorkspaceMongoFindRequest;
+import fun.ai.studio.entity.response.WorkspaceMongoCollectionsResponse;
+import fun.ai.studio.entity.response.WorkspaceMongoDocResponse;
+import fun.ai.studio.entity.response.WorkspaceMongoFindResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -95,6 +99,35 @@ public class WorkspaceNodeClient {
         String path = "/api/fun-ai/workspace/internal/maintenance/app-deleted";
         String query = query(Map.of("userId", String.valueOf(userId), "appId", String.valueOf(appId)));
         requestJson("POST", path, query, new byte[0], new TypeReference<Result<Object>>() {});
+    }
+
+    public WorkspaceMongoCollectionsResponse mongoCollections(Long userId, Long appId) {
+        String path = "/api/fun-ai/workspace/mongo/collections";
+        String query = query(Map.of("userId", String.valueOf(userId), "appId", String.valueOf(appId)));
+        return requestJson("GET", path, query, null, new TypeReference<Result<WorkspaceMongoCollectionsResponse>>() {});
+    }
+
+    public WorkspaceMongoFindResponse mongoFind(Long userId, Long appId, WorkspaceMongoFindRequest req) {
+        String path = "/api/fun-ai/workspace/mongo/find";
+        String query = query(Map.of("userId", String.valueOf(userId), "appId", String.valueOf(appId)));
+        byte[] body;
+        try {
+            body = objectMapper.writeValueAsBytes(req);
+        } catch (Exception e) {
+            throw new RuntimeException("mongo find request encode failed: " + e.getMessage(), e);
+        }
+        return requestJson("POST", path, query, body, new TypeReference<Result<WorkspaceMongoFindResponse>>() {});
+    }
+
+    public WorkspaceMongoDocResponse mongoDoc(Long userId, Long appId, String collection, String id) {
+        String path = "/api/fun-ai/workspace/mongo/doc";
+        String query = query(Map.of(
+                "userId", String.valueOf(userId),
+                "appId", String.valueOf(appId),
+                "collection", collection == null ? "" : collection,
+                "id", id == null ? "" : id
+        ));
+        return requestJson("GET", path, query, null, new TypeReference<Result<WorkspaceMongoDocResponse>>() {});
     }
 
     private boolean containsPackageJson(List<FunAiWorkspaceFileNode> nodes) {

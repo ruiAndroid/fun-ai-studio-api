@@ -11,6 +11,7 @@ import fun.ai.studio.service.FunAiAppService;
 import fun.ai.studio.service.FunAiWorkspaceService;
 import fun.ai.studio.workspace.WorkspaceActivityTracker;
 import fun.ai.studio.workspace.WorkspaceProperties;
+import fun.ai.studio.workspace.WorkspaceNodeClient;
 import fun.ai.studio.workspace.mongo.WorkspaceMongoShellClient;
 import fun.ai.studio.common.WorkspaceNodeProxyException;
 import io.swagger.v3.oas.annotations.Operation;
@@ -51,6 +52,7 @@ public class FunAiWorkspaceMongoController {
     private final FunAiAppService funAiAppService;
     private final WorkspaceProperties workspaceProperties;
     private final WorkspaceActivityTracker activityTracker;
+    private final WorkspaceNodeClient workspaceNodeClient;
     private final ObjectProvider<WorkspaceMongoShellClient> mongoShellClientProvider;
     private final ObjectMapper objectMapper;
 
@@ -58,12 +60,14 @@ public class FunAiWorkspaceMongoController {
                                          FunAiAppService funAiAppService,
                                          WorkspaceProperties workspaceProperties,
                                          WorkspaceActivityTracker activityTracker,
+                                         WorkspaceNodeClient workspaceNodeClient,
                                          ObjectProvider<WorkspaceMongoShellClient> mongoShellClientProvider,
                                          ObjectMapper objectMapper) {
         this.workspaceService = workspaceService;
         this.funAiAppService = funAiAppService;
         this.workspaceProperties = workspaceProperties;
         this.activityTracker = activityTracker;
+        this.workspaceNodeClient = workspaceNodeClient;
         this.mongoShellClientProvider = mongoShellClientProvider;
         this.objectMapper = objectMapper;
     }
@@ -77,12 +81,16 @@ public class FunAiWorkspaceMongoController {
         try {
             assertAppOwned(userId, appId);
             activityTracker.touch(userId);
+
+            // 双机模式：由 API 服务器（小机）做 appOwned 校验后，转发到 workspace-node 执行（workspace-node 会自行校验 preview RUNNING 等条件）
+            if (workspaceNodeClient != null && workspaceNodeClient.isEnabled()) {
+                WorkspaceMongoCollectionsResponse remote = workspaceNodeClient.mongoCollections(userId, appId);
+                return Result.success(remote);
+            }
+
             String containerName = containerName(userId);
             String dbName = dbNameForApp(appId);
-
-            // 强制要求：必须先 preview（START）并处于 RUNNING 才允许访问数据库
             assertPreviewRunning(userId, appId);
-
             WorkspaceMongoShellClient mongoShellClient = requireMongoShellClient();
             List<String> cols = mongoShellClient.listCollections(containerName, dbName);
 
@@ -112,11 +120,14 @@ public class FunAiWorkspaceMongoController {
             activityTracker.touch(userId);
             if (req == null) throw new IllegalArgumentException("body 不能为空");
 
+            if (workspaceNodeClient != null && workspaceNodeClient.isEnabled()) {
+                WorkspaceMongoFindResponse remote = workspaceNodeClient.mongoFind(userId, appId, req);
+                return Result.success(remote);
+            }
+
             String containerName = containerName(userId);
             String dbName = dbNameForApp(appId);
-
             assertPreviewRunning(userId, appId);
-
             WorkspaceMongoShellClient mongoShellClient = requireMongoShellClient();
             Map<String, Object> out = mongoShellClient.find(
                     containerName,
@@ -158,11 +169,15 @@ public class FunAiWorkspaceMongoController {
         try {
             assertAppOwned(userId, appId);
             activityTracker.touch(userId);
+
+            if (workspaceNodeClient != null && workspaceNodeClient.isEnabled()) {
+                WorkspaceMongoDocResponse remote = workspaceNodeClient.mongoDoc(userId, appId, collection, id);
+                return Result.success(remote);
+            }
+
             String containerName = containerName(userId);
             String dbName = dbNameForApp(appId);
-
             assertPreviewRunning(userId, appId);
-
             WorkspaceMongoShellClient mongoShellClient = requireMongoShellClient();
             Map<String, Object> out = mongoShellClient.findOneById(containerName, dbName, collection, id);
 
