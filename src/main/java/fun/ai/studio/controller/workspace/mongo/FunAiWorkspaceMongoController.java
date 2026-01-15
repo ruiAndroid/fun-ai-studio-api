@@ -12,12 +12,14 @@ import fun.ai.studio.service.FunAiWorkspaceService;
 import fun.ai.studio.workspace.WorkspaceActivityTracker;
 import fun.ai.studio.workspace.WorkspaceProperties;
 import fun.ai.studio.workspace.mongo.WorkspaceMongoShellClient;
+import fun.ai.studio.common.WorkspaceNodeProxyException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.util.StringUtils;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -49,20 +51,20 @@ public class FunAiWorkspaceMongoController {
     private final FunAiAppService funAiAppService;
     private final WorkspaceProperties workspaceProperties;
     private final WorkspaceActivityTracker activityTracker;
-    private final WorkspaceMongoShellClient mongoShellClient;
+    private final ObjectProvider<WorkspaceMongoShellClient> mongoShellClientProvider;
     private final ObjectMapper objectMapper;
 
     public FunAiWorkspaceMongoController(FunAiWorkspaceService workspaceService,
                                          FunAiAppService funAiAppService,
                                          WorkspaceProperties workspaceProperties,
                                          WorkspaceActivityTracker activityTracker,
-                                         WorkspaceMongoShellClient mongoShellClient,
+                                         ObjectProvider<WorkspaceMongoShellClient> mongoShellClientProvider,
                                          ObjectMapper objectMapper) {
         this.workspaceService = workspaceService;
         this.funAiAppService = funAiAppService;
         this.workspaceProperties = workspaceProperties;
         this.activityTracker = activityTracker;
-        this.mongoShellClient = mongoShellClient;
+        this.mongoShellClientProvider = mongoShellClientProvider;
         this.objectMapper = objectMapper;
     }
 
@@ -81,6 +83,7 @@ public class FunAiWorkspaceMongoController {
             // 强制要求：必须先 preview（START）并处于 RUNNING 才允许访问数据库
             assertPreviewRunning(userId, appId);
 
+            WorkspaceMongoShellClient mongoShellClient = requireMongoShellClient();
             List<String> cols = mongoShellClient.listCollections(containerName, dbName);
 
             WorkspaceMongoCollectionsResponse resp = new WorkspaceMongoCollectionsResponse();
@@ -114,6 +117,7 @@ public class FunAiWorkspaceMongoController {
 
             assertPreviewRunning(userId, appId);
 
+            WorkspaceMongoShellClient mongoShellClient = requireMongoShellClient();
             Map<String, Object> out = mongoShellClient.find(
                     containerName,
                     dbName,
@@ -159,6 +163,7 @@ public class FunAiWorkspaceMongoController {
 
             assertPreviewRunning(userId, appId);
 
+            WorkspaceMongoShellClient mongoShellClient = requireMongoShellClient();
             Map<String, Object> out = mongoShellClient.findOneById(containerName, dbName, collection, id);
 
             WorkspaceMongoDocResponse resp = new WorkspaceMongoDocResponse();
@@ -185,6 +190,15 @@ public class FunAiWorkspaceMongoController {
         if (funAiAppService.getAppByIdAndUserId(appId, userId) == null) {
             throw new IllegalArgumentException("应用不存在或无权限操作");
         }
+    }
+
+    private WorkspaceMongoShellClient requireMongoShellClient() {
+        WorkspaceMongoShellClient c = mongoShellClientProvider == null ? null : mongoShellClientProvider.getIfAvailable();
+        if (c == null) {
+            // 小机裁剪模式下不加载 docker/mongosh 执行链路；该功能应由大机 workspace-node 承载
+            throw new WorkspaceNodeProxyException("Mongo Explorer 相关能力已迁移到大机容器节点（workspace-node）；请检查小机到大机的转发链路。");
+        }
+        return c;
     }
 
     private String containerName(Long userId) {
