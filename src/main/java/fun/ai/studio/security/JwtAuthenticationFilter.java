@@ -73,14 +73,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
         
-        final String requestTokenHeader = request.getHeader("Authorization");
+        String requestTokenHeader = request.getHeader("Authorization");
+        if (requestTokenHeader != null) {
+            requestTokenHeader = requestTokenHeader.trim();
+        }
 
         String username = null;
         String jwtToken = null;
 
-        // JWT Token的格式为 "Bearer token"
-        if (requestTokenHeader != null && requestTokenHeader.startsWith("Bearer ")) {
-            jwtToken = requestTokenHeader.substring(7);
+        // JWT Token的格式为 "Bearer token"（兼容大小写与前后空格）
+        if (requestTokenHeader != null && requestTokenHeader.length() >= 7
+                && requestTokenHeader.regionMatches(true, 0, "Bearer ", 0, 7)) {
+            jwtToken = requestTokenHeader.substring(7).trim();
             try {
                 username = jwtUtil.getUsernameFromToken(jwtToken);
             } catch (IllegalArgumentException e) {
@@ -136,6 +140,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     return;
                 }
             }
+        }
+        // 若请求携带了 Authorization 头但不是 Bearer 格式，给出提示日志（便于排查 Postman/代理层）
+        else if (requestTokenHeader != null && !requestTokenHeader.isBlank()) {
+            logger.warn("[{}] Authorization header present but not Bearer format: uri={}, authPrefix={}",
+                    requestId,
+                    uri,
+                    requestTokenHeader.length() > 16 ? requestTokenHeader.substring(0, 16) : requestTokenHeader);
         }
         // 如果没有Authorization头或者不是Bearer Token格式，则直接放行
         // 让Spring Security的其他配置来决定是否需要认证

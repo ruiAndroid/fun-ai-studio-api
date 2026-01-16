@@ -180,6 +180,10 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
             String lower = name.toLowerCase(Locale.ROOT);
             if (HOP_BY_HOP.contains(lower)) continue;
             if ("host".equals(lower)) continue;
+            // JDK HttpClient 禁止手动设置部分受限 header（会抛 IllegalArgumentException）
+            // 典型场景：multipart 上传会带 Content-Length；该值应由 HttpClient 根据 BodyPublisher 自动计算/设置。
+            if ("content-length".equals(lower)) continue;
+            if ("expect".equals(lower)) continue;
             if (HDR_SIG.equalsIgnoreCase(name) || HDR_TS.equalsIgnoreCase(name) || HDR_NONCE.equalsIgnoreCase(name)) continue;
 
             for (Enumeration<String> vals = request.getHeaders(name); vals != null && vals.hasMoreElements(); ) {
