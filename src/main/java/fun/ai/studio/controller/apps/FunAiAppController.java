@@ -86,6 +86,27 @@ public class FunAiAppController {
             // 单机/兼容：保留 DB last-known（若存在）
             FunAiWorkspaceRun run = (funAiWorkspaceRunService == null) ? null : funAiWorkspaceRunService.getByUserId(userId);
 
+            // 双机模式：workspace-dev（大机）不连 MySQL；因此由 API 服务器（小机）在“观测到运行态”时做 last-known 落库
+            // 这样既不需要让大机访问 MySQL，又能保留 fun_ai_workspace_run 用于展示/审计/重启后的最后状态。
+            if (remoteStatus != null && funAiWorkspaceRunService != null && userId != null) {
+                try {
+                    FunAiWorkspaceRun record = (run != null) ? run : new FunAiWorkspaceRun();
+                    record.setUserId(userId);
+                    record.setAppId(remoteStatus.getAppId());
+                    record.setHostPort(remoteStatus.getHostPort());
+                    record.setContainerPort(remoteStatus.getContainerPort());
+                    record.setRunPid(remoteStatus.getPid());
+                    record.setRunState(remoteStatus.getState());
+                    record.setPreviewUrl(remoteStatus.getPreviewUrl());
+                    record.setLogPath(remoteStatus.getLogPath());
+                    record.setLastError(remoteStatus.getMessage());
+                    record.setLastActiveAt(System.currentTimeMillis());
+                    funAiWorkspaceRunService.upsertByUserId(record);
+                    run = record;
+                } catch (Exception ignore) {
+                }
+            }
+
             for (FunAiApp app : apps) {
                 if (app == null) continue;
                 if (run != null) {
