@@ -69,7 +69,14 @@ public class AuthController {
             logger.info("Login successful for fun ai user: {}", loginRequest.getUserName());
             return Result.success(user);
         } catch (Exception e) {
-            logger.error("Login failed for fun ai user: {}, reason: {}", loginRequest.getUserName(), e.getMessage());
+            // e.getMessage() 可能为空（例如 NPE / NoClassDefFoundError），必须打出异常类型与堆栈便于排障
+            String reason = e.getMessage();
+            if (reason == null || reason.isBlank()) {
+                reason = e.getClass().getName();
+            } else {
+                reason = e.getClass().getName() + ": " + reason;
+            }
+            logger.error("Login failed for fun ai user: {}, reason: {}", loginRequest.getUserName(), reason, e);
             return Result.error("登录失败，请稍后重试");
         }
     }

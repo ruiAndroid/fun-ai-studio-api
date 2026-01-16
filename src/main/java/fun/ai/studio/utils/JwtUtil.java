@@ -5,6 +5,7 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import java.util.Date;
 import java.util.HashMap;
@@ -69,6 +70,7 @@ public class JwtUtil {
     }
 
     private Claims getAllClaimsFromToken(String token) {
+        assertConfigured();
         return Jwts.parser().setSigningKey(secret).parseClaimsJws(token).getBody();
     }
 
@@ -78,6 +80,10 @@ public class JwtUtil {
     }
 
     private String createToken(Map<String, Object> claims, String subject) {
+        assertConfigured();
+        if (!StringUtils.hasText(subject)) {
+            throw new IllegalArgumentException("jwt subject 不能为空");
+        }
         return Jwts.builder()
                 .setClaims(claims)
                 .setSubject(subject)
@@ -85,5 +91,14 @@ public class JwtUtil {
                 .setExpiration(new Date(System.currentTimeMillis() + expiration * 1000))
                 .signWith(SignatureAlgorithm.HS512, secret)
                 .compact();
+    }
+
+    private void assertConfigured() {
+        if (!StringUtils.hasText(secret)) {
+            throw new IllegalStateException("jwt.secret 未配置");
+        }
+        if (expiration == null || expiration <= 0) {
+            throw new IllegalStateException("jwt.expiration 未配置或非法");
+        }
     }
 }
