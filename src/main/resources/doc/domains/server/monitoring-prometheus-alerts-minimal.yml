@@ -1,0 +1,58 @@
+groups:
+  - name: funai_minimal_alerts
+    rules:
+      # -----------------------------
+      # 宿主机（node_exporter）
+      # -----------------------------
+      - alert: NodeDown
+        expr: up{job=~"node_.*"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "node_exporter 不可达: {{ $labels.job }} {{ $labels.instance }}"
+          description: "Prometheus 无法抓取 node_exporter 指标（超过 2 分钟）。检查安全组/网络/进程。"
+
+      - alert: NodeDiskUsageHigh
+        expr: |
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) < 0.10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "磁盘空间不足(<10%): {{ $labels.instance }} {{ $labels.mountpoint }}"
+          description: "磁盘可用空间持续低于 10% 超过 10 分钟。优先检查 /data/funai/workspaces、/data/funai/database、/data/funai/verdaccio。"
+
+      - alert: NodeMemoryAvailableLow
+        expr: |
+          (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) < 0.10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "内存可用不足(<10%): {{ $labels.instance }}"
+          description: "可用内存持续低于 10% 超过 5 分钟。检查是否有容器/进程异常占用。"
+
+      # -----------------------------
+      # 容器（cAdvisor）
+      # -----------------------------
+      - alert: CadvisorDown
+        expr: up{job=~".*cadvisor.*"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "cAdvisor 不可达: {{ $labels.instance }}"
+          description: "Prometheus 无法抓取 cAdvisor 指标。检查 cAdvisor 容器是否存活、8080 是否放行。"
+
+      # 容器数量异常偏高（示例阈值：> 200 running）
+      - alert: TooManyRunningContainers
+        expr: count by (instance) (container_last_seen{container_label_io_kubernetes_container_name!=""}) > 200
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "running 容器数量偏高: {{ $labels.instance }}"
+          description: "容器数量持续偏高超过 5 分钟。可能 idle 回收失效或并发激增。"
+
+
