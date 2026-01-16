@@ -27,6 +27,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * API 服务器（小机）：应用层反向代理（/api/fun-ai/workspace/** -> Workspace 开发服务器（大机）workspace-node）。
@@ -59,6 +61,7 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
     private final WorkspaceNodeProxyProperties props;
     private final HttpClient httpClient;
     private final SecureRandom random = new SecureRandom();
+    private static final Logger log = LoggerFactory.getLogger(WorkspaceNodeProxyFilter.class);
 
     public WorkspaceNodeProxyFilter(WorkspaceNodeProxyProperties props) {
         this.props = props;
@@ -172,6 +175,7 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
     }
 
     private void copyRequestHeaders(HttpServletRequest request, HttpRequest.Builder reqB) {
+        String contentTypeSeen = null;
         for (Enumeration<String> en = request.getHeaderNames(); en != null && en.hasMoreElements(); ) {
             String name = en.nextElement();
             if (name == null) continue;
@@ -187,9 +191,29 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
             for (Enumeration<String> vals = request.getHeaders(name); vals != null && vals.hasMoreElements(); ) {
                 String v = vals.nextElement();
                 if (v == null) continue;
+                // Content-Type 对 multipart 解析至关重要（必须带 boundary）。有些容器/代理场景下 headerNames 可能拿不到或出现重复值，
+                // 这里先记录，最后统一用 setHeader() 兜底覆盖，确保上游收到的 Content-Type 正确。
+                if ("content-type".equals(lower) && contentTypeSeen == null) {
+                    contentTypeSeen = v;
+                    continue;
+                }
                 // HttpClient 不允许重复 setHeader 覆盖时叠加；这里用 header() 追加
                 reqB.header(name, v);
             }
+        }
+
+        // 强制兜底 Content-Type：优先使用 servlet 解析后的 getContentType()（更可靠），否则退回到 header 里看到的值
+        String ct = request.getContentType();
+        if (ct == null || ct.isBlank()) ct = contentTypeSeen;
+        if (ct != null && !ct.isBlank()) {
+            reqB.setHeader("Content-Type", ct);
+        }
+
+        // 仅对 multipart 上传接口输出一条诊断日志，方便快速定位 “file part 丢失” 的真实原因
+        String uri = request.getRequestURI();
+        if (uri != null && (uri.contains("/files/upload-zip") || uri.contains("/files/upload-file"))) {
+            long len = request.getContentLengthLong();
+            log.info("workspace-node-proxy multipart diag: uri={}, method={}, contentType={}, contentLength={}", uri, request.getMethod(), ct, len);
         }
     }
 
