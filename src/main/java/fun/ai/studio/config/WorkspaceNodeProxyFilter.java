@@ -155,6 +155,9 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
             }
 
             // 3) 回写响应
+            // 诊断：标记该响应来自应用层代理，避免“到底是 API 服务器还是 workspace-dev 抛错”无法判断
+            response.setHeader("X-WS-Proxied", "1");
+            response.setHeader("X-WS-Upstream", baseUrl);
             response.setStatus(upstream.statusCode());
             copyResponseHeaders(upstream, response);
 
