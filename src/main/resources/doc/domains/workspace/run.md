@@ -25,7 +25,7 @@
 
 行为（简化）：
 
-- ensure 容器 + 目录
+- ensure 容器（注意：run/start **不会隐式创建 apps/{appId} 目录**；目录不存在会直接报错，避免 appId 误传产生垃圾目录）
 - 写入 `/workspace/run/current.json`（STARTING）
 - 后台脚本执行 `npm install`（必要时）+ `npm run dev`
 - 成功后写入 `/workspace/run/dev.pid` 与更新 `current.json`
@@ -37,7 +37,7 @@
 行为（简化）：
 
 - stopRun（确保端口与运行态干净）
-- ensure 容器 + 目录
+- ensure 容器（同上：目录必须先存在/已导入，否则会报错）
 - 写入 `/workspace/run/current.json`（STARTING，type=START）
 - 后台脚本执行“可访问启动”（按项目 scripts 自动选择）：`start -> preview -> dev -> server`
   - 注入 `PORT/HOST/BASE_PATH` 等环境变量
@@ -52,7 +52,7 @@
 行为（简化）：
 
 - stopRun
-- ensure 容器 + 目录
+- ensure 容器（同上：目录必须先存在/已导入，否则会报错）
 - 写入 `/workspace/run/current.json`（BUILDING，type=BUILD）
 - 后台脚本执行 `npm run build`
 - 结束后更新 `current.json`：写入 `finishedAt/exitCode` 并清理 `dev.pid`
@@ -64,7 +64,7 @@
 行为（简化）：
 
 - stopRun
-- ensure 容器 + 目录
+- ensure 容器（同上：目录必须先存在/已导入，否则会报错）
 - 写入 `/workspace/run/current.json`（INSTALLING，type=INSTALL）
 - 后台脚本执行 `npm install`
 - 结束后更新 `current.json`：写入 `finishedAt/exitCode` 并清理 `dev.pid`
