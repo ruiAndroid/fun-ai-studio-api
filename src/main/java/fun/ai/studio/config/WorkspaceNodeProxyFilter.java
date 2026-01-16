@@ -8,8 +8,6 @@ import org.springframework.http.MediaType;
 import org.springframework.util.StreamUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-import java.io.BufferedInputStream;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -244,13 +242,10 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
 
         HttpRequest.BodyPublisher publisher() throws IOException {
             if (tempFile != null) {
-                return HttpRequest.BodyPublishers.ofInputStream(() -> {
-                    try {
-                        return new BufferedInputStream(new FileInputStream(tempFile.toFile()));
-                    } catch (Exception e) {
-                        throw new RuntimeException(e);
-                    }
-                });
+                // 重要：multipart 上传如果使用 ofInputStream()，HttpClient 可能采用 chunked 传输，部分服务端对 chunked+multipart 解析不兼容，
+                // 会导致 @RequestPart("file") 绑定不到（Required part 'file' is not present）。
+                // ofFile() 能提供确定长度，更接近原始客户端请求语义，也避免一次性读入内存。
+                return HttpRequest.BodyPublishers.ofFile(tempFile);
             }
             if (bytes == null || bytes.length == 0) {
                 return HttpRequest.BodyPublishers.noBody();
