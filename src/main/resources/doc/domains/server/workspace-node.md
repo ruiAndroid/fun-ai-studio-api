@@ -56,12 +56,20 @@
 
 ### 3.3 “sleeping 页面”机制（很重要）
 
-当容器已存在但 **5173 没有 dev server 在监听**时，`127.0.0.1:$ws_port` 会 `connection refused`。为提升 UX，Nginx 常配置：
+当容器已存在但 **dev server 没有在 $ws_port 上监听**时，`127.0.0.1:$ws_port` 会 `connection refused`。为提升 UX，Nginx 常配置：
 
 - upstream 错误 → `error_page ... =200 /__ws_sleeping;`
-- 这会导致 `curl -I /ws/...` 看到 **200**，但 body 可能是 `workspace sleeping`（长度通常很短，比如 18 bytes）。
+- 这会导致 `curl -I /ws/...` 看到 **200**，但 body 是一段“已休眠提示页”（可自定义为更友好的 HTML）。
+
+建议：把 `/__ws_sleeping` 做成 **更友好的中文 HTML**（带恢复指引 + 自动刷新），参考 `src/main/resources/doc/阿里云部署文档.md` 中的 Nginx 配置片段。
 
 > 判断是否真正跑起来：以 `run/status` 的 `state=RUNNING` + `portListenPid` 为准。
+
+补充：如果你发现访问 `/ws/{userId}/` 在浏览器里出现 **302 循环**（`Location` 还是 `/ws/{userId}/`），一般是因为上游 dev server 需要保留 `/ws/{userId}` 前缀，
+此时 workspace-dev Nginx 不要做“剥离前缀再转发”，而应直接：
+
+- `/ws/{userId}/...`：`proxy_pass http://127.0.0.1:$ws_port$request_uri;`
+- 根路径资源（通过 cookie 路由到 workspace）：`proxy_pass http://127.0.0.1:$ws_port/ws/$ws_uid$request_uri;`
 
 ## 3.5 API 服务器（小机）Nginx 只切 `/ws/*` 到 Workspace 开发服务器（大机）（推荐先做，低风险）
 

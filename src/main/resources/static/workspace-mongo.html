@@ -5,69 +5,156 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Fun Ai Studio Mongo Explorer（只读）</title>
   <style>
-    :root{color-scheme:light dark}
-    body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial; margin:0; padding:16px; background:#0b0c10; color:#e8e8e8}
-    a{color:#7db8ff}
-    .row{display:flex; gap:12px; flex-wrap:wrap}
-    .card{background:#14161d; border:1px solid #2a2e3a; border-radius:10px; padding:12px}
-    .card h3{margin:0 0 8px 0; font-size:14px; opacity:.9}
-    label{display:block; font-size:12px; opacity:.85; margin:8px 0 4px}
-    input,textarea,select,button{width:100%; box-sizing:border-box; border-radius:8px; border:1px solid #2a2e3a; background:#0f1117; color:#e8e8e8; padding:8px; font-size:13px}
-    textarea{min-height:90px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-    button{cursor:pointer; background:#1b3a62; border-color:#2b5a96}
-    button.secondary{background:#1a1d27; border-color:#2a2e3a}
-    button:disabled{opacity:.6; cursor:not-allowed}
-    .layout{display:grid; grid-template-columns: 280px 1fr; gap:12px; align-items:start}
-    .cols{max-height:360px; overflow:auto}
-    .col-item{padding:8px; border-radius:8px; border:1px solid #2a2e3a; background:#0f1117; margin-bottom:8px; cursor:pointer}
-    .col-item.active{border-color:#7db8ff}
-    pre{white-space:pre-wrap; word-break:break-word; background:#0f1117; border:1px solid #2a2e3a; border-radius:10px; padding:10px; overflow:auto; max-height:520px}
-    .small{font-size:12px; opacity:.8}
-    .err{color:#ff8a8a}
-    .ok{color:#9bf6b0}
+    :root{
+      color-scheme:light dark;
+      --bg:#0b1220;
+      --card:#121826;
+      --card2:#0f1522;
+      --bd:rgba(255,255,255,.12);
+      --bd2:rgba(255,255,255,.08);
+      --txt:#e8eefc;
+      --muted:rgba(232,238,252,.78);
+      --muted2:rgba(232,238,252,.62);
+      --pri:#60a5fa;
+      --pri2:#1d4ed8;
+      --danger:#ff8a8a;
+      --ok:#9bf6b0;
+      --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    }
+    *{box-sizing:border-box}
+    body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial; margin:0; padding:16px; background:var(--bg); color:var(--txt)}
+    a{color:var(--pri)}
+    code{background:rgba(255,255,255,.08); padding:2px 6px; border-radius:8px}
+
+    .card{background:rgba(255,255,255,.06); border:1px solid var(--bd); border-radius:14px; padding:12px}
+    .card h3{margin:0 0 10px 0; font-size:14px; letter-spacing:.2px}
+
+    label{display:block; font-size:12px; color:var(--muted); margin:10px 0 6px}
+    input,textarea,select,button{
+      width:100%;
+      border-radius:10px;
+      border:1px solid var(--bd2);
+      background:rgba(0,0,0,.20);
+      color:var(--txt);
+      padding:10px 10px;
+      font-size:13px;
+      outline:none;
+    }
+    textarea{min-height:98px; font-family:var(--mono)}
+    input:focus,textarea:focus,select:focus{border-color:rgba(96,165,250,.65); box-shadow:0 0 0 3px rgba(96,165,250,.15)}
+
+    .btn{cursor:pointer; background:rgba(96,165,250,.18); border-color:rgba(96,165,250,.35)}
+    .btn:hover{background:rgba(96,165,250,.26)}
+    .btn.secondary{background:rgba(255,255,255,.06); border-color:var(--bd2)}
+    .btn.secondary:hover{background:rgba(255,255,255,.10)}
+    .btn:disabled{opacity:.55; cursor:not-allowed}
+    .btn-row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+    .btn-row > button{flex:1; min-width:120px}
+
+    .topbar{
+      display:flex; align-items:center; justify-content:space-between; gap:12px;
+      margin-bottom:12px;
+    }
+    .brand{display:flex; align-items:center; gap:10px; min-width:0}
+    .title{font-size:16px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+    .pill{font-size:12px; padding:2px 8px; border-radius:999px; border:1px solid var(--bd2); background:rgba(255,255,255,.06); color:var(--muted)}
+    .statusline{font-size:12px; color:var(--muted2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:680px}
+
+    .grid{display:grid; grid-template-columns: 360px 1fr; gap:12px; align-items:start}
+    @media (max-width: 1040px){ .grid{grid-template-columns:1fr} .statusline{max-width:unset} }
+
+    .cols{max-height:420px; overflow:auto}
+    .col-item{
+      padding:9px 10px; border-radius:10px;
+      border:1px solid var(--bd2);
+      background:rgba(0,0,0,.20);
+      margin-bottom:8px; cursor:pointer;
+      color:var(--muted);
+    }
+    .col-item:hover{border-color:rgba(96,165,250,.35); color:var(--txt)}
+    .col-item.active{border-color:rgba(96,165,250,.75); color:var(--txt)}
+
+    pre{
+      white-space:pre-wrap; word-break:break-word;
+      background:rgba(0,0,0,.24);
+      border:1px solid var(--bd2);
+      border-radius:14px;
+      padding:12px;
+      overflow:auto;
+      max-height:520px;
+      font-family:var(--mono);
+      line-height:1.55;
+    }
+    .small{font-size:12px; color:var(--muted2)}
+    .err{color:var(--danger)}
+    .ok{color:var(--ok)}
     .kv{display:grid; grid-template-columns: 1fr 1fr; gap:10px}
-    @media (max-width: 980px){ .layout{grid-template-columns:1fr} }
+
+    .modal-backdrop{
+      display:none;
+      position:fixed; inset:0;
+      background:rgba(0,0,0,.55);
+      z-index:999;
+      padding:24px;
+    }
+    .modal{
+      width:min(860px,100%);
+      margin:6vh auto 0;
+      background:rgba(18,24,38,.96);
+      border:1px solid var(--bd);
+      border-radius:16px;
+      padding:14px;
+      box-shadow:0 20px 80px rgba(0,0,0,.55);
+    }
+    .modal h3{margin:0 0 8px 0}
+    .modal .content{color:var(--muted); line-height:1.75}
+    .modal .content ul{margin:8px 0 0 18px}
+    .modal .content li{margin:4px 0}
+    .modal .close-row{display:flex; justify-content:flex-end; margin-top:10px}
   </style>
 </head>
 <body>
-  <div class="row">
-    <div class="card" style="flex:1">
-      <h3>Fun Ai Studio Mongo Explorer（只读）</h3>
-      <div class="small">
-        本页面只提供只读浏览/查询。API 需要 JWT：
-        <div style="margin-top:6px">
-          - 推荐通过 URL hash 注入（不会出现在 queryString/server log）：<code>#token=Bearer%20eyJ...</code><br/>
-          - 也支持 query/hash 注入 userId/appId：<code>?userId=1001&appId=2002</code>
-        </div>
-      </div>
+  <div class="topbar">
+    <div class="brand">
+      <div class="title">Fun Ai Studio Mongo Explorer</div>
+      <div class="pill">只读</div>
     </div>
-    <div class="card" style="width:360px">
-      <h3>连接参数</h3>
-      <div class="kv">
-        <div>
-          <label>userId</label>
-          <input id="userId" placeholder="例如 1001" />
-        </div>
-        <div>
-          <label>appId</label>
-          <select id="appId"></select>
-        </div>
-      </div>
-      <label>Authorization</label>
-      <input id="token" placeholder="Bearer eyJ..." />
-      <div class="row" style="margin-top:10px">
-        <button id="btnAuto" class="secondary">自动填充（当前登录）</button>
-        <button id="btnLoadCols">加载集合</button>
-        <button id="btnClear" class="secondary">清空</button>
-      </div>
-      <div id="status" class="small" style="margin-top:8px"></div>
+    <div class="btn-row" style="justify-content:flex-end">
+      <button id="btnHelp" class="btn secondary" style="max-width:140px">使用说明</button>
     </div>
   </div>
+  <div id="status" class="statusline"></div>
 
-  <div class="layout" style="margin-top:12px">
-    <div class="card">
-      <h3>Collections</h3>
-      <div id="cols" class="cols small">请先“加载集合”</div>
+  <div class="grid" style="margin-top:12px">
+    <div>
+      <div class="card">
+        <h3>连接参数</h3>
+        <div class="kv">
+          <div>
+            <label>userId</label>
+            <input id="userId" placeholder="例如 1001" />
+          </div>
+          <div>
+            <label>appId</label>
+            <select id="appId"></select>
+          </div>
+        </div>
+        <label>Authorization</label>
+        <input id="token" placeholder="Bearer eyJ..." />
+        <div class="btn-row" style="margin-top:10px">
+          <button id="btnAuto" class="btn secondary">自动填充（当前登录）</button>
+          <button id="btnLoadCols" class="btn">加载集合</button>
+          <button id="btnClear" class="btn secondary">清空</button>
+        </div>
+        <div class="small" style="margin-top:10px">
+          小贴士：token 推荐放在 URL hash（不进 access log），例如 <code>#token=Bearer%20eyJ...</code>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <h3>Collections</h3>
+        <div id="cols" class="cols small">请先“加载集合”</div>
+      </div>
     </div>
 
     <div class="card">
@@ -100,15 +187,33 @@
       </div>
       <label>projection (JSON，可空)</label>
       <textarea id="projection"></textarea>
-      <div class="row" style="margin-top:10px">
-        <button id="btnFind">查询</button>
-        <button id="btnPretty" class="secondary">格式化 JSON</button>
+      <div class="btn-row" style="margin-top:10px">
+        <button id="btnFind" class="btn">查询</button>
+        <button id="btnPretty" class="btn secondary">格式化 JSON</button>
       </div>
       <div class="small" style="margin-top:8px">
         提示：返回过大可能被后端截断导致解析失败，请降低 limit 或使用 projection。
       </div>
       <h3 style="margin-top:14px">结果</h3>
       <pre id="out">暂无</pre>
+    </div>
+  </div>
+
+  <div id="helpBackdrop" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3>使用说明</h3>
+      <div class="content small">
+        <div>本页面仅提供 Mongo 只读浏览/查询，接口仍需要 JWT。</div>
+        <ul>
+          <li>推荐把 token 放在 URL hash：<code>#token=Bearer%20&lt;JWT&gt;</code>（不会出现在 queryString / access log）</li>
+          <li>也支持注入 <code>?userId=...</code>、<code>?appId=...</code></li>
+          <li>点击「自动填充」会尝试从同域登录态读取 token，并拉取 app 列表</li>
+          <li>查询结果过大时，请降低 <code>limit</code> 或使用 <code>projection</code></li>
+        </ul>
+      </div>
+      <div class="close-row">
+        <button id="btnHelpClose" class="btn secondary" style="max-width:140px">关闭</button>
+      </div>
     </div>
   </div>
 
@@ -130,7 +235,7 @@
     function setStatus(text, kind) {
       const el = $("status");
       el.textContent = text || "";
-      el.className = "small " + (kind === "err" ? "err" : kind === "ok" ? "ok" : "");
+      el.className = "statusline " + (kind === "err" ? "err" : kind === "ok" ? "ok" : "");
     }
 
     function guessTokenFromStorage() {
@@ -310,6 +415,18 @@
       setStatus("", "");
       state.activeCol = null;
     };
+
+    // UI: help modal
+    function openHelp() { $("helpBackdrop").style.display = "block"; }
+    function closeHelp() { $("helpBackdrop").style.display = "none"; }
+    $("btnHelp").onclick = openHelp;
+    $("btnHelpClose").onclick = closeHelp;
+    $("helpBackdrop").addEventListener("click", (e) => {
+      if (e.target && e.target.id === "helpBackdrop") closeHelp();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeHelp();
+    });
 
     // 初始化：URL 参数优先，其次 localStorage；token 若为空再尝试自动猜测。
     try {

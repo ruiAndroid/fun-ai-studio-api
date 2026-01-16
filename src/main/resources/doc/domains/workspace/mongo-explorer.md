@@ -121,6 +121,19 @@ Api-->>Browser: Result{code,message,data}
 
 ## 常见问题（排错）
 
+1. 访问 `/workspace-mongo.html` 却“跳到了预览项目”（被路由到 `/ws/{userId}/`）
+   - **原因**：浏览器访问 `/ws/{userId}/` 时，workspace-dev Nginx 会设置 `ws_uid` cookie（`Path=/`）。如果 **API 服务器（小机）Nginx** 也配置了“根路径自动路由到 workspace”（通常是为了解决 Vite 的 `/<@vite|src|assets...>` 绝对路径资源），就可能把 `/workspace-mongo.html` 也错误转发到 workspace 预览端口。
+   - **修复建议（API 服务器（小机）Nginx）**：给 Mongo Explorer 页面加一个**最高优先级的精确匹配**，强制走 API 服务（本机 8080），避免被 workspace 路由规则误伤：
+
+```nginx
+# Mongo Explorer 页面：始终由 API 服务器（小机）提供（Spring Boot static）
+location = /workspace-mongo.html {
+    proxy_pass http://127.0.0.1:8080;
+}
+```
+
+   - **进一步建议**：把 API 服务器（小机）的“根路径自动路由到 workspace”收敛到**仅 Vite 资源路径**（例如 `/@vite/`、`/src/`、`/assets/`、`/@react-refresh`），不要对所有 `/` 请求都生效。
+
 1. 返回“Workspace Mongo 未启用”
    - 检查配置 `funai.workspace.mongo.enabled=true`
 2. 返回“容器镜像未包含 mongosh”
