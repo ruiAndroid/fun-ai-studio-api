@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Fun AI Studio - Nodes 管理入口</title>
+  <style>
+    :root{
+      color-scheme:light dark;
+      --bg:#0b1220; --bd:rgba(255,255,255,.12); --bd2:rgba(255,255,255,.08);
+      --txt:#e8eefc; --muted:rgba(232,238,252,.72);
+      --pri:#60a5fa; --pri2:#1d4ed8;
+      --warn:#ffd37a;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;padding:18px;background:var(--bg);color:var(--txt);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial}
+    .top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .title{font-size:18px;font-weight:900}
+    .sub{font-size:12px;color:var(--muted);max-width:980px;line-height:1.7}
+    .grid{display:grid;grid-template-columns: 1fr 1fr;gap:12px;margin-top:14px}
+    @media (max-width: 900px){ .grid{grid-template-columns:1fr} }
+    .card{
+      background:rgba(255,255,255,.06);
+      border:1px solid var(--bd);
+      border-radius:16px;
+      padding:16px;
+      box-shadow:0 20px 80px rgba(0,0,0,.35);
+    }
+    .card h3{margin:0 0 8px 0;font-size:15px}
+    .card p{margin:0 0 12px 0;color:var(--muted);font-size:12px;line-height:1.7}
+    .btn{
+      display:inline-flex;align-items:center;justify-content:center;
+      padding:10px 14px;border-radius:12px;
+      border:1px solid rgba(96,165,250,.35);
+      background:rgba(96,165,250,.18);
+      color:var(--txt);text-decoration:none;
+      font-size:13px;font-weight:700;
+      min-width:180px;
+    }
+    .btn:hover{background:rgba(96,165,250,.26)}
+    .badge{
+      display:inline-block;
+      padding:2px 8px;border-radius:999px;
+      border:1px solid var(--bd2);
+      background:rgba(255,255,255,.06);
+      color:var(--muted);
+      font-size:12px;
+      margin-left:8px;
+    }
+    .warn{color:var(--warn)}
+    code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:rgba(255,255,255,.08);padding:2px 6px;border-radius:8px}
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <div class="title">Nodes 管理入口</div>
+      <div class="sub">
+        说明：节点管理属于运维控制面，API 走 <code>/api/fun-ai/admin/**</code>，鉴权方式为 “IP 白名单 + Header Token”。<br/>
+        建议用 URL hash 传 token：<code>#token=...</code>（不会出现在 access log）。
+      </div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Workspace 服务器 Node 管理 <span class="badge">可用</span></h3>
+      <p>管理 workspace-node 节点（nginx/api baseUrl、启用禁用、落点用户数统计）。</p>
+      <a class="btn" id="goWs" href="/workspace-nodes-admin.html">进入 Workspace Nodes</a>
+    </div>
+
+    <div class="card">
+      <h3>Deploy 服务器 Node 管理 <span class="badge warn">暂未开放</span></h3>
+      <p>预留入口：后续用于 deploy 集群节点管理（目前只占位，不影响现有功能）。</p>
+      <a class="btn" id="goDeploy" href="/deploy-nodes.html" style="opacity:.7;border-color:rgba(255,211,122,.35);background:rgba(255,211,122,.10)">查看占位页</a>
+    </div>
+  </div>
+
+  <script>
+    // 透传 #token 到子页面（方便一次输入 token）
+    try {
+      const h = location.hash || "";
+      if (h && h.includes("token=")) {
+        const ws = document.getElementById("goWs");
+        ws.href = "/workspace-nodes-admin.html" + h;
+        const dp = document.getElementById("goDeploy");
+        dp.href = "/deploy-nodes.html" + h;
+      }
+    } catch (e) {}
+  </script>
+</body>
+</html>
+
+

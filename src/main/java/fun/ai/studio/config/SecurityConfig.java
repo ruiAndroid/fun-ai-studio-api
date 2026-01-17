@@ -101,6 +101,8 @@ public class SecurityConfig {
         "/workspace-mongo.html",
         // Workspace/Deploy 节点管理（静态页面；API 由 AdminAuthFilter 鉴权）
         "/workspace-nodes.html",
+                        "/nodes.html",
+                        "/workspace-nodes-admin.html",
         "/deploy-nodes.html",
         // /doc 页面 mermaid 渲染脚本（必须放行，否则会被 401 JSON 拦截导致浏览器拒绝执行）
         "/doc-mermaid.js",

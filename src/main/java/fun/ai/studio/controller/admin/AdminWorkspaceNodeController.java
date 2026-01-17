@@ -5,7 +5,9 @@ import fun.ai.studio.common.Result;
 import fun.ai.studio.entity.FunAiWorkspaceNode;
 import fun.ai.studio.entity.FunAiWorkspacePlacement;
 import fun.ai.studio.entity.request.AdminUpsertWorkspaceNodeRequest;
+import fun.ai.studio.entity.response.AdminWorkspaceNodeListResponse;
 import fun.ai.studio.entity.response.AdminWorkspaceNodeSummary;
+import fun.ai.studio.mapper.FunAiUserMapper;
 import fun.ai.studio.mapper.FunAiWorkspaceNodeMapper;
 import fun.ai.studio.mapper.FunAiWorkspacePlacementMapper;
 import io.swagger.v3.oas.annotations.Operation;
@@ -34,15 +36,17 @@ public class AdminWorkspaceNodeController {
 
     private final FunAiWorkspaceNodeMapper nodeMapper;
     private final FunAiWorkspacePlacementMapper placementMapper;
+    private final FunAiUserMapper userMapper;
 
-    public AdminWorkspaceNodeController(FunAiWorkspaceNodeMapper nodeMapper, FunAiWorkspacePlacementMapper placementMapper) {
+    public AdminWorkspaceNodeController(FunAiWorkspaceNodeMapper nodeMapper, FunAiWorkspacePlacementMapper placementMapper, FunAiUserMapper userMapper) {
         this.nodeMapper = nodeMapper;
         this.placementMapper = placementMapper;
+        this.userMapper = userMapper;
     }
 
     @GetMapping("/list")
-    @Operation(summary = "节点列表（含分配用户数统计）")
-    public Result<List<AdminWorkspaceNodeSummary>> list() {
+    @Operation(summary = "节点列表（含统计）")
+    public Result<AdminWorkspaceNodeListResponse> list() {
         List<FunAiWorkspaceNode> nodes = nodeMapper.selectList(new QueryWrapper<>());
         nodes = (nodes == null ? List.<FunAiWorkspaceNode>of() : nodes).stream()
                 .sorted(Comparator.comparing(FunAiWorkspaceNode::getId, Comparator.nullsLast(Long::compareTo)))
@@ -71,7 +75,18 @@ public class AdminWorkspaceNodeController {
             s.setAssignedUsers(cnt.getOrDefault(n.getId(), 0L));
             out.add(s);
         }
-        return Result.success(out);
+
+        Long totalUsers = 0L;
+        try {
+            totalUsers = userMapper == null ? 0L : userMapper.selectCount(new QueryWrapper<>());
+        } catch (Exception ignore) {
+        }
+
+        AdminWorkspaceNodeListResponse resp = new AdminWorkspaceNodeListResponse();
+        resp.setTotalUsers(totalUsers);
+        resp.setTotalPlacements(ps == null ? 0L : (long) ps.size());
+        resp.setNodes(out);
+        return Result.success(resp);
     }
 
     @PostMapping("/upsert")

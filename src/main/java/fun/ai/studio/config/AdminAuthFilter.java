@@ -47,8 +47,12 @@ public class AdminAuthFilter extends OncePerRequestFilter {
             return;
         }
 
-        String ip = clientIp(request);
-        if (!isAllowedIp(ip, props.getAllowedIps())) {
+        // 注意：在 Nginx 反代到本机 127.0.0.1:8080 的场景下，remoteAddr 可能是 127.0.0.1；
+        // 同时也会有 X-Forwarded-For（真实客户端 IP）。
+        // 为了兼容这类部署：只要 remoteAddr 或 forwarded clientIp 任意一个命中白名单即可。
+        String remoteIp = request.getRemoteAddr();
+        String forwardedIp = clientIp(request);
+        if (!isAllowedIp(remoteIp, props.getAllowedIps()) && !isAllowedIp(forwardedIp, props.getAllowedIps())) {
             deny(response, 403, "admin forbidden: ip not allowed");
             return;
         }
