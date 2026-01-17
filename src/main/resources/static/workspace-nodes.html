@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Fun AI Studio - Workspace Nodes 管理</title>
+  <style>
+    :root{
+      color-scheme:light dark;
+      --bg:#0b1220; --card:#121826; --bd:rgba(255,255,255,.12); --bd2:rgba(255,255,255,.08);
+      --txt:#e8eefc; --muted:rgba(232,238,252,.72);
+      --pri:#60a5fa; --danger:#ff8a8a; --ok:#9bf6b0;
+      --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;padding:16px;background:var(--bg);color:var(--txt);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial}
+    .top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .title{font-size:16px;font-weight:800}
+    .status{font-size:12px;color:var(--muted);max-width:100%;word-break:break-word}
+    .card{background:rgba(255,255,255,.06);border:1px solid var(--bd);border-radius:14px;padding:12px;margin-top:12px}
+    label{display:block;font-size:12px;color:var(--muted);margin:10px 0 6px}
+    input,button{
+      border-radius:10px;border:1px solid var(--bd2);background:rgba(0,0,0,.22);color:var(--txt);
+      padding:10px 10px;font-size:13px;outline:none
+    }
+    input{width:100%}
+    input:focus{border-color:rgba(96,165,250,.65);box-shadow:0 0 0 3px rgba(96,165,250,.15)}
+    .btn{cursor:pointer;background:rgba(96,165,250,.18);border-color:rgba(96,165,250,.35)}
+    .btn:hover{background:rgba(96,165,250,.26)}
+    .btn.secondary{background:rgba(255,255,255,.06);border-color:var(--bd2)}
+    .btn.secondary:hover{background:rgba(255,255,255,.10)}
+    .btn.danger{background:rgba(255,138,138,.16);border-color:rgba(255,138,138,.35)}
+    .btn.danger:hover{background:rgba(255,138,138,.22)}
+    .grid{display:grid;grid-template-columns: 360px 1fr;gap:12px;align-items:start}
+    @media (max-width: 1040px){ .grid{grid-template-columns:1fr} }
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    th,td{border-bottom:1px solid var(--bd2);padding:10px 8px;font-size:12px;text-align:left;vertical-align:top}
+    th{color:var(--muted);font-weight:650}
+    code{font-family:var(--mono);background:rgba(255,255,255,.08);padding:2px 6px;border-radius:8px}
+    .pill{display:inline-block;padding:2px 8px;border:1px solid var(--bd2);border-radius:999px;font-size:12px;color:var(--muted)}
+    .ok{color:var(--ok)} .err{color:var(--danger)}
+    .row{display:flex;gap:10px;flex-wrap:wrap}
+    .row > button{flex:1;min-width:120px}
+    .small{font-size:12px;color:var(--muted);line-height:1.7}
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <div class="title">Workspace Nodes 管理</div>
+      <div class="status" id="status"></div>
+    </div>
+    <div class="row" style="min-width:280px;max-width:520px;width:100%">
+      <button id="btnReload" class="btn">刷新列表</button>
+      <a class="btn secondary" href="/deploy-nodes.html" style="text-align:center;line-height:22px;text-decoration:none">Deploy Nodes</a>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div>
+      <div class="card">
+        <div class="pill">鉴权：IP 白名单 + Header Token</div>
+        <label>Admin Token（Header: X-Admin-Token）</label>
+        <input id="adminToken" placeholder="建议放 URL hash：#token=xxx（不会进 access log）" />
+        <div class="small" style="margin-top:10px">
+          说明：此页面可放行，但所有 API 都必须带 <code>X-Admin-Token</code> 且来源 IP 在白名单内。<br/>
+          你可以用 <code>#token=...</code> 注入 token：例如 <code>/workspace-nodes.html#token=xxx</code>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 10px 0;font-size:14px">新增/更新节点</h3>
+        <label>id（更新时填；新增留空）</label>
+        <input id="f_id" placeholder="例如 1" />
+        <label>name</label>
+        <input id="f_name" placeholder="ws-node-01" />
+        <label>nginxBaseUrl（节点 Nginx，用于 /ws 路由）</label>
+        <input id="f_nginx" placeholder="http://39.97.61.139" />
+        <label>apiBaseUrl（workspace-node:7001，用于 /api/fun-ai/workspace/** 代理）</label>
+        <input id="f_api" placeholder="http://172.21.138.87:7001" />
+        <label>enabled（1/0）</label>
+        <input id="f_enabled" value="0" />
+        <label>weight（可选）</label>
+        <input id="f_weight" value="100" />
+        <div class="row" style="margin-top:10px">
+          <button id="btnUpsert" class="btn">保存</button>
+          <button id="btnFillFromSel" class="btn secondary">填充选中行</button>
+          <button id="btnClear" class="btn secondary">清空</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 10px 0;font-size:14px">节点列表</h3>
+      <div class="small">点击某行会选中；“分配用户数”来自 placement 简单统计（中期够用）。</div>
+      <table>
+        <thead>
+          <tr>
+            <th>id</th>
+            <th>name</th>
+            <th>enabled</th>
+            <th>assignedUsers</th>
+            <th>nginxBaseUrl</th>
+            <th>apiBaseUrl</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="tbody">
+          <tr><td colspan="7" class="small">暂无数据，点击“刷新列表”。</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const state = { selected: null, rows: [] };
+
+    function setStatus(text, kind) {
+      const el = $("status");
+      el.textContent = text || "";
+      el.className = "status " + (kind === "err" ? "err" : kind === "ok" ? "ok" : "");
+    }
+
+    function parseHashToken() {
+      const h = new URLSearchParams((location.hash || "").replace(/^#/, ""));
+      return (h.get("token") || "").trim();
+    }
+
+    function adminHeaders() {
+      const tok = ($("adminToken").value || "").trim();
+      const h = { "Content-Type": "application/json", "X-Admin-Token": tok };
+      return h;
+    }
+
+    async function apiGet(path, params) {
+      const qs = params ? ("?" + new URLSearchParams(params).toString()) : "";
+      const r = await fetch(path + qs, { headers: adminHeaders() });
+      return await r.json();
+    }
+
+    async function apiPost(path, params, body) {
+      const qs = params ? ("?" + new URLSearchParams(params).toString()) : "";
+      const r = await fetch(path + qs, { method: "POST", headers: adminHeaders(), body: JSON.stringify(body || {}) });
+      return await r.json();
+    }
+
+    function render(rows) {
+      const tb = $("tbody");
+      tb.innerHTML = "";
+      if (!rows || rows.length === 0) {
+        tb.innerHTML = '<tr><td colspan="7" class="small">（空）</td></tr>';
+        return;
+      }
+      rows.forEach((r) => {
+        const tr = document.createElement("tr");
+        tr.style.cursor = "pointer";
+        tr.onclick = () => { state.selected = r; render(state.rows); };
+        if (state.selected && String(state.selected.nodeId) === String(r.nodeId)) {
+          tr.style.background = "rgba(96,165,250,.08)";
+        }
+        tr.innerHTML = `
+          <td>${r.nodeId ?? ""}</td>
+          <td><code>${escapeHtml(r.name ?? "")}</code></td>
+          <td>${(r.enabled === 1 ? '<span class="ok">1</span>' : '<span class="err">0</span>')}</td>
+          <td>${r.assignedUsers ?? 0}</td>
+          <td><code>${escapeHtml(r.nginxBaseUrl ?? "")}</code></td>
+          <td><code>${escapeHtml(r.apiBaseUrl ?? "")}</code></td>
+          <td>
+            <button class="btn secondary" data-act="enable">启用</button>
+            <button class="btn danger" data-act="disable" style="margin-left:6px">禁用</button>
+          </td>
+        `;
+        tr.querySelectorAll("button").forEach((btn) => {
+          btn.onclick = async (e) => {
+            e.stopPropagation();
+            const act = btn.getAttribute("data-act");
+            const enabled = act === "enable" ? 1 : 0;
+            try {
+              const res = await apiPost("/api/fun-ai/admin/workspace-nodes/set-enabled", { nodeId: r.nodeId, enabled });
+              if (res.code !== 200) throw new Error(res.message || "请求失败");
+              await reload();
+            } catch (err) {
+              setStatus(String(err.message || err), "err");
+            }
+          };
+        });
+        tb.appendChild(tr);
+      });
+    }
+
+    function escapeHtml(s) {
+      return String(s || "").replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    async function reload() {
+      setStatus("加载中...", "");
+      const res = await apiGet("/api/fun-ai/admin/workspace-nodes/list");
+      if (res.code !== 200) throw new Error(res.message || "请求失败");
+      state.rows = res.data || [];
+      render(state.rows);
+      setStatus(`OK：nodes=${state.rows.length}`, "ok");
+      try { localStorage.setItem("admin_ws_nodes_token", $("adminToken").value.trim()); } catch (e) {}
+    }
+
+    $("btnReload").onclick = async () => { try { await reload(); } catch (e) { setStatus(String(e.message || e), "err"); } };
+
+    $("btnUpsert").onclick = async () => {
+      try {
+        const body = {
+          id: ($("f_id").value || "").trim() ? parseInt($("f_id").value.trim(), 10) : null,
+          name: ($("f_name").value || "").trim(),
+          nginxBaseUrl: ($("f_nginx").value || "").trim(),
+          apiBaseUrl: ($("f_api").value || "").trim(),
+          enabled: parseInt(($("f_enabled").value || "0").trim(), 10),
+          weight: parseInt(($("f_weight").value || "100").trim(), 10),
+        };
+        const res = await apiPost("/api/fun-ai/admin/workspace-nodes/upsert", null, body);
+        if (res.code !== 200) throw new Error(res.message || "请求失败");
+        await reload();
+        setStatus("保存成功", "ok");
+      } catch (e) {
+        setStatus(String(e.message || e), "err");
+      }
+    };
+
+    $("btnFillFromSel").onclick = () => {
+      const r = state.selected;
+      if (!r) { setStatus("请先在表格中选中一行", "err"); return; }
+      $("f_id").value = r.nodeId ?? "";
+      $("f_name").value = r.name ?? "";
+      $("f_nginx").value = r.nginxBaseUrl ?? "";
+      $("f_api").value = r.apiBaseUrl ?? "";
+      $("f_enabled").value = String(r.enabled ?? 0);
+      $("f_weight").value = String(r.weight ?? 100);
+      setStatus("已填充选中行", "ok");
+    };
+
+    $("btnClear").onclick = () => {
+      ["f_id","f_name","f_nginx","f_api","f_enabled","f_weight"].forEach((k) => $(k).value = "");
+      $("f_enabled").value = "0";
+      $("f_weight").value = "100";
+      setStatus("", "");
+    };
+
+    // init token
+    try {
+      const fromHash = parseHashToken();
+      const fromStore = (localStorage.getItem("admin_ws_nodes_token") || "").trim();
+      $("adminToken").value = fromHash || fromStore || "";
+      if ($("adminToken").value) setStatus("已加载 token，可直接刷新列表。", "ok");
+    } catch (e) {}
+  </script>
+</body>
+</html>
+
+
