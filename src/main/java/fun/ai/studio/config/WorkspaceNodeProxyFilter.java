@@ -107,7 +107,7 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
         String path = request.getRequestURI() == null ? "" : request.getRequestURI();
         String query = request.getQueryString() == null ? "" : request.getQueryString();
 
-        Long userId = extractUserId(request);
+        Long userId = extractUserIdFromQuery(request);
         if (userId == null) {
             deny(response, 400, "userId is required for workspace proxy");
             return;
@@ -271,9 +271,27 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
         resp.getWriter().write(msg == null ? "" : msg);
     }
 
-    private Long extractUserId(HttpServletRequest request) {
+    /**
+     * 重要：
+     * - multipart/form-data 场景下调用 request.getParameter(...) 可能触发 Servlet 容器提前解析并消费输入流，
+     *   导致后续我们读取 body 转发时 file part 丢失（Required part 'file' is not present）。
+     * - 因此这里严格只从 queryString 解析 userId，不触碰 getParameter / getParts。
+     */
+    private Long extractUserIdFromQuery(HttpServletRequest request) {
         if (request == null) return null;
-        String v = request.getParameter("userId");
+        String qs = request.getQueryString();
+        if (qs == null || qs.isBlank()) return null;
+        String v = null;
+        for (String part : qs.split("&")) {
+            if (part == null || part.isBlank()) continue;
+            int idx = part.indexOf('=');
+            String k = idx < 0 ? part : part.substring(0, idx);
+            String val = idx < 0 ? "" : part.substring(idx + 1);
+            if ("userId".equals(k)) {
+                v = val;
+                break;
+            }
+        }
         if (v == null || v.isBlank()) return null;
         try {
             return Long.parseLong(v);
