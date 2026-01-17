@@ -41,13 +41,15 @@ public class WorkspaceNodeClient {
     private static final String HDR_NONCE = "X-WS-Nonce";
 
     private final WorkspaceNodeProxyProperties props;
+    private final WorkspaceNodeResolver nodeResolver;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final SecureRandom random = new SecureRandom();
 
-    public WorkspaceNodeClient(WorkspaceNodeProxyProperties props, ObjectMapper objectMapper) {
+    public WorkspaceNodeClient(WorkspaceNodeProxyProperties props, ObjectMapper objectMapper, WorkspaceNodeResolver nodeResolver) {
         this.props = props;
         this.objectMapper = objectMapper;
+        this.nodeResolver = nodeResolver;
         HttpClient.Builder b = HttpClient.newBuilder();
         if (props != null && props.getConnectTimeoutMs() > 0) {
             b.connectTimeout(Duration.ofMillis(props.getConnectTimeoutMs()));
@@ -57,7 +59,6 @@ public class WorkspaceNodeClient {
 
     public boolean isEnabled() {
         return props != null && props.isEnabled()
-                && StringUtils.hasText(props.getBaseUrl())
                 && StringUtils.hasText(props.getSharedSecret())
                 && !"CHANGE_ME_STRONG_SECRET".equals(props.getSharedSecret());
     }
@@ -169,7 +170,12 @@ public class WorkspaceNodeClient {
             throw new RuntimeException(e);
         }
 
-        URI uri = URI.create(joinUrl(props.getBaseUrl(), p, q));
+        Long userId = extractUserIdFromQuery(q);
+        if (userId == null) {
+            throw new IllegalArgumentException("userId is required");
+        }
+        String baseUrl = nodeResolver.resolve(userId).getApiBaseUrl();
+        URI uri = URI.create(joinUrl(baseUrl, p, q));
         HttpRequest.Builder reqB = HttpRequest.newBuilder().uri(uri);
         if (props.getReadTimeoutMs() > 0) {
             reqB.timeout(Duration.ofMillis(props.getReadTimeoutMs()));
@@ -242,6 +248,26 @@ public class WorkspaceNodeClient {
 
     private String urlEnc(String s) {
         return URLEncoder.encode(s == null ? "" : s, StandardCharsets.UTF_8);
+    }
+
+    private Long extractUserIdFromQuery(String query) {
+        if (!StringUtils.hasText(query)) return null;
+        // 简化解析：只需找 userId=xxx
+        String[] parts = query.split("&");
+        for (String p : parts) {
+            if (p == null) continue;
+            int idx = p.indexOf('=');
+            String k = idx < 0 ? p : p.substring(0, idx);
+            String v = idx < 0 ? "" : p.substring(idx + 1);
+            if (!"userId".equals(k)) continue;
+            try {
+                // query() 是 URLEncoder 生成的；userId 仅数字，不需要 decode
+                return Long.parseLong(v);
+            } catch (Exception ignore) {
+                return null;
+            }
+        }
+        return null;
     }
 }
 

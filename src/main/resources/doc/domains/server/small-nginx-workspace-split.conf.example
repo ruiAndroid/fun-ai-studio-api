@@ -33,6 +33,58 @@ location ^~ /ws/ {
     proxy_pass http://BIG_IP;
 }
 
+# 1.1) Vite/HMR 根路径资源（强烈建议加上）
+# 场景：很多项目（尤其是 Vite dev）在 HTML 中会引用绝对路径资源，例如：
+# - /@vite/client
+# - /src/main.tsx
+# - /@react-refresh
+# 这些请求不带 /ws/{userId} 前缀，但浏览器仍会向“公网入口（API 服务器（小机））”发起请求。
+# 如果 API 服务器（小机）不转发，会落到本机后端/静态资源，常见表现：200 text/html -> 浏览器报 MIME 错误白屏。
+location ^~ /@vite/ {
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+    proxy_buffering off;
+    proxy_pass http://BIG_IP;
+}
+location ^~ /src/ {
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+    proxy_buffering off;
+    proxy_pass http://BIG_IP;
+}
+location = /@react-refresh {
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+    proxy_buffering off;
+    proxy_pass http://BIG_IP;
+}
+location = /__vite_ping {
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+    proxy_buffering off;
+    proxy_pass http://BIG_IP;
+}
+
 # 2) 在线终端：WebSocket 握手也需转发到 Workspace 开发服务器（大机）（Workspace 开发服务器（大机）节点直接处理 /api/fun-ai/workspace/ws/terminal）
 location = /api/fun-ai/workspace/ws/terminal {
     proxy_http_version 1.1;

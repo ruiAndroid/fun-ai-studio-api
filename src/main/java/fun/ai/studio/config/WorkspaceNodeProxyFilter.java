@@ -59,12 +59,14 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
     ));
 
     private final WorkspaceNodeProxyProperties props;
+    private final fun.ai.studio.workspace.WorkspaceNodeResolver nodeResolver;
     private final HttpClient httpClient;
     private final SecureRandom random = new SecureRandom();
     private static final Logger log = LoggerFactory.getLogger(WorkspaceNodeProxyFilter.class);
 
-    public WorkspaceNodeProxyFilter(WorkspaceNodeProxyProperties props) {
+    public WorkspaceNodeProxyFilter(WorkspaceNodeProxyProperties props, fun.ai.studio.workspace.WorkspaceNodeResolver nodeResolver) {
         this.props = props;
+        this.nodeResolver = nodeResolver;
         HttpClient.Builder b = HttpClient.newBuilder();
         if (props != null && props.getConnectTimeoutMs() > 0) {
             b.connectTimeout(Duration.ofMillis(props.getConnectTimeoutMs()));
@@ -95,11 +97,6 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
             return;
         }
 
-        String baseUrl = props.getBaseUrl();
-        if (baseUrl == null || baseUrl.isBlank()) {
-            deny(response, 500, "workspace-node-proxy.base-url is empty");
-            return;
-        }
         String secret = props.getSharedSecret();
         if (secret == null || secret.isBlank() || "CHANGE_ME_STRONG_SECRET".equals(secret)) {
             deny(response, 500, "workspace-node-proxy.shared-secret is empty/default");
@@ -109,6 +106,24 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
         String method = request.getMethod() == null ? "" : request.getMethod().toUpperCase(Locale.ROOT);
         String path = request.getRequestURI() == null ? "" : request.getRequestURI();
         String query = request.getQueryString() == null ? "" : request.getQueryString();
+
+        Long userId = extractUserId(request);
+        if (userId == null) {
+            deny(response, 400, "userId is required for workspace proxy");
+            return;
+        }
+
+        String baseUrl;
+        try {
+            baseUrl = nodeResolver == null ? null : nodeResolver.resolve(userId).getApiBaseUrl();
+        } catch (Exception e) {
+            deny(response, 502, "resolve workspace node failed: " + e.getMessage());
+            return;
+        }
+        if (baseUrl == null || baseUrl.isBlank()) {
+            deny(response, 502, "workspace node api_base_url is empty");
+            return;
+        }
 
         // 1) 读取 body：为签名计算 sha256；大体积请求落盘临时文件避免 OOM
         BodyHolder body = null;
@@ -254,6 +269,17 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
         resp.setContentType(MediaType.TEXT_PLAIN_VALUE);
         resp.setCharacterEncoding(StandardCharsets.UTF_8.name());
         resp.getWriter().write(msg == null ? "" : msg);
+    }
+
+    private Long extractUserId(HttpServletRequest request) {
+        if (request == null) return null;
+        String v = request.getParameter("userId");
+        if (v == null || v.isBlank()) return null;
+        try {
+            return Long.parseLong(v);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private static final class BodyHolder {

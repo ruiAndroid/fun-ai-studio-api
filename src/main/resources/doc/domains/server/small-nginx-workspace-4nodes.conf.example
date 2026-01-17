@@ -1,0 +1,86 @@
+# API/入口服务器（统一公网入口）Nginx：workspace 4 节点动态路由（示例）
+#
+# 思路：
+# - /ws/{userId}/...：从 URI 提取 userId，auth_request 到 API 获取 X-WS-Node（节点 Nginx baseUrl），再 proxy_pass 到该节点
+# - Vite/HMR 根路径资源：依赖 cookie ws_uid 做同样的动态路由（避免 /@vite/* 落到后端 API）
+#
+# 依赖：
+# - API 内部接口：/api/fun-ai/workspace/internal/gateway/node?userId=...
+#   - 返回 204，Header：X-WS-Node: http://10.0.0.11
+#
+# 注意：
+# - 这是示例文件，需放入你的 server {} 块中，并按实际域名、上游超时、访问控制调整。
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
+# 1) /ws/{userId}/... 预览入口
+location ~ ^/ws/(?<ws_uid>\d+)(?<ws_tail>/.*)?$ {
+    # 记录 cookie，用于后续根路径资源路由
+    add_header Set-Cookie "ws_uid=$ws_uid; Path=/; SameSite=Lax" always;
+
+    # 先向 API 请求该 userId 的节点上游
+    auth_request /_ws_node;
+    auth_request_set $ws_node $upstream_http_x_ws_node;
+    if ($ws_node = "") { return 502; }
+
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+    proxy_buffering off;
+
+    # 转发到目标节点 Nginx（节点侧会再 auth_request 获取 hostPort -> 127.0.0.1:$port）
+    proxy_pass $ws_node;
+}
+
+location = /_ws_node {
+    internal;
+    proxy_pass http://127.0.0.1:8080/api/fun-ai/workspace/internal/gateway/node?userId=$ws_uid;
+    proxy_pass_request_body off;
+    proxy_set_header Content-Length "";
+}
+
+# 2) Vite/HMR 根路径资源（依赖 ws_uid cookie）
+location ^~ /@vite/ { return 418; }
+location ^~ /src/ { return 418; }
+location = /@react-refresh { return 418; }
+location = /__vite_ping { return 418; }
+
+error_page 418 = @ws_root_proxy;
+location @ws_root_proxy {
+    set $ws_uid $cookie_ws_uid;
+    if ($ws_uid = "") { return 404; }
+    if ($ws_uid !~ "^\d+$") { return 404; }
+
+    auth_request /_ws_node;
+    auth_request_set $ws_node $upstream_http_x_ws_node;
+    if ($ws_node = "") { return 502; }
+
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+    proxy_buffering off;
+
+    # 关键：根路径资源要带回 /ws/{userId} 前缀（否则 Vite 可能 302/资源路径错乱）
+    proxy_pass $ws_node/ws/$ws_uid$request_uri;
+}
+
+
