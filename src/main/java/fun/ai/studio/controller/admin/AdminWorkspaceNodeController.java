@@ -32,8 +32,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/fun-ai/admin/workspace-nodes")
 @Tag(
-        name = "Admin Workspace Nodes",
-        description = "节点管理（运维控制面，不依赖 JWT）。\n\n"
+        name = "Fun AI Workspace Nodes管理",
+        description = "容器开发环境服务器节点管理（运维控制面，不依赖 JWT）。\n\n"
                 + "访问入口：\n"
                 + "- http://{{公网ip}}/nodes.html#token={{adminToken}}\n"
                 + "- http://{{公网ip}}/workspace-nodes-admin.html#token={{adminToken}}\n\n"

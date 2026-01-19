@@ -35,6 +35,12 @@ public class GlobalExceptionHandler {
         return Result.error(502, e.getMessage());
     }
 
+    @ExceptionHandler(DeployProxyException.class)
+    public Result<?> handleDeployProxyException(DeployProxyException e) {
+        // 语义：上游（deploy 控制面）不可用/代理链路异常
+        return Result.error(502, e.getMessage());
+    }
+
     @ExceptionHandler({MaxUploadSizeExceededException.class, MultipartException.class})
     public Result<?> handleUploadTooLarge(Exception e) {
         // Spring 默认会抛该异常；这里返回更清晰的提示（并用 413 语义化表示“请求实体过大”）
