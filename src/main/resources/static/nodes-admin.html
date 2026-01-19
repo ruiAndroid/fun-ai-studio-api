@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Fun AI Studio - Nodes 管理</title>
+  <style>
+    :root{
+      color-scheme:light dark;
+      --bg:#0b1220; --bd:rgba(255,255,255,.12); --bd2:rgba(255,255,255,.08);
+      --txt:#e8eefc; --muted:rgba(232,238,252,.72);
+      --pri:#60a5fa; --danger:#ff8a8a; --ok:#9bf6b0; --warn:#ffd37a;
+      --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;padding:16px;background:var(--bg);color:var(--txt);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial}
+    .top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .title{font-size:16px;font-weight:900}
+    .status{font-size:12px;color:var(--muted);max-width:100%;word-break:break-word}
+    .card{background:rgba(255,255,255,.06);border:1px solid var(--bd);border-radius:14px;padding:12px;margin-top:12px}
+    .grid{display:grid;grid-template-columns: 360px 1fr;gap:12px;align-items:start}
+    @media (max-width: 1040px){ .grid{grid-template-columns:1fr} }
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .row > *{min-width:120px}
+    label{display:block;font-size:12px;color:var(--muted);margin:10px 0 6px}
+    input,button,select{
+      border-radius:10px;border:1px solid var(--bd2);background:rgba(0,0,0,.22);color:var(--txt);
+      padding:10px 10px;font-size:13px;outline:none
+    }
+    input,select{width:100%}
+    input:focus,select:focus{border-color:rgba(96,165,250,.65);box-shadow:0 0 0 3px rgba(96,165,250,.15)}
+    .btn{cursor:pointer;background:rgba(96,165,250,.18);border-color:rgba(96,165,250,.35)}
+    .btn:hover{background:rgba(96,165,250,.26)}
+    .btn.secondary{background:rgba(255,255,255,.06);border-color:var(--bd2)}
+    .btn.secondary:hover{background:rgba(255,255,255,.10)}
+    .btn.danger{background:rgba(255,138,138,.16);border-color:rgba(255,138,138,.35)}
+    .btn.danger:hover{background:rgba(255,138,138,.22)}
+    .btn.pill{
+      border-radius:999px;
+      padding:10px 14px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:8px;
+      text-decoration:none;
+      white-space:nowrap;
+    }
+    .btn.pill .ico{font-family:var(--mono);opacity:.95}
+    .pillTag{display:inline-block;padding:2px 8px;border:1px solid var(--bd2);border-radius:999px;font-size:12px;color:var(--muted)}
+    .warn{color:var(--warn)}
+    .small{font-size:12px;color:var(--muted);line-height:1.7}
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    th,td{border-bottom:1px solid var(--bd2);padding:10px 8px;font-size:12px;text-align:left;vertical-align:top}
+    th{color:var(--muted);font-weight:650}
+    code{font-family:var(--mono);background:rgba(255,255,255,.08);padding:2px 6px;border-radius:8px}
+    .ok{color:var(--ok)} .err{color:var(--danger)}
+    .kpi{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+    .kpi .box{flex:1;min-width:180px;background:rgba(0,0,0,.18);border:1px solid var(--bd2);border-radius:12px;padding:10px}
+    .kpi .box .k{font-size:12px;color:var(--muted)}
+    .kpi .box .v{font-size:18px;font-weight:900;margin-top:4px}
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <div class="title" id="pageTitle">Nodes 管理</div>
+      <div class="status" id="status"></div>
+    </div>
+    <div class="row" style="min-width:320px;max-width:780px;width:100%;justify-content:flex-end">
+      <a class="btn pill secondary" id="btnBack" href="/nodes.html"><span class="ico">←</span><span>返回入口</span></a>
+      <button id="btnReload" class="btn">刷新列表</button>
+      <button id="btnFillFromSel" class="btn secondary">填充选中行</button>
+      <select id="modeSelect" style="max-width:220px">
+        <option value="workspace">Workspace Node 管理</option>
+        <option value="deploy">Deploy Node 管理（暂未开放）</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- 左侧：功能区 -->
+    <div>
+      <div class="card">
+        <div class="pillTag">鉴权：IP 白名单 + Header Token</div>
+        <label>Admin Token（Header: X-Admin-Token）</label>
+        <input id="adminToken" placeholder="建议放 URL hash：#token=xxx（不会进 access log）" />
+        <div class="small" style="margin-top:10px">
+          提示：节点管理 API 不依赖 JWT；需要在后端配置 <code>funai.admin.allowed-ips</code> 与 <code>funai.admin.token</code>。
+        </div>
+      </div>
+
+      <div class="card" id="featureBox">
+        <h3 style="margin:0 0 10px 0;font-size:14px">功能区</h3>
+        <div class="small" id="featureHint">-</div>
+      </div>
+    </div>
+
+    <!-- 右侧：默认列表 -->
+    <div class="card">
+      <h3 style="margin:0;font-size:14px" id="listTitle">节点列表</h3>
+      <div class="kpi" id="kpi">
+        <div class="box"><div class="k">总用户数</div><div class="v" id="k_totalUsers">-</div></div>
+        <div class="box"><div class="k">总落点数</div><div class="v" id="k_totalPlacements">-</div></div>
+        <div class="box"><div class="k">节点数</div><div class="v" id="k_nodes">-</div></div>
+      </div>
+      <div class="small" id="listHint" style="margin-top:8px"></div>
+      <table>
+        <thead>
+          <tr>
+            <th>id</th><th>name</th><th>enabled</th><th>落盘用户数</th><th>占比</th><th>nginx（IP/URL）</th><th>api（IP/URL）</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="tbody">
+          <tr><td colspan="8" class="small">暂无数据，点击“刷新列表”。</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const state = { selected: null, rows: [], totalUsers: 0, totalPlacements: 0, mode: "workspace" };
+
+    function setStatus(text, kind) {
+      const el = $("status");
+      el.textContent = text || "";
+      el.className = "status " + (kind === "err" ? "err" : kind === "ok" ? "ok" : "");
+    }
+
+    function parseHashToken() {
+      const h = new URLSearchParams((location.hash || "").replace(/^#/, ""));
+      return (h.get("token") || "").trim();
+    }
+
+    function parseMode() {
+      const q = new URLSearchParams(location.search || "");
+      const m = (q.get("mode") || "workspace").trim();
+      return (m === "deploy") ? "deploy" : "workspace";
+    }
+
+    function setMode(mode) {
+      state.mode = mode;
+      $("modeSelect").value = mode;
+      if (mode === "workspace") {
+        document.title = "Fun AI Studio - Workspace Node 管理";
+        $("pageTitle").textContent = "Workspace Node 管理";
+        $("listTitle").textContent = "节点列表（Workspace）";
+        $("listHint").textContent = "右侧默认展示节点列表与指标；点击行可选中，左侧可做新增/更新。";
+        $("featureBox").innerHTML = `
+          <h3 style="margin:0 0 10px 0;font-size:14px">功能区：新增/更新节点</h3>
+          <label>id（更新时填；新增留空）</label>
+          <input id="f_id" placeholder="例如 1" />
+          <label>name</label>
+          <input id="f_name" placeholder="ws-node-01" />
+          <label>nginxBaseUrl（节点 Nginx，用于 /ws 路由）</label>
+          <input id="f_nginx" placeholder="http://39.97.61.139" />
+          <label>apiBaseUrl（workspace-node:7001，用于 /api/fun-ai/workspace/** 代理）</label>
+          <input id="f_api" placeholder="http://172.21.138.87:7001" />
+          <label>enabled（1/0）</label>
+          <input id="f_enabled" value="0" />
+          <label>weight（可选）</label>
+          <input id="f_weight" value="100" />
+          <div class="row" style="margin-top:10px">
+            <button id="btnUpsert" class="btn">保存</button>
+            <button id="btnClear" class="btn secondary">清空</button>
+          </div>
+          <div class="small" style="margin-top:10px">
+            方案 A（只让新用户进新节点）：把新节点 enabled=1，保持老节点 baseUrl 不变即可。
+          </div>
+        `;
+        $("btnUpsert").onclick = onUpsert;
+        $("btnClear").onclick = onClear;
+      } else {
+        document.title = "Fun AI Studio - Deploy Node 管理";
+        $("pageTitle").textContent = "Deploy Node 管理（暂未开放）";
+        $("listTitle").textContent = "节点列表（Deploy）";
+        $("listHint").innerHTML = '<span class="warn">暂未开放</span>：当前仅占位接口，后续对接 deploy 集群节点管理。';
+        $("featureBox").innerHTML = `
+          <h3 style="margin:0 0 10px 0;font-size:14px">功能区（暂未开放）</h3>
+          <div class="small">该模块预留给 deploy 集群节点管理；后续会提供节点注册/心跳、队列容量、版本等运维字段。</div>
+        `;
+      }
+    }
+
+    function adminHeaders() {
+      const tok = ($("adminToken").value || "").trim();
+      return { "Content-Type": "application/json", "X-Admin-Token": tok };
+    }
+
+    async function apiGet(path, params) {
+      const qs = params ? ("?" + new URLSearchParams(params).toString()) : "";
+      const r = await fetch(path + qs, { headers: adminHeaders() });
+      return await r.json();
+    }
+
+    async function apiPost(path, params, body) {
+      const qs = params ? ("?" + new URLSearchParams(params).toString()) : "";
+      const r = await fetch(path + qs, { method: "POST", headers: adminHeaders(), body: JSON.stringify(body || {}) });
+      return await r.json();
+    }
+
+    function renderKpi() {
+      $("k_totalUsers").textContent = String(state.totalUsers ?? 0);
+      $("k_totalPlacements").textContent = String(state.totalPlacements ?? 0);
+      $("k_nodes").textContent = String((state.rows || []).length);
+    }
+
+    function escapeHtml(s) {
+      return String(s || "").replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    function pct(n, d) {
+      const nn = Number(n || 0);
+      const dd = Number(d || 0);
+      if (!dd) return "0%";
+      return (Math.round((nn / dd) * 1000) / 10).toFixed(1) + "%";
+    }
+
+    function renderTable(rows) {
+      const tb = $("tbody");
+      tb.innerHTML = "";
+      if (!rows || rows.length === 0) {
+        tb.innerHTML = '<tr><td colspan="8" class="small">（空）</td></tr>';
+        return;
+      }
+      rows.forEach((r) => {
+        const tr = document.createElement("tr");
+        tr.style.cursor = "pointer";
+        tr.onclick = () => { state.selected = r; renderTable(state.rows); };
+        if (state.selected && String(state.selected.nodeId) === String(r.nodeId)) {
+          tr.style.background = "rgba(96,165,250,.08)";
+        }
+        const share = pct(r.assignedUsers, state.totalPlacements || rows.reduce((a,x)=>a+(x.assignedUsers||0),0));
+        tr.innerHTML = `
+          <td>${r.nodeId ?? ""}</td>
+          <td><code>${escapeHtml(r.name ?? "")}</code></td>
+          <td>${(r.enabled === 1 ? '<span class="ok">1</span>' : '<span class="err">0</span>')}</td>
+          <td>${r.assignedUsers ?? 0}</td>
+          <td>${share}</td>
+          <td><code>${escapeHtml(r.nginxBaseUrl ?? "")}</code></td>
+          <td><code>${escapeHtml(r.apiBaseUrl ?? "")}</code></td>
+          <td>
+            <button class="btn secondary" data-act="enable">启用</button>
+            <button class="btn danger" data-act="disable" style="margin-left:6px">禁用</button>
+          </td>
+        `;
+        tr.querySelectorAll("button").forEach((btn) => {
+          btn.disabled = (state.mode !== "workspace");
+          btn.onclick = async (e) => {
+            e.stopPropagation();
+            if (state.mode !== "workspace") return;
+            const act = btn.getAttribute("data-act");
+            const enabled = act === "enable" ? 1 : 0;
+            try {
+              const res = await apiPost("/api/fun-ai/admin/workspace-nodes/set-enabled", { nodeId: r.nodeId, enabled });
+              if (res.code !== 200) throw new Error(res.message || "请求失败");
+              await reload();
+            } catch (err) {
+              setStatus(String(err.message || err), "err");
+            }
+          };
+        });
+        tb.appendChild(tr);
+      });
+    }
+
+    async function reload() {
+      setStatus("加载中...", "");
+      if (state.mode === "deploy") {
+        const res = await apiGet("/api/fun-ai/admin/deploy-nodes/list");
+        if (res.code !== 200) throw new Error(res.message || "请求失败");
+        state.totalUsers = 0;
+        state.totalPlacements = 0;
+        state.rows = res.data || [];
+        renderKpi();
+        renderTable(state.rows);
+        setStatus("OK：deploy 节点管理暂未开放（占位接口返回空列表）", "ok");
+        return;
+      }
+
+      const res = await apiGet("/api/fun-ai/admin/workspace-nodes/list");
+      if (res.code !== 200) throw new Error(res.message || "请求失败");
+      const data = res.data || {};
+      state.totalUsers = data.totalUsers ?? 0;
+      state.totalPlacements = data.totalPlacements ?? 0;
+      state.rows = data.nodes || [];
+      renderKpi();
+      renderTable(state.rows);
+      setStatus(`OK：nodes=${state.rows.length} totalUsers=${state.totalUsers} totalPlacements=${state.totalPlacements}`, "ok");
+      try { localStorage.setItem("admin_ws_nodes_token", $("adminToken").value.trim()); } catch (e) {}
+    }
+
+    async function onUpsert() {
+      try {
+        const body = {
+          id: (($("f_id")?.value || "").trim()) ? parseInt($("f_id").value.trim(), 10) : null,
+          name: ($("f_name")?.value || "").trim(),
+          nginxBaseUrl: ($("f_nginx")?.value || "").trim(),
+          apiBaseUrl: ($("f_api")?.value || "").trim(),
+          enabled: parseInt((($("f_enabled")?.value || "0").trim()), 10),
+          weight: parseInt((($("f_weight")?.value || "100").trim()), 10),
+        };
+        const res = await apiPost("/api/fun-ai/admin/workspace-nodes/upsert", null, body);
+        if (res.code !== 200) throw new Error(res.message || "请求失败");
+        await reload();
+        setStatus("保存成功", "ok");
+      } catch (e) {
+        setStatus(String(e.message || e), "err");
+      }
+    }
+
+    function onClear() {
+      ["f_id","f_name","f_nginx","f_api","f_enabled","f_weight"].forEach((k) => {
+        const el = $(k);
+        if (el) el.value = "";
+      });
+      if ($("f_enabled")) $("f_enabled").value = "0";
+      if ($("f_weight")) $("f_weight").value = "100";
+      setStatus("", "");
+    }
+
+    $("btnReload").onclick = async () => { try { await reload(); } catch (e) { setStatus(String(e.message || e), "err"); } };
+    $("btnFillFromSel").onclick = () => {
+      if (state.mode !== "workspace") { setStatus("Deploy 节点暂未开放", "err"); return; }
+      const r = state.selected;
+      if (!r) { setStatus("请先在表格中选中一行", "err"); return; }
+      if ($("f_id")) $("f_id").value = r.nodeId ?? "";
+      if ($("f_name")) $("f_name").value = r.name ?? "";
+      if ($("f_nginx")) $("f_nginx").value = r.nginxBaseUrl ?? "";
+      if ($("f_api")) $("f_api").value = r.apiBaseUrl ?? "";
+      if ($("f_enabled")) $("f_enabled").value = String(r.enabled ?? 0);
+      if ($("f_weight")) $("f_weight").value = String(r.weight ?? 100);
+      setStatus("已填充选中行", "ok");
+    };
+
+    $("modeSelect").onchange = () => {
+      const m = $("modeSelect").value;
+      const q = new URLSearchParams(location.search || "");
+      q.set("mode", m);
+      history.replaceState(null, "", location.pathname + "?" + q.toString() + (location.hash || ""));
+      setMode(m);
+      reload().catch((e) => setStatus(String(e.message || e), "err"));
+    };
+
+    // init
+    try {
+      const fromHash = parseHashToken();
+      const fromStore = (localStorage.getItem("admin_ws_nodes_token") || "").trim();
+      $("adminToken").value = fromHash || fromStore || "";
+    } catch (e) {}
+
+    const initMode = parseMode();
+    setMode(initMode);
+    setStatus("提示：可先填 token，再刷新列表。", "");
+  </script>
+</body>
+</html>
+
+

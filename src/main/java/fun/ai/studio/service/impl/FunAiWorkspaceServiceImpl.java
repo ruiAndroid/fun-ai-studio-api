@@ -1906,9 +1906,47 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
             log.warn("cleanup workspace run meta failed: userId={}, appId={}, err={}", userId, appId, e.getMessage());
         }
 
-        // 2) 删除 workspace app 目录（宿主机持久化）
+        // 2) 删除该 appId 对应的历史 run 日志（避免 run 目录无限累积）
+        // 日志命名约定：run/run-{type}-{appId}-{timestamp}.log
+        cleanupRunLogsForApp(hostRunDir, userId, appId);
+
+        // 3) 删除 workspace app 目录（宿主机持久化）
         // node_modules 可能很大，且若仍有进程写入会导致 DirectoryNotEmpty。这里做“重试 + 失败隔离”，避免残留占用与后续误判。
         deleteDirBestEffort(hostAppDir, userId, appId);
+    }
+
+    private void cleanupRunLogsForApp(Path hostRunDir, Long userId, Long appId) {
+        if (hostRunDir == null || appId == null) return;
+        try {
+            if (Files.notExists(hostRunDir) || !Files.isDirectory(hostRunDir)) return;
+        } catch (Exception ignore) {
+            return;
+        }
+
+        String mid = "-" + appId + "-";
+        RuntimeException last = null;
+        try (var stream = Files.list(hostRunDir)) {
+            for (Path p : stream.toList()) {
+                if (p == null) continue;
+                String name = p.getFileName() == null ? "" : p.getFileName().toString();
+                if (name.isEmpty()) continue;
+                // 仅清理 run-* 日志（避免误删 dev.pid/current.json 等控制文件）
+                if (!name.startsWith("run-")) continue;
+                if (!name.endsWith(".log")) continue;
+                if (!name.contains(mid)) continue;
+                try {
+                    Files.deleteIfExists(p);
+                } catch (Exception e) {
+                    last = new RuntimeException("delete run log failed: " + p + ", err=" + e.getMessage(), e);
+                }
+            }
+        } catch (Exception e) {
+            last = new RuntimeException("list run dir failed: " + hostRunDir + ", err=" + e.getMessage(), e);
+        }
+        if (last != null) {
+            log.warn("cleanup run logs failed: userId={}, appId={}, err={}", userId, appId, last.getMessage());
+            throw last;
+        }
     }
 
     private void deleteDirBestEffort(Path dir, Long userId, Long appId) {

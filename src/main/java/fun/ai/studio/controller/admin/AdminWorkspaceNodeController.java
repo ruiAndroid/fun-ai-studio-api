@@ -36,7 +36,7 @@ import java.util.Map;
         description = "容器开发环境服务器节点管理（运维控制面，不依赖 JWT）。\n\n"
                 + "访问入口：\n"
                 + "- http://{{公网ip}}/nodes.html#token={{adminToken}}\n"
-                + "- http://{{公网ip}}/workspace-nodes-admin.html#token={{adminToken}}\n\n"
+                + "- http://{{公网ip}}/nodes-admin.html?mode=workspace#token={{adminToken}}\n\n"
                 + "鉴权方式：\n"
                 + "- Header：X-Admin-Token={{adminToken}}\n"
                 + "- 来源 IP：需在 funai.admin.allowed-ips 白名单内"

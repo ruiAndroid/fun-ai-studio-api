@@ -51,8 +51,8 @@
       <div class="status" id="status">点击进入对应管理页（Deploy 暂未开放）。</div>
     </div>
     <div class="row" style="min-width:280px;max-width:520px;width:100%">
-      <a class="btn" id="goWs" href="/workspace-nodes-admin.html" style="text-align:center;line-height:22px;text-decoration:none">Workspace Nodes</a>
-      <a class="btn secondary" id="goDeploy" href="/deploy-nodes.html" style="text-align:center;line-height:22px;text-decoration:none;opacity:.8">Deploy Nodes（暂未开放）</a>
+      <a class="btn" id="goWs" href="/nodes-admin.html?mode=workspace" style="text-align:center;line-height:22px;text-decoration:none">Workspace Nodes</a>
+      <a class="btn secondary" id="goDeploy" href="/nodes-admin.html?mode=deploy" style="text-align:center;line-height:22px;text-decoration:none;opacity:.8">Deploy Nodes（暂未开放）</a>
       <a class="btn secondary" href="/nodes.html" style="text-align:center;line-height:22px;text-decoration:none">新版入口</a>
     </div>
   </div>
@@ -69,8 +69,8 @@
     try {
       const h = location.hash || "";
       if (h && h.includes("token=")) {
-        $("goWs").href = "/workspace-nodes-admin.html" + h;
-        $("goDeploy").href = "/deploy-nodes.html" + h;
+        $("goWs").href = "/nodes-admin.html?mode=workspace" + h;
+        $("goDeploy").href = "/nodes-admin.html?mode=deploy" + h;
       }
     } catch (e) {}
   </script>

@@ -1,5 +1,7 @@
 package fun.ai.studio.config;
 
+import fun.ai.studio.common.Result;
+import fun.ai.studio.service.FunAiAppService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -60,13 +62,17 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
 
     private final WorkspaceNodeProxyProperties props;
     private final fun.ai.studio.workspace.WorkspaceNodeResolver nodeResolver;
+    private final FunAiAppService funAiAppService;
     private final HttpClient httpClient;
     private final SecureRandom random = new SecureRandom();
     private static final Logger log = LoggerFactory.getLogger(WorkspaceNodeProxyFilter.class);
 
-    public WorkspaceNodeProxyFilter(WorkspaceNodeProxyProperties props, fun.ai.studio.workspace.WorkspaceNodeResolver nodeResolver) {
+    public WorkspaceNodeProxyFilter(WorkspaceNodeProxyProperties props,
+                                    fun.ai.studio.workspace.WorkspaceNodeResolver nodeResolver,
+                                    FunAiAppService funAiAppService) {
         this.props = props;
         this.nodeResolver = nodeResolver;
+        this.funAiAppService = funAiAppService;
         HttpClient.Builder b = HttpClient.newBuilder();
         if (props != null && props.getConnectTimeoutMs() > 0) {
             b.connectTimeout(Duration.ofMillis(props.getConnectTimeoutMs()));
@@ -109,8 +115,18 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
 
         Long userId = extractUserIdFromQuery(request);
         if (userId == null) {
-            deny(response, 400, "userId is required for workspace proxy");
+            denyAsResult(response, 400, "userId 不能为空");
             return;
+        }
+
+        // 重要：workspace-node（大机）不依赖业务 DB；因此在小机代理层做 appId 归属/存在性校验，避免“应用已删除但仍能 tree/download-zip”等问题。
+        // 注意：不得使用 request.getParameter(...)，否则 multipart 场景会提前消费输入流导致 file part 丢失。
+        Long appId = extractLongFromQuery(request, "appId");
+        if (appId != null) {
+            if (funAiAppService == null || funAiAppService.getAppByIdAndUserId(appId, userId) == null) {
+                denyAsResult(response, 404, "应用不存在或已删除");
+                return;
+            }
         }
 
         String baseUrl;
@@ -272,13 +288,53 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
     }
 
     /**
+     * 与平台其它接口保持一致：HTTP 200 + Result.code/message。
+     */
+    private void denyAsResult(HttpServletResponse resp, int code, String msg) throws IOException {
+        resp.setStatus(200);
+        resp.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        resp.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        Result<Object> r = Result.error(code, msg == null ? "" : msg);
+        resp.getWriter().write(toJson(r));
+    }
+
+    private String toJson(Result<?> r) {
+        // 不引入 ObjectMapper（filter 处于很底层）；手写一个最小 JSON。
+        int c = r == null || r.getCode() == null ? 500 : r.getCode();
+        String m = r == null || r.getMessage() == null ? "" : r.getMessage();
+        return "{\"code\":" + c + ",\"message\":\"" + escapeJson(m) + "\",\"data\":null}";
+    }
+
+    private String escapeJson(String s) {
+        if (s == null) return "";
+        StringBuilder sb = new StringBuilder(s.length() + 16);
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            switch (ch) {
+                case '\\': sb.append("\\\\"); break;
+                case '"': sb.append("\\\""); break;
+                case '\n': sb.append("\\n"); break;
+                case '\r': sb.append("\\r"); break;
+                case '\t': sb.append("\\t"); break;
+                default: sb.append(ch);
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
      * 重要：
      * - multipart/form-data 场景下调用 request.getParameter(...) 可能触发 Servlet 容器提前解析并消费输入流，
      *   导致后续我们读取 body 转发时 file part 丢失（Required part 'file' is not present）。
      * - 因此这里严格只从 queryString 解析 userId，不触碰 getParameter / getParts。
      */
     private Long extractUserIdFromQuery(HttpServletRequest request) {
+        return extractLongFromQuery(request, "userId");
+    }
+
+    private Long extractLongFromQuery(HttpServletRequest request, String key) {
         if (request == null) return null;
+        if (key == null || key.isBlank()) return null;
         String qs = request.getQueryString();
         if (qs == null || qs.isBlank()) return null;
         String v = null;
@@ -287,7 +343,7 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
             int idx = part.indexOf('=');
             String k = idx < 0 ? part : part.substring(0, idx);
             String val = idx < 0 ? "" : part.substring(idx + 1);
-            if ("userId".equals(k)) {
+            if (key.equals(k)) {
                 v = val;
                 break;
             }

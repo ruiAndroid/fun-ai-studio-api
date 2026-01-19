@@ -20,7 +20,7 @@ import java.util.List;
         description = "预留：Deploy 节点管理（后续部署集群）。\n\n"
                 + "访问入口：\n"
                 + "- http://{{公网ip}}/nodes.html#token={{adminToken}}\n"
-                + "- http://{{公网ip}}/deploy-nodes.html#token={{adminToken}}\n\n"
+                + "- http://{{公网ip}}/nodes-admin.html?mode=deploy#token={{adminToken}}\n\n"
                 + "当前状态：暂未开放（仅占位接口）。\n\n"
                 + "鉴权方式：\n"
                 + "- Header：X-Admin-Token={{adminToken}}\n"
