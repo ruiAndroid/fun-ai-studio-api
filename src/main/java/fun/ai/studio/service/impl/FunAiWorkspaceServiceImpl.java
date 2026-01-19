@@ -463,6 +463,27 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                 + "  fi\n"
                 + "}\n";
 
+        // 依赖签名：解决“改了 package.json 但 node_modules 已存在导致 build/preview 跳过 install”问题。
+        // - INSTALL 成功后写入 $APP_DIR/.funai/installed.sig
+        // - BUILD/START 在签名变化时触发 npm install，避免前端没等 install 完成就 build（build 会 stopRun 导致 install 被 kill）
+        String depsSigSnippet = ""
+                + "SIG_DIR=\"$APP_DIR/.funai\"\n"
+                + "SIG_FILE=\"$SIG_DIR/installed.sig\"\n"
+                + "mkdir -p \"$SIG_DIR\" >/dev/null 2>&1 || true\n"
+                + "compute_sig() {\n"
+                + "  node - <<'NODE'\n"
+                + "const fs=require('fs');\n"
+                + "const crypto=require('crypto');\n"
+                + "const files=['package.json','package-lock.json','npm-shrinkwrap.json','pnpm-lock.yaml','yarn.lock'];\n"
+                + "const h=crypto.createHash('sha256');\n"
+                + "for (const f of files) { if (fs.existsSync(f)) h.update(fs.readFileSync(f)); }\n"
+                + "process.stdout.write(h.digest('hex'));\n"
+                + "NODE\n"
+                + "}\n"
+                + "CUR_SIG=$(compute_sig 2>/dev/null || echo '')\n"
+                + "LAST_SIG=''\n"
+                + "if [ -f \"$SIG_FILE\" ]; then LAST_SIG=$(cat \"$SIG_FILE\" 2>/dev/null || true); fi\n";
+
         String innerScript;
         if ("BUILD".equals(op)) {
             innerScript = ""
@@ -485,8 +506,19 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     + "  reg=$(npm config get registry 2>/dev/null || true)\n"
                     + "  if [ -n \"$reg\" ]; then echo \"[build] npm registry: $reg\" >>\"$LOG_FILE\" 2>&1; fi\n"
                     + npmCacheSnippet
-                    + "  if [ ! -d node_modules ]; then echo \"[build] npm install (include dev)...\" >>\"$LOG_FILE\"; npm install --include=dev >>\"$LOG_FILE\" 2>&1 || (echo \"[build] npm install failed, retry with --legacy-peer-deps\" >>\"$LOG_FILE\"; npm install --include=dev --legacy-peer-deps >>\"$LOG_FILE\" 2>&1); fi\n"
-                    + "  if [ ! -x node_modules/.bin/tsc ]; then echo \"[build] tsc not found, npm install (include dev)...\" >>\"$LOG_FILE\"; npm install --include=dev >>\"$LOG_FILE\" 2>&1 || (echo \"[build] npm install failed, retry with --legacy-peer-deps\" >>\"$LOG_FILE\"; npm install --include=dev --legacy-peer-deps >>\"$LOG_FILE\" 2>&1); fi\n"
+                    + depsSigSnippet
+                    + "  need_install=0\n"
+                    + "  if [ -z \"$CUR_SIG\" ]; then need_install=1; fi\n"
+                    + "  if [ \"$CUR_SIG\" != \"$LAST_SIG\" ]; then need_install=1; fi\n"
+                    + "  if [ ! -d node_modules ]; then need_install=1; fi\n"
+                    + "  if [ ! -x node_modules/.bin/tsc ]; then need_install=1; fi\n"
+                    + "  if [ \"$need_install\" = \"1\" ]; then\n"
+                    + "    echo \"[build] deps changed or incomplete, npm install (include dev)...\" >>\"$LOG_FILE\" 2>&1\n"
+                    + "    npm install --include=dev >>\"$LOG_FILE\" 2>&1 || (echo \"[build] npm install failed, retry with --legacy-peer-deps\" >>\"$LOG_FILE\"; npm install --include=dev --legacy-peer-deps >>\"$LOG_FILE\" 2>&1)\n"
+                    + "    if [ $? -eq 0 ] && [ -n \"$CUR_SIG\" ]; then echo \"$CUR_SIG\" > \"$SIG_FILE\" 2>/dev/null || true; fi\n"
+                    + "  else\n"
+                    + "    echo \"[build] deps unchanged, skip npm install\" >>\"$LOG_FILE\" 2>&1\n"
+                    + "  fi\n"
                     + "  prune_npm_cache || true\n"
                     + "  echo \"[build] npm run build\" >>\"$LOG_FILE\" 2>&1\n"
                     + "  set +e\n"
@@ -519,11 +551,13 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     + "  reg=$(npm config get registry 2>/dev/null || true)\n"
                     + "  if [ -n \"$reg\" ]; then echo \"[install] npm registry: $reg\" >>\"$LOG_FILE\" 2>&1; fi\n"
                     + npmCacheSnippet
+                    + depsSigSnippet
                     + "  echo \"[install] npm install (include dev)\" >>\"$LOG_FILE\" 2>&1\n"
                     + "  set +e\n"
                     + "  npm install --include=dev >>\"$LOG_FILE\" 2>&1 || (echo \"[install] npm install failed, retry with --legacy-peer-deps\" >>\"$LOG_FILE\"; npm install --include=dev --legacy-peer-deps >>\"$LOG_FILE\" 2>&1)\n"
                     + "  code=$?\n"
                     + "  set -e\n"
+                    + "  if [ \"$code\" = \"0\" ] && [ -n \"$CUR_SIG\" ]; then echo \"$CUR_SIG\" > \"$SIG_FILE\" 2>/dev/null || true; fi\n"
                     + "  prune_npm_cache || true\n"
                     + "fi\n"
                     + "if [ \"$NPM_CACHE_MODE\" = \"DISABLED\" ] && [ -n \"$NPM_CACHE_DIR\" ]; then rm -rf \"$NPM_CACHE_DIR\" 2>/dev/null || true; fi\n"
@@ -556,7 +590,18 @@ public class FunAiWorkspaceServiceImpl implements FunAiWorkspaceService {
                     + "reg=$(npm config get registry 2>/dev/null || true)\n"
                     + "if [ -n \"$reg\" ]; then echo \"[preview] npm registry: $reg\" >>\"$LOG_FILE\" 2>&1; fi\n"
                     + npmCacheSnippet
-                    + "if [ ! -d node_modules ]; then echo \"[preview] npm install (include dev)...\" >>\"$LOG_FILE\"; npm install --include=dev >>\"$LOG_FILE\" 2>&1 || (echo \"[preview] npm install failed, retry with --legacy-peer-deps\" >>\"$LOG_FILE\"; npm install --include=dev --legacy-peer-deps >>\"$LOG_FILE\" 2>&1); fi\n"
+                    + depsSigSnippet
+                    + "need_install=0\n"
+                    + "if [ -z \"$CUR_SIG\" ]; then need_install=1; fi\n"
+                    + "if [ \"$CUR_SIG\" != \"$LAST_SIG\" ]; then need_install=1; fi\n"
+                    + "if [ ! -d node_modules ]; then need_install=1; fi\n"
+                    + "if [ \"$need_install\" = \"1\" ]; then\n"
+                    + "  echo \"[preview] deps changed or missing node_modules, npm install (include dev)...\" >>\"$LOG_FILE\" 2>&1\n"
+                    + "  npm install --include=dev >>\"$LOG_FILE\" 2>&1 || (echo \"[preview] npm install failed, retry with --legacy-peer-deps\" >>\"$LOG_FILE\"; npm install --include=dev --legacy-peer-deps >>\"$LOG_FILE\" 2>&1)\n"
+                    + "  if [ $? -eq 0 ] && [ -n \"$CUR_SIG\" ]; then echo \"$CUR_SIG\" > \"$SIG_FILE\" 2>/dev/null || true; fi\n"
+                    + "else\n"
+                    + "  echo \"[preview] deps unchanged, skip npm install\" >>\"$LOG_FILE\" 2>&1\n"
+                    + "fi\n"
                     + "if [ \"$RUN_SCRIPT\" = \"server\" ] && [ ! -x node_modules/.bin/tsx ]; then echo \"[preview] tsx not found, npm install (include dev)...\" >>\"$LOG_FILE\"; npm install --include=dev >>\"$LOG_FILE\" 2>&1 || (echo \"[preview] npm install failed, retry with --legacy-peer-deps\" >>\"$LOG_FILE\"; npm install --include=dev --legacy-peer-deps >>\"$LOG_FILE\" 2>&1); fi\n"
                     + "prune_npm_cache || true\n"
                     // 兼容项目脚本：
