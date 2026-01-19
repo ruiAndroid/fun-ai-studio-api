@@ -51,9 +51,9 @@ public class SwaggerConfig implements WebMvcConfigurer {
                                 - `/ws/{userId}/...`：用户预览入口，双机部署时由 API 服务器（小机）转发到 Workspace 开发服务器（大机）Nginx，再反代到该用户容器的 hostPort。
 
                                 【节点管理（运维）】
-                                - 入口页：`/nodes.html#token={{adminToken}}`
-                                - Workspace 节点：`/nodes-admin.html?mode=workspace#token={{adminToken}}`
-                                - Deploy 节点：`/nodes-admin.html?mode=deploy#token={{adminToken}}`（暂未开放）
+                                - 入口页：`/admin/nodes.html#token={{adminToken}}`
+                                - Workspace 节点：`/admin/nodes-admin.html?mode=workspace#token={{adminToken}}`
+                                - Deploy 节点：`/admin/nodes-admin.html?mode=deploy#token={{adminToken}}`（暂未开放）
                                 - 鉴权：Header `X-Admin-Token` + 来源 IP 白名单（见 `funai.admin.*` 配置）
 
                                 【排障提示】

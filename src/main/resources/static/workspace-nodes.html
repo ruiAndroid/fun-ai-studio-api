@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Fun AI Studio - Nodes 管理入口</title>
+  <meta http-equiv="refresh" content="0; url=/admin/nodes.html" />
+  <title>Redirecting...</title>
   <style>
     :root{
       color-scheme:light dark;
@@ -45,35 +46,11 @@
   </style>
 </head>
 <body>
-  <div class="top">
-    <div>
-      <div class="title">Nodes 管理入口</div>
-      <div class="status" id="status">点击进入对应管理页（Deploy 暂未开放）。</div>
-    </div>
-    <div class="row" style="min-width:280px;max-width:520px;width:100%">
-      <a class="btn" id="goWs" href="/nodes-admin.html?mode=workspace" style="text-align:center;line-height:22px;text-decoration:none">Workspace Nodes</a>
-      <a class="btn secondary" id="goDeploy" href="/nodes-admin.html?mode=deploy" style="text-align:center;line-height:22px;text-decoration:none;opacity:.8">Deploy Nodes（暂未开放）</a>
-      <a class="btn secondary" href="/nodes.html" style="text-align:center;line-height:22px;text-decoration:none">新版入口</a>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="small">
-      推荐直接使用新版入口：<code>/nodes.html</code>（支持把 <code>#token=...</code> 透传到子页面）。<br/>
-      兼容说明：本页保留为入口页，原来的 Workspace 管理页面已迁移到 <code>/workspace-nodes-admin.html</code>。
-    </div>
-  </div>
-
   <script>
-    // 透传 #token 到子页面
-    try {
-      const h = location.hash || "";
-      if (h && h.includes("token=")) {
-        $("goWs").href = "/nodes-admin.html?mode=workspace" + h;
-        $("goDeploy").href = "/nodes-admin.html?mode=deploy" + h;
-      }
-    } catch (e) {}
+    // 兼容旧入口：跳到 /admin/nodes.html，并保留 hash token
+    location.replace("/admin/nodes.html" + (location.hash || ""));
   </script>
+  <p>Redirecting to <a href="/admin/nodes.html">/admin/nodes.html</a> ...</p>
 </body>
 </html>
 

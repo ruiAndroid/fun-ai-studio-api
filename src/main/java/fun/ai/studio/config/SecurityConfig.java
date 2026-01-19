@@ -103,6 +103,8 @@ public class SecurityConfig {
         "/workspace-nodes.html",
                         "/nodes.html",
         "/nodes-admin.html",
+        "/admin/nodes.html",
+        "/admin/nodes-admin.html",
                         "/workspace-nodes-admin.html",
         "/deploy-nodes.html",
         // /doc 页面 mermaid 渲染脚本（必须放行，否则会被 401 JSON 拦截导致浏览器拒绝执行）

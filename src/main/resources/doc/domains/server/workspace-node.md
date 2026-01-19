@@ -65,6 +65,20 @@
 
 > 判断是否真正跑起来：以 `run/status` 的 `state=RUNNING` + `portListenPid` 为准。
 
+### 3.4 iframe 跨站（第三方 Cookie）注意事项
+
+如果你把预览页（例如 `https://<preview-host>/ws/<uid>/`）放进控制台页面的 `iframe`，那么对浏览器来说：
+
+- 预览域名的 cookie（例如我们用于根路径资源路由的 `ws_uid`）会变成**第三方 Cookie**
+- `SameSite=Lax/Strict` 默认不会在 iframe 场景发送，导致 `/@vite/client`、`/src/*`、以及“根路径 /api 分流到 workspace”的逻辑失效
+
+要让 cookie 在跨站 iframe 中可用，必须：
+
+- **HTTPS**（否则 `Secure` cookie 不生效）
+- `Set-Cookie` 增加 `SameSite=None; Secure`
+
+对应 Nginx 配置参考 `src/main/resources/doc/阿里云部署文档.md` 中 `/ws/{userId}/...` location 的 `Set-Cookie ws_uid=...` 段落。
+
 补充：如果你发现访问 `/ws/{userId}/` 在浏览器里出现 **302 循环**（`Location` 还是 `/ws/{userId}/`），一般是因为上游 dev server 需要保留 `/ws/{userId}` 前缀，
 此时 workspace-dev Nginx 不要做“剥离前缀再转发”，而应直接：
 
