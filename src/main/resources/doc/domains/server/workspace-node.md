@@ -82,8 +82,9 @@
 补充：如果你发现访问 `/ws/{userId}/` 在浏览器里出现 **302 循环**（`Location` 还是 `/ws/{userId}/`），一般是因为上游 dev server 需要保留 `/ws/{userId}` 前缀，
 此时 workspace-dev Nginx 不要做“剥离前缀再转发”，而应直接：
 
-- `/ws/{userId}/...`：`proxy_pass http://127.0.0.1:$ws_port$request_uri;`
-- 根路径资源（通过 cookie 路由到 workspace）：`proxy_pass http://127.0.0.1:$ws_port/ws/$ws_uid$request_uri;`
+- `/ws/{userId}/...`：剥离前缀后转发到上游根路径：
+  - `location ~ ^/ws/(?<uid>\d+)(?<rest>/.*)?$ { ... proxy_pass http://127.0.0.1:$ws_port$rest; }`
+- 根路径资源（通过 cookie 路由到 workspace）：`proxy_pass http://127.0.0.1:$ws_port$request_uri;`
 
 ## 3.5 API 服务器（小机）Nginx 只切 `/ws/*` 到 Workspace 开发服务器（大机）（推荐先做，低风险）
 
