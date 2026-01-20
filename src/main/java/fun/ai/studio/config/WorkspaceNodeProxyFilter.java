@@ -181,7 +181,17 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
                 deny(response, 502, "upstream interrupted");
                 return;
             } catch (Exception e) {
-                deny(response, 502, "upstream error: " + e.getMessage());
+                // e.getMessage() 可能为 null（例如部分 HttpClient/IO 异常），这里输出异常类型与上游信息便于排障
+                String em = e.getMessage();
+                String cls = e.getClass() == null ? "Exception" : e.getClass().getSimpleName();
+                String target = baseUrl;
+                try {
+                    target = joinUrl(baseUrl, path, query);
+                } catch (Exception ignore) {
+                }
+                log.warn("workspace-node proxy upstream error: userId={}, method={}, target={}, errType={}, err={}",
+                        userId, method, target, cls, em, e);
+                deny(response, 502, "upstream error: " + cls + (em == null ? "" : (": " + em)));
                 return;
             }
 
