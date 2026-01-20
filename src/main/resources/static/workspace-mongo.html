@@ -96,7 +96,6 @@
       background:rgba(0,0,0,.55);
       z-index:999;
       padding:24px;
-      overflow:auto;
     }
     .modal{
       width:min(860px,100%);
@@ -106,23 +105,12 @@
       border-radius:16px;
       padding:14px;
       box-shadow:0 20px 80px rgba(0,0,0,.55);
-      max-height:86vh;
-      overflow:auto;
     }
     .modal h3{margin:0 0 8px 0}
     .modal .content{color:var(--muted); line-height:1.75}
     .modal .content ul{margin:8px 0 0 18px}
     .modal .content li{margin:4px 0}
     .modal .close-row{display:flex; justify-content:flex-end; margin-top:10px}
-
-    /* edit modal */
-    .field-grid{display:flex; flex-direction:column; gap:8px; margin-top:10px; max-height:56vh; overflow:auto; padding-right:6px}
-    .field-row{display:grid; grid-template-columns: 220px 1fr; gap:10px; align-items:start}
-    .field-row .k input{width:100%; opacity:.95}
-    .field-row .v input,.field-row .v textarea{width:100%}
-    .field-row .v textarea{min-height:64px; font-family:var(--mono)}
-    .chip{display:inline-flex; align-items:center; gap:6px; font-size:12px; padding:2px 8px; border-radius:999px; border:1px solid var(--bd2); background:rgba(255,255,255,.06); color:var(--muted)}
-    .chip code{background:transparent; padding:0}
   </style>
 </head>
 <body>
@@ -167,37 +155,87 @@
         <h3>Collections</h3>
         <div id="cols" class="cols small">请先“加载集合”</div>
       </div>
+    </div>
 
-      <div class="card" style="margin-top:12px">
-        <h3 style="margin:0 0 10px 0">写入</h3>
-        <button id="btnAddDoc" class="btn" style="width:100%">添加集合</button>
-        <div class="small" style="margin-top:8px">向当前选中的集合新增一条记录（弹窗填写字段）。</div>
+    <div class="card">
+      <h3>查询（find）</h3>
+      <div class="kv">
+        <div>
+          <label>collection</label>
+          <input id="collection" placeholder="例如 users" />
+        </div>
+        <div class="kv" style="grid-template-columns:1fr 1fr">
+          <div>
+            <label>limit</label>
+            <input id="limit" value="50" />
+          </div>
+          <div>
+            <label>skip</label>
+            <input id="skip" value="0" />
+          </div>
+        </div>
+      </div>
+      <div class="kv">
+        <div>
+          <label>filter (JSON)</label>
+          <textarea id="filter">{}</textarea>
+        </div>
+        <div>
+          <label>sort (JSON，可空)</label>
+          <textarea id="sort"></textarea>
+        </div>
+      </div>
+      <label>projection (JSON，可空)</label>
+      <textarea id="projection"></textarea>
+      <div class="btn-row" style="margin-top:10px">
+        <button id="btnFind" class="btn">查询</button>
+        <button id="btnPretty" class="btn secondary">格式化 JSON</button>
+      </div>
+      <div class="small" style="margin-top:8px">
+        提示：返回过大可能被后端截断导致解析失败，请降低 limit 或使用 projection。
+      </div>
+      <h3 style="margin-top:14px">结果</h3>
+      <div class="small" style="margin:6px 0 8px">支持行级操作：编辑/删除（按 <code>_id</code>）。</div>
+      <div id="tableBox" class="small" style="overflow:auto; border:1px solid var(--bd2); border-radius:14px; background:rgba(0,0,0,.16)"></div>
+      <pre id="out" style="margin-top:10px">暂无</pre>
+    </div>
+  </div>
+
+  <div class="grid" style="margin-top:12px">
+    <div class="card">
+      <h3>写入</h3>
+      <label>新建集合（collection）</label>
+      <div class="kv" style="grid-template-columns: 1fr 160px">
+        <input id="newCollection" placeholder="例如 users" />
+        <button id="btnCreateCol" class="btn">创建集合</button>
+      </div>
+
+      <label style="margin-top:12px">插入单条（insertOne）doc (JSON)</label>
+      <textarea id="insertDoc">{}</textarea>
+      <div class="btn-row" style="margin-top:10px">
+        <button id="btnInsertOne" class="btn">插入到当前 collection</button>
+        <button id="btnInsertPretty" class="btn secondary">格式化 doc</button>
+      </div>
+      <div class="small" style="margin-top:8px">
+        提示：Mongo 可以不用显式“建表”，但这里仍提供 createCollection 以便更直观。
       </div>
     </div>
 
     <div class="card">
-      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px">
-        <h3 style="margin:0">数据列表</h3>
-        <div style="display:flex; gap:10px; align-items:center">
-          <div style="display:flex; gap:6px; align-items:center; font-size:12px">
-            <label style="margin:0; color:var(--muted2)">每页</label>
-            <input id="limit" value="50" style="width:60px; padding:6px 8px; font-size:12px" />
-          </div>
-          <div style="display:flex; gap:6px; align-items:center; font-size:12px">
-            <label style="margin:0; color:var(--muted2)">跳过</label>
-            <input id="skip" value="0" style="width:60px; padding:6px 8px; font-size:12px" />
-          </div>
-          <button id="btnFind" class="btn" style="width:auto; padding:6px 14px; font-size:12px">刷新</button>
-        </div>
+      <h3>高级：语句执行（安全 JSON 模式）</h3>
+      <div class="small">不是任意 JS，也不是标准 SQL；请用 JSON 描述 op，后端按固定模板执行。</div>
+      <label>op JSON</label>
+      <textarea id="opJson">{
+  "op": "find",
+  "collection": "",
+  "filter": "{}",
+  "limit": 20,
+  "skip": 0
+}</textarea>
+      <div class="btn-row" style="margin-top:10px">
+        <button id="btnOpExec" class="btn">执行</button>
+        <button id="btnOpPretty" class="btn secondary">格式化</button>
       </div>
-      <div class="small" style="margin-bottom:8px; color:var(--muted2)">支持行级操作：编辑/删除（按 <code>_id</code>）</div>
-      <div id="tableBox" class="small" style="overflow:auto; border:1px solid var(--bd2); border-radius:14px; background:rgba(0,0,0,.16); max-height:calc(100vh - 280px)"></div>
-      <!-- 隐藏的查询参数 -->
-      <input type="hidden" id="collection" />
-      <input type="hidden" id="filter" value="{}" />
-      <input type="hidden" id="sort" value="" />
-      <input type="hidden" id="projection" value="" />
-      <pre id="out" style="display:none">暂无</pre>
     </div>
   </div>
 
@@ -221,52 +259,9 @@
     </div>
   </div>
 
-  <!-- 编辑弹窗（字段级编辑） -->
-  <div id="editBackdrop" class="modal-backdrop" role="dialog" aria-modal="true">
-    <div class="modal">
-      <h3>编辑文档</h3>
-      <div class="small" style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:8px">
-        <span class="chip">collection: <code id="editCol"></code></span>
-        <span class="chip">_id: <code id="editId"></code></span>
-      </div>
-      <div class="small" style="color:var(--muted2)">
-        提示：值会做智能解析（<code>null/true/false/数字</code>、以及以 <code>{</code>/<code>[</code> 开头的 JSON）。字段名不可修改。
-      </div>
-      <div id="editStatus" class="small" style="margin-top:8px"></div>
-
-      <div id="editFields" class="field-grid"></div>
-
-      <div class="btn-row" style="margin-top:12px">
-        <button id="btnEditSave" class="btn">保存</button>
-        <button id="btnEditCancel" class="btn secondary">取消</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 新增记录弹窗（字段级填写） -->
-  <div id="addBackdrop" class="modal-backdrop" role="dialog" aria-modal="true">
-    <div class="modal">
-      <h3>新增记录</h3>
-      <div class="small" style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:8px">
-        <span class="chip">collection: <code id="addCol"></code></span>
-      </div>
-      <div class="small" style="color:var(--muted2)">
-        提示：字段来自当前列表的列（先点左侧集合加载一次数据）。值会做智能解析（<code>null/true/false/数字</code>、以及以 <code>{</code>/<code>[</code> 开头的 JSON）。留空则不写入该字段。
-      </div>
-      <div id="addStatus" class="small" style="margin-top:8px"></div>
-
-      <div id="addFields" class="field-grid"></div>
-
-      <div class="btn-row" style="margin-top:12px">
-        <button id="btnAddSave" class="btn">保存</button>
-        <button id="btnAddCancel" class="btn secondary">取消</button>
-      </div>
-    </div>
-  </div>
-
   <script>
     const $ = (id) => document.getElementById(id);
-    const state = { activeCol: null, lastQueryData: null, editCtx: null, lastFields: [] };
+    const state = { activeCol: null };
 
     function parseParamsFromUrl() {
       const q = new URLSearchParams(location.search || "");
@@ -283,20 +278,6 @@
       const el = $("status");
       el.textContent = text || "";
       el.className = "statusline " + (kind === "err" ? "err" : kind === "ok" ? "ok" : "");
-    }
-
-    function setEditStatus(text, kind) {
-      const el = $("editStatus");
-      if (!el) return;
-      el.textContent = text || "";
-      el.className = "small " + (kind === "err" ? "err" : kind === "ok" ? "ok" : "");
-    }
-
-    function setAddStatus(text, kind) {
-      const el = $("addStatus");
-      if (!el) return;
-      el.textContent = text || "";
-      el.className = "small " + (kind === "err" ? "err" : kind === "ok" ? "ok" : "");
     }
 
     function guessTokenFromStorage() {
@@ -363,172 +344,36 @@
         .replaceAll("'", "&#039;");
     }
 
-    // ===== Edit modal =====
-    function openEditModal() { $("editBackdrop").style.display = "block"; }
-    function closeEditModal() { $("editBackdrop").style.display = "none"; state.editCtx = null; }
-
-    function valueToText(v) {
-      if (v === null || v === undefined) return "null";
-      if (typeof v === "object") return JSON.stringify(v, null, 2);
-      return String(v);
-    }
-
-    function isMultilineValText(txt) {
-      if (!txt) return false;
-      return txt.includes("\n") || txt.trim().startsWith("{") || txt.trim().startsWith("[") || txt.length > 60;
-    }
-
-    function parseSmartValue(txt) {
-      const t = (txt ?? "").trim();
-      if (t === "") return ""; // 空串
-      if (t === "null") return null;
-      if (t === "true") return true;
-      if (t === "false") return false;
-      // number（避免把 001 误判为数字：仅当标准数字格式）
-      if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
-      if (t.startsWith("{") || t.startsWith("[")) {
-        return JSON.parse(t);
-      }
-      return txt; // 保留原始（含空格）
-    }
-
-    function renderEditFields() {
-      const box = $("editFields");
-      box.innerHTML = "";
-      const rows = (state.editCtx && state.editCtx.rows) || [];
-      if (rows.length === 0) {
-        box.innerHTML = "<div class='small' style='color:var(--muted2)'>（无可编辑字段）</div>";
-        return;
-      }
-      rows.forEach((r, i) => {
-        const row = document.createElement("div");
-        row.className = "field-row";
-        const valTxt = r.valueText ?? "";
-        const useTA = isMultilineValText(valTxt);
-        row.innerHTML = `
-          <div class="k">
-            <label style="margin:0 0 6px">字段</label>
-            <input data-role="k" data-idx="${i}" value="${escHtml(r.key || "")}" placeholder="field_name" disabled />
-          </div>
-          <div class="v">
-            <label style="margin:0 0 6px">值</label>
-            ${useTA
-              ? `<textarea data-role="v" data-idx="${i}" placeholder='例如：123 / true / null / \"文本\" / {\"a\":1}'>${escHtml(valTxt)}</textarea>`
-              : `<input data-role="v" data-idx="${i}" value="${escHtml(valTxt)}" placeholder='例如：123 / true / null / 文本 / {"a":1}' />`
-            }
-          </div>
-        `;
-        box.appendChild(row);
-      });
-    }
-
-    function openEditForDoc(doc, idx) {
-      const col = state.activeCol || ($("collection").value || "").trim();
-      const id = extractId(doc);
-      if (!col) throw new Error("collection 为空");
-      if (!id) throw new Error("该文档缺少 _id，无法编辑");
-
-      const clone = JSON.parse(JSON.stringify(doc));
-      delete clone._id;
-      const rows = Object.keys(clone).sort().map((k) => ({ key: k, valueText: valueToText(clone[k]) }));
-      state.editCtx = { col, id, idx, rows, original: clone };
-      $("editCol").textContent = col;
-      $("editId").textContent = id;
-      setEditStatus("", "");
-      renderEditFields();
-      openEditModal();
-    }
-
     function renderTable(items) {
       const box = $("tableBox");
       if (!items || items.length === 0) {
         box.innerHTML = "<div style='padding:10px;color:rgba(232,238,252,.62)'>（无数据）</div>";
-        state.lastFields = [];
         return;
       }
-      
-      // 推断所有字段
-      const fieldSet = new Set();
-      items.forEach((doc) => {
-        if (doc && typeof doc === "object") {
-          Object.keys(doc).forEach((k) => fieldSet.add(k));
-        }
-      });
-      const fields = Array.from(fieldSet);
-      // _id 放最前面
-      const sortedFields = fields.sort((a, b) => {
-        if (a === "_id") return -1;
-        if (b === "_id") return 1;
-        return a.localeCompare(b);
-      });
-
-      // 保存当前列（供“新增记录”弹窗使用）
-      state.lastFields = sortedFields.filter((f) => f !== "_id");
-
-      // 生成表头
-      const headers = sortedFields.map((f) => {
-        return `<th style="text-align:left;padding:8px;color:rgba(232,238,252,.78);font-size:12px;white-space:nowrap">${escHtml(f)}</th>`;
-      }).join("") + `<th style="text-align:left;padding:8px;color:rgba(232,238,252,.78);font-size:12px;white-space:nowrap">操作</th>`;
-
-      // 生成数据行
-      const rows = items.map((doc, idx) => {
-        const cells = sortedFields.map((f) => {
-          let val = doc[f];
-          let displayVal = "";
-          let titleVal = "";
-          
-          if (val === null || val === undefined) {
-            displayVal = "<span style='color:var(--muted2);font-style:italic'>null</span>";
-            titleVal = "null";
-          } else if (typeof val === "object") {
-            // 对象/数组优化显示
-            if (Array.isArray(val)) {
-              displayVal = `<span style='color:var(--muted2)'>[数组: ${val.length} 项]</span>`;
-              titleVal = JSON.stringify(val);
-            } else if (val.$oid) {
-              // MongoDB ObjectId
-              displayVal = escHtml(val.$oid);
-              titleVal = val.$oid;
-            } else if (val.$date) {
-              // MongoDB Date
-              const dateStr = new Date(val.$date).toLocaleString('zh-CN');
-              displayVal = escHtml(dateStr);
-              titleVal = dateStr;
-            } else {
-              // 普通对象
-              const keys = Object.keys(val);
-              displayVal = `<span style='color:var(--muted2)'>{${keys.length} 个字段}</span>`;
-              titleVal = JSON.stringify(val, null, 2);
-            }
-          } else if (typeof val === "boolean") {
-            displayVal = `<span style='color:${val?'var(--ok)':'var(--danger)'}'>${val}</span>`;
-            titleVal = String(val);
-          } else if (typeof val === "number") {
-            displayVal = `<span style='color:var(--pri)'>${val}</span>`;
-            titleVal = String(val);
-          } else {
-            // 字符串
-            const strVal = String(val);
-            displayVal = escHtml(strVal.length > 50 ? strVal.slice(0, 50) + "..." : strVal);
-            titleVal = strVal;
-          }
-          
-          const isId = (f === "_id");
-          return `<td style="padding:8px;border-top:1px solid rgba(255,255,255,.08);${isId?'font-family:var(--mono);':''}max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:help" title="${escHtml(titleVal)}">${displayVal}</td>`;
-        }).join("");
-        
-        const actions = `<td style="padding:8px;border-top:1px solid rgba(255,255,255,.08);white-space:nowrap">
-          <button class="btn secondary" data-act="edit" data-idx="${idx}" style="width:auto;padding:6px 10px;border-radius:10px;font-size:11px">编辑</button>
-          <button class="btn secondary" data-act="del" data-idx="${idx}" style="width:auto;padding:6px 10px;border-radius:10px;border-color:rgba(255,138,138,.35);font-size:11px">删除</button>
-        </td>`;
-        
-        return `<tr>${cells}${actions}</tr>`;
+      // 展示前若干列：_id + json 摘要 + 操作
+      const rows = items.map((it, idx) => {
+        const id = extractId(it);
+        const summary = escHtml(JSON.stringify(it).slice(0, 220));
+        return `
+          <tr>
+            <td style="padding:8px;border-top:1px solid rgba(255,255,255,.08);font-family:var(--mono)">${escHtml(id || "")}</td>
+            <td style="padding:8px;border-top:1px solid rgba(255,255,255,.08);color:rgba(232,238,252,.78)">${summary}${summary.length>=220?"…":""}</td>
+            <td style="padding:8px;border-top:1px solid rgba(255,255,255,.08);white-space:nowrap">
+              <button class="btn secondary" data-act="edit" data-idx="${idx}" style="width:auto;padding:6px 10px;border-radius:10px">编辑</button>
+              <button class="btn secondary" data-act="del" data-idx="${idx}" style="width:auto;padding:6px 10px;border-radius:10px;border-color:rgba(255,138,138,.35)">删除</button>
+            </td>
+          </tr>
+        `;
       }).join("");
 
       box.innerHTML = `
-        <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <table style="width:100%;border-collapse:collapse">
           <thead>
-            <tr>${headers}</tr>
+            <tr>
+              <th style="text-align:left;padding:8px;color:rgba(232,238,252,.78);font-size:12px">_id</th>
+              <th style="text-align:left;padding:8px;color:rgba(232,238,252,.78);font-size:12px">doc</th>
+              <th style="text-align:left;padding:8px;color:rgba(232,238,252,.78);font-size:12px">操作</th>
+            </tr>
           </thead>
           <tbody>${rows}</tbody>
         </table>
@@ -546,31 +391,10 @@
         const div = document.createElement("div");
         div.className = "col-item" + (state.activeCol === c ? " active" : "");
         div.textContent = c;
-        div.onclick = async () => {
+        div.onclick = () => {
           state.activeCol = c;
           $("collection").value = c;
           renderCols(cols);
-          // 自动触发查询
-          setStatus("正在加载 " + c + " 的数据...", "");
-          try {
-            const p = baseParams();
-            const body = {
-              collection: c,
-              filter: ($("filter").value || "").trim() || "{}",
-              projection: ($("projection").value || "").trim(),
-              sort: ($("sort").value || "").trim(),
-              limit: parseInt(($("limit").value || "50").trim(), 10),
-              skip: parseInt(($("skip").value || "0").trim(), 10),
-            };
-            const res = await apiPost("/api/fun-ai/workspace/mongo/find", p, body);
-            if (res.code !== 200) throw new Error(res.message || "请求失败");
-            state.lastQueryData = res.data; // 保存查询结果
-            renderTable((res.data && res.data.items) || []);
-            setStatus("OK: " + c + ", 返回 " + (res.data && res.data.returned) + " 条记录", "ok");
-          } catch (e) {
-            renderTable([]);
-            setStatus(String(e.message || e), "err");
-          }
         };
         box.appendChild(div);
       });
@@ -650,17 +474,13 @@
     };
 
     $("btnFind").onclick = async () => {
-      const col = ($("collection").value || "").trim();
-      if (!col) {
-        setStatus("请先选择集合", "err");
-        return;
-      }
-      setStatus("正在刷新 " + col + " 的数据...", "");
+      setStatus("查询中...", "");
+      $("out").textContent = "查询中...";
       try {
         const p = baseParams();
         const body = {
-          collection: col,
-          filter: ($("filter").value || "").trim() || "{}",
+          collection: ($("collection").value || "").trim(),
+          filter: ($("filter").value || "").trim(),
           projection: ($("projection").value || "").trim(),
           sort: ($("sort").value || "").trim(),
           limit: parseInt(($("limit").value || "50").trim(), 10),
@@ -668,17 +488,84 @@
         };
         const res = await apiPost("/api/fun-ai/workspace/mongo/find", p, body);
         if (res.code !== 200) throw new Error(res.message || "请求失败");
-        state.lastQueryData = res.data; // 保存查询结果
+        $("out").textContent = JSON.stringify(res.data, null, 2);
         renderTable((res.data && res.data.items) || []);
-        setStatus("OK: " + col + ", 返回 " + (res.data && res.data.returned) + " 条记录", "ok");
+        setStatus("OK: returned=" + (res.data && res.data.returned), "ok");
       } catch (e) {
+        $("out").textContent = String(e.stack || e.message || e);
         renderTable([]);
         setStatus(String(e.message || e), "err");
       }
     };
 
+    $("btnPretty").onclick = () => {
+      prettyAll();
+      setStatus("已格式化（能解析的 JSON）", "ok");
+    };
 
-    // 已收敛旧的“写入/高级”区域：现在用左侧一个按钮 + 弹窗来新增记录
+    $("btnInsertPretty").onclick = () => {
+      const v = ($("insertDoc").value || "").trim();
+      if (!v) return;
+      try { $("insertDoc").value = JSON.stringify(JSON.parse(v), null, 2); } catch (e) {}
+    };
+
+    $("btnCreateCol").onclick = async () => {
+      setStatus("创建集合中...", "");
+      try {
+        const p = baseParams();
+        const body = { collection: ($("newCollection").value || "").trim() };
+        const res = await apiPost("/api/fun-ai/workspace/mongo/create-collection", p, body);
+        if (res.code !== 200) throw new Error(res.message || "请求失败");
+        setStatus("OK: created=" + (res.data && res.data.created) + (res.data && res.data.message ? (", msg=" + res.data.message) : ""), "ok");
+        // 刷新列表
+        $("btnLoadCols").click();
+      } catch (e) {
+        setStatus(String(e.message || e), "err");
+      }
+    };
+
+    $("btnInsertOne").onclick = async () => {
+      setStatus("插入中...", "");
+      try {
+        const p = baseParams();
+        const col = ($("collection").value || "").trim();
+        if (!col) throw new Error("请先选择/输入 collection");
+        const doc = ($("insertDoc").value || "").trim();
+        // 先本地校验 JSON（避免后端报错难看）
+        JSON.parse(doc);
+        const res = await apiPost("/api/fun-ai/workspace/mongo/insert-one", p, { collection: col, doc });
+        if (res.code !== 200) throw new Error(res.message || "请求失败");
+        setStatus("OK: insertedId=" + (res.data && res.data.insertedId), "ok");
+        // 重新查询当前页
+        $("btnFind").click();
+      } catch (e) {
+        setStatus(String(e.message || e), "err");
+      }
+    };
+
+    $("btnOpPretty").onclick = () => {
+      const v = ($("opJson").value || "").trim();
+      if (!v) return;
+      try { $("opJson").value = JSON.stringify(JSON.parse(v), null, 2); } catch (e) {}
+    };
+
+    $("btnOpExec").onclick = async () => {
+      setStatus("执行中...", "");
+      try {
+        const p = baseParams();
+        const txt = ($("opJson").value || "").trim();
+        const obj = JSON.parse(txt);
+        const res = await apiPost("/api/fun-ai/workspace/mongo/op", p, obj);
+        if (res.code !== 200) throw new Error(res.message || "请求失败");
+        $("out").textContent = JSON.stringify(res.data, null, 2);
+        // 若返回 find 结构则也渲染表格
+        const items = res.data && res.data.items;
+        renderTable(Array.isArray(items) ? items : []);
+        setStatus("OK", "ok");
+      } catch (e) {
+        setStatus(String(e.message || e), "err");
+      }
+    };
 
     $("btnClear").onclick = () => {
       $("cols").textContent = "请先“加载集合”";
@@ -701,164 +588,8 @@
       if (e.target && e.target.id === "helpBackdrop") closeHelp();
     });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        closeHelp();
-        closeEditModal();
-        closeAddModal();
-      }
+      if (e.key === "Escape") closeHelp();
     });
-
-    // edit modal events
-    $("btnEditCancel").onclick = closeEditModal;
-    $("editBackdrop").addEventListener("click", (e) => {
-      if (e.target && e.target.id === "editBackdrop") closeEditModal();
-    });
-    $("editFields").addEventListener("input", (e) => {
-      const t = e.target;
-      if (!t || !t.getAttribute) return;
-      const role = t.getAttribute("data-role");
-      const i = parseInt(t.getAttribute("data-idx"), 10);
-      if (!state.editCtx || !state.editCtx.rows[i]) return;
-      if (role === "v") state.editCtx.rows[i].valueText = t.value;
-    });
-
-    $("btnEditSave").onclick = async () => {
-      const saveBtn = $("btnEditSave");
-      try {
-        if (!state.editCtx) throw new Error("编辑上下文丢失");
-        const { col, id, rows, original } = state.editCtx;
-        const setObj = {};
-
-        for (const r of rows) {
-          const k = (r.key || "").trim();
-          if (!k) continue;
-          if (k === "_id") continue;
-          let newVal;
-          try {
-            newVal = parseSmartValue(r.valueText || "");
-          } catch (e) {
-            throw new Error(`字段 ${k} 的值解析失败：${e.message}`);
-          }
-          const oldVal = original ? original[k] : undefined;
-          const oldStr = (oldVal === undefined) ? "__UNDEF__" : JSON.stringify(oldVal);
-          const newStr = (newVal === undefined) ? "__UNDEF__" : JSON.stringify(newVal);
-          if (oldStr !== newStr) {
-            setObj[k] = newVal;
-          }
-        }
-
-        // 没有任何修改：允许直接关闭，不报错
-        if (Object.keys(setObj).length === 0) {
-          setEditStatus("未检测到修改。", "ok");
-          closeEditModal();
-          return;
-        }
-        const update = { $set: setObj };
-
-        const p = baseParams();
-        if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "保存中..."; }
-        setEditStatus("保存中...", "");
-        setStatus(`保存中：${col} / _id=${id}`, "");
-        const res = await apiPost("/api/fun-ai/workspace/mongo/update-by-id", p, { collection: col, id, update: JSON.stringify(update), upsert: false });
-        if (res.code !== 200) throw new Error(res.message || "请求失败");
-        setStatus("OK: matched=" + (res.data && res.data.matchedCount) + ", modified=" + (res.data && res.data.modifiedCount), "ok");
-        setEditStatus("保存成功。", "ok");
-        closeEditModal();
-        // 刷新列表
-        try { $("btnFind").click(); } catch (e) {}
-      } catch (e) {
-        setEditStatus(String(e.message || e), "err");
-        setStatus(String(e.message || e), "err");
-      } finally {
-        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "保存"; }
-      }
-    };
-
-    // ===== Add modal =====
-    function openAddModal() { $("addBackdrop").style.display = "block"; }
-    function closeAddModal() { $("addBackdrop").style.display = "none"; setAddStatus("", ""); }
-
-    $("btnAddCancel").onclick = closeAddModal;
-    $("addBackdrop").addEventListener("click", (e) => {
-      if (e.target && e.target.id === "addBackdrop") closeAddModal();
-    });
-
-    function renderAddFields(fields) {
-      const box = $("addFields");
-      box.innerHTML = "";
-      (fields || []).forEach((k, i) => {
-        const row = document.createElement("div");
-        row.className = "field-row";
-        row.innerHTML = `
-          <div class="k">
-            <label style="margin:0 0 6px">字段</label>
-            <input value="${escHtml(k)}" disabled />
-          </div>
-          <div class="v">
-            <label style="margin:0 0 6px">值</label>
-            <input data-role="addv" data-idx="${i}" value="" placeholder="留空则不写入；例如 123 / true / null / 文本 / {\"a\":1}" />
-          </div>
-        `;
-        box.appendChild(row);
-      });
-    }
-
-    function openAddForCurrentCollection() {
-      const col = state.activeCol || ($("collection").value || "").trim();
-      if (!col) throw new Error("请先选择集合");
-      $("addCol").textContent = col;
-      setAddStatus("", "");
-
-      let fields = Array.isArray(state.lastFields) ? state.lastFields.slice() : [];
-      if (fields.length === 0) {
-        const items = (state.lastQueryData && state.lastQueryData.items) || [];
-        const s = new Set();
-        items.forEach((d) => { if (d && typeof d === "object") Object.keys(d).forEach((k) => { if (k !== "_id") s.add(k); }); });
-        fields = Array.from(s).sort();
-      }
-      if (fields.length === 0) throw new Error("暂无字段信息：请先点击左侧集合加载一次数据");
-      renderAddFields(fields);
-      openAddModal();
-    }
-
-    const btnAddDoc = $("btnAddDoc");
-    if (btnAddDoc) {
-      btnAddDoc.onclick = () => {
-        try { openAddForCurrentCollection(); } catch (e) { setStatus(String(e.message || e), "err"); }
-      };
-    }
-
-    $("btnAddSave").onclick = async () => {
-      const saveBtn = $("btnAddSave");
-      try {
-        const col = state.activeCol || ($("collection").value || "").trim();
-        if (!col) throw new Error("请先选择集合");
-        const fields = Array.isArray(state.lastFields) ? state.lastFields : [];
-        const doc = {};
-        for (let i = 0; i < fields.length; i++) {
-          const el = document.querySelector(`[data-role="addv"][data-idx="${i}"]`);
-          if (!el) continue;
-          const raw = (el.value || "");
-          if (!raw.trim()) continue;
-          doc[fields[i]] = parseSmartValue(raw);
-        }
-        if (Object.keys(doc).length === 0) throw new Error("请至少填写一个字段的值");
-
-        const p = baseParams();
-        if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "保存中..."; }
-        setAddStatus("保存中...", "");
-        const res = await apiPost("/api/fun-ai/workspace/mongo/insert-one", p, { collection: col, doc: JSON.stringify(doc) });
-        if (res.code !== 200) throw new Error(res.message || "请求失败");
-        setAddStatus("保存成功。", "ok");
-        closeAddModal();
-        try { $("btnFind").click(); } catch (e) {}
-      } catch (e) {
-        setAddStatus(String(e.message || e), "err");
-        setStatus(String(e.message || e), "err");
-      } finally {
-        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "保存"; }
-      }
-    };
 
     // 初始化：URL 参数优先，其次 localStorage；token 若为空再尝试自动猜测。
     try {
@@ -877,13 +608,13 @@
         if (guessed) $("token").value = guessed;
       }
 
-      // 若 URL 已明确注入三要素（userId/appId/token），则直接锁定输入并提示用户可直接「加载集合」
+      // 若 URL 已明确注入三要素（userId/appId/token），则直接锁定输入并提示用户可直接“加载集合”
       const injectedAll = !!(fromUrl.userId && fromUrl.appId && fromUrl.token);
       if (injectedAll) {
         $("userId").disabled = true;
         $("appId").disabled = true;
         $("token").disabled = true;
-        setStatus("已从 URL 注入 userId/appId/token，可直接点击「加载集合」。（建议 token 放在 #hash 中）", "ok");
+        setStatus("已从 URL 注入 userId/appId/token，可直接点击“加载集合”。（建议 token 放在 #hash 中）", "ok");
       }
     } catch (e) {
       renderAppOptions([]);
@@ -907,11 +638,12 @@
       const act = btn.getAttribute("data-act");
       const idx = parseInt(btn.getAttribute("data-idx"), 10);
       try {
-        const items = (state.lastQueryData && state.lastQueryData.items) || [];
+        const data = JSON.parse($("out").textContent || "{}");
+        const items = (data && data.items) || [];
         const doc = items[idx];
         if (!doc) throw new Error("未找到行数据");
         const id = extractId(doc);
-        const col = state.activeCol || ($("collection").value || "").trim();
+        const col = ($("collection").value || "").trim();
         if (!col) throw new Error("collection 为空");
         if (!id) throw new Error("该文档缺少 _id，无法执行行级操作");
 
@@ -919,38 +651,25 @@
         if (act === "del") {
           const ok = confirm(`确认删除？\ncollection=${col}\n_id=${id}`);
           if (!ok) return;
-          // UI feedback：禁用按钮，避免重复点击
-          btn.disabled = true;
-          const oldText = btn.textContent;
-          btn.textContent = "删除中...";
-          setStatus(`删除中：${col} / _id=${id}`, "");
           const res = await apiPost("/api/fun-ai/workspace/mongo/delete-by-id", p, { collection: col, id });
           if (res.code !== 200) throw new Error(res.message || "请求失败");
-          const dc = (res.data && res.data.deletedCount) || 0;
-          if (dc > 0) {
-            // 立即从当前视图移除，用户能立刻看到变化
-            const nextItems = items.slice(0, idx).concat(items.slice(idx + 1));
-            if (state.lastQueryData && Array.isArray(state.lastQueryData.items)) {
-              state.lastQueryData.items = nextItems;
-              if (typeof state.lastQueryData.returned === "number") {
-                state.lastQueryData.returned = Math.max(0, state.lastQueryData.returned - 1);
-              }
-            }
-            renderTable(nextItems);
-            setStatus("OK: deletedCount=" + dc, "ok");
-            // 后台再刷新一次，保证与后端一致
-            setTimeout(() => { try { $("btnFind").click(); } catch (e) {} }, 10);
-          } else {
-            setStatus("未删除成功（deletedCount=0）。可能 _id 类型不匹配或记录已不存在。", "err");
-          }
-          // 恢复按钮状态
-          btn.disabled = false;
-          btn.textContent = oldText;
+          setStatus("OK: deletedCount=" + (res.data && res.data.deletedCount), "ok");
+          $("btnFind").click();
           return;
         }
 
         if (act === "edit") {
-          openEditForDoc(doc, idx);
+          // 以 $set 方式更新：默认把 doc 除 _id 外全部 set 回去（可在弹窗里改）
+          const clone = JSON.parse(JSON.stringify(doc));
+          delete clone._id;
+          const txt = prompt("编辑并保存（将作为 {$set: ...} 提交；不要包含 _id）", JSON.stringify(clone, null, 2));
+          if (txt == null) return;
+          const setObj = JSON.parse(txt);
+          const update = JSON.stringify({ $set: setObj });
+          const res = await apiPost("/api/fun-ai/workspace/mongo/update-by-id", p, { collection: col, id, update, upsert: false });
+          if (res.code !== 200) throw new Error(res.message || "请求失败");
+          setStatus("OK: matched=" + (res.data && res.data.matchedCount) + ", modified=" + (res.data && res.data.modifiedCount), "ok");
+          $("btnFind").click();
           return;
         }
       } catch (err) {

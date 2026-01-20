@@ -195,6 +195,44 @@ public class WorkspaceMongoShellClient {
         return r == null ? Map.of() : toStringObjectMap(r);
     }
 
+    public Map<String, Object> createCollection(String containerName, String dbName, String collection, String optionsJson) {
+        assertMongoEnabled();
+        assertContainerName(containerName);
+        assertDbName(dbName);
+        assertCollectionName(collection);
+        MongoShell shell = getShellCached(containerName);
+        String opts = StringUtils.hasText(optionsJson) ? optionsJson.trim() : "";
+
+        String script = shell.isMongosh()
+                ? ""
+                + "const dbName='" + jsSingleQuoted(dbName) + "';\n"
+                + "const collName='" + jsSingleQuoted(collection) + "';\n"
+                + "const db2=db.getSiblingDB(dbName);\n"
+                + "let created=false; let msg='';\n"
+                + "try{\n"
+                + (opts.isEmpty()
+                ? "  db2.createCollection(collName);\n"
+                : "  const opts=EJSON.parse('" + jsSingleQuoted(opts) + "');\n  db2.createCollection(collName, opts);\n")
+                + "  created=true;\n"
+                + "}catch(e){ msg=String(e && e.message ? e.message : e); }\n"
+                + "print(EJSON.stringify({dbName:dbName,collection:collName,created:created,message:msg},{relaxed:true}));\n"
+                : ""
+                + "var dbName='" + jsSingleQuoted(dbName) + "';\n"
+                + "var collName='" + jsSingleQuoted(collection) + "';\n"
+                + "var db2=db.getSiblingDB(dbName);\n"
+                + "var created=false; var msg='';\n"
+                + "try{\n"
+                + (opts.isEmpty()
+                ? "  db2.createCollection(collName);\n"
+                : "  var opts=JSON.parse('" + jsSingleQuoted(opts) + "');\n  db2.createCollection(collName, opts);\n")
+                + "  created=true;\n"
+                + "}catch(e){ msg=String(e && e.message ? e.message : e); }\n"
+                + "print(JSON.stringify({dbName:dbName,collection:collName,created:created,message:msg}));\n";
+
+        Map<?, ?> r = runMongoShellJson(shell, containerName, dbName, script, true);
+        return r == null ? Map.of() : toStringObjectMap(r);
+    }
+
     public Map<String, Object> insertOne(String containerName, String dbName, String collection, String docJson) {
         assertMongoEnabled();
         assertContainerName(containerName);

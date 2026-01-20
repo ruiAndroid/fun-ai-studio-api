@@ -44,6 +44,8 @@ import java.nio.file.Paths;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.HashSet;
 
 /**
  * Workspace Mongo Explorer（只读）
@@ -228,7 +230,15 @@ public class FunAiWorkspaceMongoController {
             String dbName = dbNameForApp(appId);
             assertPreviewRunning(userId, appId);
             WorkspaceMongoShellClient mongoShellClient = requireMongoShellClient();
-            Map<String, Object> out = mongoShellClient.createCollection(containerName, dbName, req.getCollection());
+
+            // 可选：根据 fields 生成 validator($jsonSchema)
+            String optionsJson = null;
+            if (req.getFields() != null && !req.getFields().isEmpty()) {
+                optionsJson = buildCreateCollectionOptionsJson(req);
+            }
+            Map<String, Object> out = (optionsJson == null)
+                    ? mongoShellClient.createCollection(containerName, dbName, req.getCollection())
+                    : mongoShellClient.createCollection(containerName, dbName, req.getCollection(), optionsJson);
 
             WorkspaceMongoCreateCollectionResponse resp = new WorkspaceMongoCreateCollectionResponse();
             resp.setUserId(userId);
@@ -244,6 +254,83 @@ public class FunAiWorkspaceMongoController {
             log.error("mongo create-collection failed: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
             return Result.error("mongo create-collection failed: " + e.getMessage());
         }
+    }
+
+    private String buildCreateCollectionOptionsJson(WorkspaceMongoCreateCollectionRequest req) {
+        // Mongo createCollection options: { validator: { $jsonSchema: ... }, validationAction, validationLevel }
+        boolean strict = req.getStrict() != null && req.getStrict();
+
+        Map<String, Object> jsonSchema = new LinkedHashMap<>();
+        jsonSchema.put("bsonType", "object");
+        Map<String, Object> props = new LinkedHashMap<>();
+        Set<String> required = new HashSet<>();
+
+        for (WorkspaceMongoCreateCollectionRequest.Field f : req.getFields()) {
+            if (f == null) continue;
+            String name = f.getName() == null ? "" : f.getName().trim();
+            if (name.isEmpty()) continue;
+            String type = f.getType() == null ? "" : f.getType().trim().toLowerCase();
+            boolean nullable = (f.getNullable() == null) || f.getNullable();
+            String bsonType = mapToBsonType(type);
+
+            Map<String, Object> def = new LinkedHashMap<>();
+            if (nullable) {
+                def.put("bsonType", List.of(bsonType, "null"));
+            } else {
+                def.put("bsonType", bsonType);
+            }
+            // 文档化信息：default/description（Mongo 不强制应用 default，仅用于 schema 展示/约束描述）
+            if (f.getDefaultValue() != null) {
+                def.put("default", f.getDefaultValue());
+            }
+            if (StringUtils.hasText(f.getComment())) {
+                def.put("description", f.getComment().trim());
+            }
+            props.put(name, def);
+
+            if (f.getRequired() != null && f.getRequired()) {
+                required.add(name);
+            }
+        }
+
+        jsonSchema.put("properties", props);
+        if (!required.isEmpty()) {
+            jsonSchema.put("required", required.stream().sorted().toList());
+        }
+        // 默认允许额外字段（更符合 Mongo “灵活”），避免前端未列出字段导致写入失败
+        jsonSchema.put("additionalProperties", true);
+
+        Map<String, Object> validator = new LinkedHashMap<>();
+        validator.put("$jsonSchema", jsonSchema);
+
+        Map<String, Object> options = new LinkedHashMap<>();
+        options.put("validator", validator);
+        options.put("validationAction", strict ? "error" : "warn");
+        options.put("validationLevel", strict ? "strict" : "moderate");
+
+        try {
+            return objectMapper.writeValueAsString(options);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("fields 生成 schema 失败：" + e.getMessage());
+        }
+    }
+
+    private static String mapToBsonType(String t) {
+        if (t == null) return "string";
+        String s = t.trim().toLowerCase();
+        if (s.isEmpty()) return "string";
+        return switch (s) {
+            case "string", "str" -> "string";
+            case "number", "double", "float", "decimal" -> "double";
+            case "int", "int32", "integer" -> "int";
+            case "long", "int64" -> "long";
+            case "bool", "boolean" -> "bool";
+            case "date", "datetime", "timestamp" -> "date";
+            case "objectid", "oid" -> "objectId";
+            case "object", "map" -> "object";
+            case "array", "list" -> "array";
+            default -> "string";
+        };
     }
 
     @PostMapping("/insert-one")
