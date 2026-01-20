@@ -243,7 +243,7 @@
 
   <script>
     const $ = (id) => document.getElementById(id);
-    const state = { activeCol: null };
+    const state = { activeCol: null, lastQueryData: null };
 
     function parseParamsFromUrl() {
       const q = new URLSearchParams(location.search || "");
@@ -447,6 +447,7 @@
             };
             const res = await apiPost("/api/fun-ai/workspace/mongo/find", p, body);
             if (res.code !== 200) throw new Error(res.message || "请求失败");
+            state.lastQueryData = res.data; // 保存查询结果
             renderTable((res.data && res.data.items) || []);
             setStatus("OK: " + c + ", 返回 " + (res.data && res.data.returned) + " 条记录", "ok");
           } catch (e) {
@@ -550,6 +551,7 @@
         };
         const res = await apiPost("/api/fun-ai/workspace/mongo/find", p, body);
         if (res.code !== 200) throw new Error(res.message || "请求失败");
+        state.lastQueryData = res.data; // 保存查询结果
         renderTable((res.data && res.data.items) || []);
         setStatus("OK: " + col + ", 返回 " + (res.data && res.data.returned) + " 条记录", "ok");
       } catch (e) {
@@ -694,12 +696,11 @@
       const act = btn.getAttribute("data-act");
       const idx = parseInt(btn.getAttribute("data-idx"), 10);
       try {
-        const data = JSON.parse($("out").textContent || "{}");
-        const items = (data && data.items) || [];
+        const items = (state.lastQueryData && state.lastQueryData.items) || [];
         const doc = items[idx];
         if (!doc) throw new Error("未找到行数据");
         const id = extractId(doc);
-        const col = ($("collection").value || "").trim();
+        const col = state.activeCol || ($("collection").value || "").trim();
         if (!col) throw new Error("collection 为空");
         if (!id) throw new Error("该文档缺少 _id，无法执行行级操作");
 
