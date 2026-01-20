@@ -608,13 +608,13 @@
         if (guessed) $("token").value = guessed;
       }
 
-      // 若 URL 已明确注入三要素（userId/appId/token），则直接锁定输入并提示用户可直接“加载集合”
+      // 若 URL 已明确注入三要素（userId/appId/token），则直接锁定输入并提示用户可直接「加载集合」
       const injectedAll = !!(fromUrl.userId && fromUrl.appId && fromUrl.token);
       if (injectedAll) {
         $("userId").disabled = true;
         $("appId").disabled = true;
         $("token").disabled = true;
-        setStatus("已从 URL 注入 userId/appId/token，可直接点击“加载集合”。（建议 token 放在 #hash 中）", "ok");
+        setStatus("已从 URL 注入 userId/appId/token，可直接点击「加载集合」。（建议 token 放在 #hash 中）", "ok");
       }
     } catch (e) {
       renderAppOptions([]);
