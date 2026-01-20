@@ -3,10 +3,19 @@ package fun.ai.studio.controller.workspace.mongo;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fun.ai.studio.common.Result;
 import fun.ai.studio.entity.request.WorkspaceMongoFindRequest;
+import fun.ai.studio.entity.request.WorkspaceMongoCreateCollectionRequest;
+import fun.ai.studio.entity.request.WorkspaceMongoInsertOneRequest;
+import fun.ai.studio.entity.request.WorkspaceMongoUpdateByIdRequest;
+import fun.ai.studio.entity.request.WorkspaceMongoDeleteByIdRequest;
+import fun.ai.studio.entity.request.WorkspaceMongoOpRequest;
 import fun.ai.studio.entity.response.FunAiWorkspaceRunMeta;
 import fun.ai.studio.entity.response.WorkspaceMongoCollectionsResponse;
 import fun.ai.studio.entity.response.WorkspaceMongoDocResponse;
 import fun.ai.studio.entity.response.WorkspaceMongoFindResponse;
+import fun.ai.studio.entity.response.WorkspaceMongoCreateCollectionResponse;
+import fun.ai.studio.entity.response.WorkspaceMongoInsertOneResponse;
+import fun.ai.studio.entity.response.WorkspaceMongoUpdateOneResponse;
+import fun.ai.studio.entity.response.WorkspaceMongoDeleteOneResponse;
 import fun.ai.studio.service.FunAiAppService;
 import fun.ai.studio.service.FunAiWorkspaceService;
 import fun.ai.studio.workspace.WorkspaceActivityTracker;
@@ -198,6 +207,248 @@ public class FunAiWorkspaceMongoController {
         }
     }
 
+    @PostMapping("/create-collection")
+    @Operation(summary = "创建集合（写）", description = "在容器内使用 mongosh 创建集合（同 appId 仅允许访问 dbNamePrefix+appId）")
+    public Result<WorkspaceMongoCreateCollectionResponse> createCollection(
+            @RequestParam Long userId,
+            @RequestParam Long appId,
+            @RequestBody WorkspaceMongoCreateCollectionRequest req
+    ) {
+        try {
+            assertAppOwned(userId, appId);
+            activityTracker.touch(userId);
+            if (req == null || !StringUtils.hasText(req.getCollection())) throw new IllegalArgumentException("collection 不能为空");
+
+            if (workspaceNodeClient != null && workspaceNodeClient.isEnabled()) {
+                WorkspaceMongoCreateCollectionResponse remote = workspaceNodeClient.mongoCreateCollection(userId, appId, req);
+                return Result.success(remote);
+            }
+
+            String containerName = containerName(userId);
+            String dbName = dbNameForApp(appId);
+            assertPreviewRunning(userId, appId);
+            WorkspaceMongoShellClient mongoShellClient = requireMongoShellClient();
+            Map<String, Object> out = mongoShellClient.createCollection(containerName, dbName, req.getCollection());
+
+            WorkspaceMongoCreateCollectionResponse resp = new WorkspaceMongoCreateCollectionResponse();
+            resp.setUserId(userId);
+            resp.setAppId(appId);
+            resp.setDbName(dbName);
+            resp.setCollection(asString(out.get("collection")));
+            resp.setCreated(asBool(out.get("created")));
+            resp.setMessage(asString(out.get("message")));
+            return Result.success(resp);
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            log.error("mongo create-collection failed: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
+            return Result.error("mongo create-collection failed: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/insert-one")
+    @Operation(summary = "插入单条（写）", description = "在容器内使用 mongosh insertOne（doc 为 JSON/EJSON）")
+    public Result<WorkspaceMongoInsertOneResponse> insertOne(
+            @RequestParam Long userId,
+            @RequestParam Long appId,
+            @RequestBody WorkspaceMongoInsertOneRequest req
+    ) {
+        try {
+            assertAppOwned(userId, appId);
+            activityTracker.touch(userId);
+            if (req == null) throw new IllegalArgumentException("body 不能为空");
+            if (!StringUtils.hasText(req.getCollection())) throw new IllegalArgumentException("collection 不能为空");
+            if (!StringUtils.hasText(req.getDoc())) throw new IllegalArgumentException("doc 不能为空");
+
+            if (workspaceNodeClient != null && workspaceNodeClient.isEnabled()) {
+                WorkspaceMongoInsertOneResponse remote = workspaceNodeClient.mongoInsertOne(userId, appId, req);
+                return Result.success(remote);
+            }
+
+            String containerName = containerName(userId);
+            String dbName = dbNameForApp(appId);
+            assertPreviewRunning(userId, appId);
+            WorkspaceMongoShellClient mongoShellClient = requireMongoShellClient();
+            Map<String, Object> out = mongoShellClient.insertOne(containerName, dbName, req.getCollection(), req.getDoc());
+
+            WorkspaceMongoInsertOneResponse resp = new WorkspaceMongoInsertOneResponse();
+            resp.setUserId(userId);
+            resp.setAppId(appId);
+            resp.setDbName(dbName);
+            resp.setCollection(asString(out.get("collection")));
+            resp.setAcknowledged(asBool(out.get("acknowledged")));
+            resp.setInsertedId(normalizeId(out.get("insertedId")));
+            return Result.success(resp);
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            log.error("mongo insert-one failed: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
+            return Result.error("mongo insert-one failed: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/update-by-id")
+    @Operation(summary = "按 _id 更新（写）", description = "在容器内使用 mongosh updateOne({_id}, update)；update 为 JSON/EJSON（建议 {$set:{...}}）")
+    public Result<WorkspaceMongoUpdateOneResponse> updateById(
+            @RequestParam Long userId,
+            @RequestParam Long appId,
+            @RequestBody WorkspaceMongoUpdateByIdRequest req
+    ) {
+        try {
+            assertAppOwned(userId, appId);
+            activityTracker.touch(userId);
+            if (req == null) throw new IllegalArgumentException("body 不能为空");
+            if (!StringUtils.hasText(req.getCollection())) throw new IllegalArgumentException("collection 不能为空");
+            if (!StringUtils.hasText(req.getId())) throw new IllegalArgumentException("id 不能为空");
+            if (!StringUtils.hasText(req.getUpdate())) throw new IllegalArgumentException("update 不能为空");
+
+            if (workspaceNodeClient != null && workspaceNodeClient.isEnabled()) {
+                WorkspaceMongoUpdateOneResponse remote = workspaceNodeClient.mongoUpdateById(userId, appId, req);
+                return Result.success(remote);
+            }
+
+            String containerName = containerName(userId);
+            String dbName = dbNameForApp(appId);
+            assertPreviewRunning(userId, appId);
+            WorkspaceMongoShellClient mongoShellClient = requireMongoShellClient();
+            Map<String, Object> out = mongoShellClient.updateOneById(containerName, dbName, req.getCollection(), req.getId(), req.getUpdate(), req.getUpsert());
+
+            WorkspaceMongoUpdateOneResponse resp = new WorkspaceMongoUpdateOneResponse();
+            resp.setUserId(userId);
+            resp.setAppId(appId);
+            resp.setDbName(dbName);
+            resp.setCollection(asString(out.get("collection")));
+            resp.setAcknowledged(asBool(out.get("acknowledged")));
+            resp.setMatchedCount(asInt(out.get("matchedCount")));
+            resp.setModifiedCount(asInt(out.get("modifiedCount")));
+            resp.setUpsertedId(normalizeId(out.get("upsertedId")));
+            return Result.success(resp);
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            log.error("mongo update-by-id failed: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
+            return Result.error("mongo update-by-id failed: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/delete-by-id")
+    @Operation(summary = "按 _id 删除（写）", description = "在容器内使用 mongosh deleteOne({_id})")
+    public Result<WorkspaceMongoDeleteOneResponse> deleteById(
+            @RequestParam Long userId,
+            @RequestParam Long appId,
+            @RequestBody WorkspaceMongoDeleteByIdRequest req
+    ) {
+        try {
+            assertAppOwned(userId, appId);
+            activityTracker.touch(userId);
+            if (req == null) throw new IllegalArgumentException("body 不能为空");
+            if (!StringUtils.hasText(req.getCollection())) throw new IllegalArgumentException("collection 不能为空");
+            if (!StringUtils.hasText(req.getId())) throw new IllegalArgumentException("id 不能为空");
+
+            if (workspaceNodeClient != null && workspaceNodeClient.isEnabled()) {
+                WorkspaceMongoDeleteOneResponse remote = workspaceNodeClient.mongoDeleteById(userId, appId, req);
+                return Result.success(remote);
+            }
+
+            String containerName = containerName(userId);
+            String dbName = dbNameForApp(appId);
+            assertPreviewRunning(userId, appId);
+            WorkspaceMongoShellClient mongoShellClient = requireMongoShellClient();
+            Map<String, Object> out = mongoShellClient.deleteOneById(containerName, dbName, req.getCollection(), req.getId());
+
+            WorkspaceMongoDeleteOneResponse resp = new WorkspaceMongoDeleteOneResponse();
+            resp.setUserId(userId);
+            resp.setAppId(appId);
+            resp.setDbName(dbName);
+            resp.setCollection(asString(out.get("collection")));
+            resp.setAcknowledged(asBool(out.get("acknowledged")));
+            resp.setDeletedCount(asInt(out.get("deletedCount")));
+            return Result.success(resp);
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            log.error("mongo delete-by-id failed: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
+            return Result.error("mongo delete-by-id failed: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/op")
+    @Operation(summary = "高级操作（安全 JSON 模式）", description = "以 op + 结构化字段执行（不接受任意 JS）。适合在页面里写“语句”并执行。")
+    public Result<Object> op(
+            @RequestParam Long userId,
+            @RequestParam Long appId,
+            @RequestBody WorkspaceMongoOpRequest req
+    ) {
+        try {
+            assertAppOwned(userId, appId);
+            activityTracker.touch(userId);
+            if (req == null || !StringUtils.hasText(req.getOp())) throw new IllegalArgumentException("op 不能为空");
+
+            if (workspaceNodeClient != null && workspaceNodeClient.isEnabled()) {
+                Object remote = workspaceNodeClient.mongoOp(userId, appId, req);
+                return Result.success(remote);
+            }
+
+            String op = req.getOp().trim().toLowerCase();
+            if ("find".equals(op)) {
+                WorkspaceMongoFindRequest fr = new WorkspaceMongoFindRequest();
+                fr.setCollection(req.getCollection());
+                fr.setFilter(req.getFilter());
+                fr.setProjection(req.getProjection());
+                fr.setSort(req.getSort());
+                fr.setLimit(req.getLimit());
+                fr.setSkip(req.getSkip());
+                return wrap(find(userId, appId, fr));
+            }
+            if ("doc".equals(op)) {
+                if (!StringUtils.hasText(req.getCollection())) throw new IllegalArgumentException("collection 不能为空");
+                if (!StringUtils.hasText(req.getId())) throw new IllegalArgumentException("id 不能为空");
+                return wrap(doc(userId, appId, req.getCollection(), req.getId()));
+            }
+            if ("createcollection".equals(op) || "create_collection".equals(op) || "create-collection".equals(op)) {
+                WorkspaceMongoCreateCollectionRequest cr = new WorkspaceMongoCreateCollectionRequest();
+                cr.setCollection(req.getCollection());
+                return wrap(createCollection(userId, appId, cr));
+            }
+            if ("insertone".equals(op) || "insert_one".equals(op) || "insert-one".equals(op)) {
+                WorkspaceMongoInsertOneRequest ir = new WorkspaceMongoInsertOneRequest();
+                ir.setCollection(req.getCollection());
+                ir.setDoc(req.getDoc());
+                return wrap(insertOne(userId, appId, ir));
+            }
+            if ("updatebyid".equals(op) || "update_by_id".equals(op) || "update-by-id".equals(op)) {
+                WorkspaceMongoUpdateByIdRequest ur = new WorkspaceMongoUpdateByIdRequest();
+                ur.setCollection(req.getCollection());
+                ur.setId(req.getId());
+                ur.setUpdate(req.getUpdate());
+                ur.setUpsert(req.getUpsert());
+                return wrap(updateById(userId, appId, ur));
+            }
+            if ("deletebyid".equals(op) || "delete_by_id".equals(op) || "delete-by-id".equals(op)) {
+                WorkspaceMongoDeleteByIdRequest dr = new WorkspaceMongoDeleteByIdRequest();
+                dr.setCollection(req.getCollection());
+                dr.setId(req.getId());
+                return wrap(deleteById(userId, appId, dr));
+            }
+
+            throw new IllegalArgumentException("不支持的 op：" + req.getOp() + "（支持 find/doc/createCollection/insertOne/updateById/deleteById）");
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            log.error("mongo op failed: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
+            return Result.error("mongo op failed: " + e.getMessage());
+        }
+    }
+
+    private static <T> Result<Object> wrap(Result<T> r) {
+        if (r == null) return Result.error("内部错误：空响应");
+        Integer code = r.getCode();
+        if (code == null || code != 200) {
+            return Result.error(r.getMessage() == null ? "请求失败" : r.getMessage());
+        }
+        return Result.success(r.getData());
+    }
+
     private void assertAppOwned(Long userId, Long appId) {
         if (userId == null || appId == null) {
             throw new IllegalArgumentException("userId/appId 不能为空");
@@ -242,6 +493,25 @@ public class FunAiWorkspaceMongoController {
         } catch (Exception ignore) {
             return null;
         }
+    }
+
+    private static Boolean asBool(Object v) {
+        if (v == null) return null;
+        if (v instanceof Boolean b) return b;
+        String s = String.valueOf(v).trim().toLowerCase();
+        if ("true".equals(s) || "1".equals(s) || "yes".equals(s)) return true;
+        if ("false".equals(s) || "0".equals(s) || "no".equals(s)) return false;
+        return null;
+    }
+
+    private static String normalizeId(Object v) {
+        if (v == null) return null;
+        // mongosh EJSON relaxed 下，ObjectId 常见形态：{"$oid":"..."}；这里尽量提取成字符串
+        if (v instanceof Map<?, ?> m) {
+            Object oid = m.get("$oid");
+            if (oid != null) return String.valueOf(oid);
+        }
+        return String.valueOf(v);
     }
 
     private static List<Map<String, Object>> toListOfStringObjectMap(Object v) {

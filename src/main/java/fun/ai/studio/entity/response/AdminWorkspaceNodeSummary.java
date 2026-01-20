@@ -11,6 +11,14 @@ public class AdminWorkspaceNodeSummary {
     private Integer enabled;
     private Integer weight;
     private Long assignedUsers;
+    /**
+     * 最近一次心跳时间（epoch ms）。为空表示从未上报。
+     */
+    private Long lastHeartbeatAtMs;
+    /**
+     * 健康状态：HEALTHY / STALE / UNKNOWN
+     */
+    private String health;
 }
 
 

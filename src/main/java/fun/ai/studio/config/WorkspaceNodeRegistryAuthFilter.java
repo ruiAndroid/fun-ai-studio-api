@@ -13,21 +13,18 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
- * /api/fun-ai/admin/** 管理接口鉴权：
- * - 来源 IP 在白名单内
- * - Header 携带 X-Admin-Token
+ * workspace-node 节点心跳鉴权（不依赖 JWT）：可选 IP 白名单 + 共享密钥 Header。
  *
- * 注意：不要依赖 Spring Security/JWT（运维独立控制）。
+ * 仅保护节点心跳接口：/api/fun-ai/admin/workspace-nodes/heartbeat
  */
-public class AdminAuthFilter extends OncePerRequestFilter {
+public class WorkspaceNodeRegistryAuthFilter extends OncePerRequestFilter {
 
-    private static final String PREFIX = "/api/fun-ai/admin/";
-    private static final String WS_NODE_HEARTBEAT = "/api/fun-ai/admin/workspace-nodes/heartbeat";
-    private static final String HDR = "X-Admin-Token";
+    private static final String PATH = "/api/fun-ai/admin/workspace-nodes/heartbeat";
+    private static final String HDR = "X-WS-Node-Token";
 
-    private final AdminSecurityProperties props;
+    private final WorkspaceNodeRegistryProperties props;
 
-    public AdminAuthFilter(AdminSecurityProperties props) {
+    public WorkspaceNodeRegistryAuthFilter(WorkspaceNodeRegistryProperties props) {
         this.props = props;
     }
 
@@ -35,7 +32,7 @@ public class AdminAuthFilter extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest request) {
         if (request == null) return true;
         String uri = request.getRequestURI();
-        if (!StringUtils.hasText(uri) || !uri.startsWith(PREFIX)) return true;
+        if (!StringUtils.hasText(uri) || !PATH.equals(uri)) return true;
         return props != null && !props.isEnabled();
     }
 
@@ -43,37 +40,30 @@ public class AdminAuthFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
 
-        // workspace-node 心跳使用独立鉴权（X-WS-Node-Token），不走 admin token
-        String uri = request == null ? null : request.getRequestURI();
-        if (WS_NODE_HEARTBEAT.equals(uri)) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-
         if (props == null || !props.isEnabled()) {
             filterChain.doFilter(request, response);
             return;
         }
 
-        // 注意：在 Nginx 反代到本机 127.0.0.1:8080 的场景下，remoteAddr 可能是 127.0.0.1；
-        // 同时也会有 X-Forwarded-For（真实客户端 IP）。
-        // 为了兼容这类部署：只要 remoteAddr 或 forwarded clientIp 任意一个命中白名单即可。
+        // 可选 IP 白名单：为空则不校验
         String remoteIp = request.getRemoteAddr();
         String forwardedIp = clientIp(request);
-        if (!isAllowedIp(remoteIp, props.getAllowedIps()) && !isAllowedIp(forwardedIp, props.getAllowedIps())) {
-            deny(response, 403, "admin forbidden: ip not allowed");
-            return;
+        List<String> allowed = props.getAllowedIps();
+        if (allowed != null && !allowed.isEmpty()) {
+            if (!isAllowedIp(remoteIp, allowed) && !isAllowedIp(forwardedIp, allowed)) {
+                deny(response, 403, "workspace-node heartbeat forbidden: ip not allowed");
+                return;
+            }
         }
 
-        String expected = props.getToken();
-        if (!StringUtils.hasText(expected) || "CHANGE_ME_STRONG_ADMIN_TOKEN".equals(expected)) {
-            deny(response, 500, "admin token not configured");
+        String expected = props.getSharedSecret();
+        if (!StringUtils.hasText(expected) || "CHANGE_ME_STRONG_SECRET".equals(expected)) {
+            deny(response, 500, "workspace-node registry secret not configured");
             return;
         }
-
         String got = request.getHeader(HDR);
         if (!expected.equals(got)) {
-            deny(response, 401, "admin unauthorized");
+            deny(response, 401, "workspace-node heartbeat unauthorized");
             return;
         }
 
@@ -91,7 +81,6 @@ public class AdminAuthFilter extends OncePerRequestFilter {
     }
 
     private String clientIp(HttpServletRequest request) {
-        // 入口 Nginx/网关场景：优先信任 X-Forwarded-For 的第一个值（如果你不想信任，可只用 remoteAddr）
         String xff = request.getHeader("X-Forwarded-For");
         if (StringUtils.hasText(xff)) {
             String first = xff.split(",")[0].trim();

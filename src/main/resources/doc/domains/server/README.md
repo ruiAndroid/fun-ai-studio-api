@@ -5,6 +5,7 @@
 ## 目录
 
 - [多机扩容方案（面向 Workspace）](./scaling-workspace.md)
+- [多机扩容方案（面向 Deploy / Runner / Runtime）](./scaling-deploy-runtime.md)
 - [Workspace 开发服务器（大机）容器节点（workspace-node）部署与联调说明](./workspace-node.md)
 - [API 服务器（小机）Nginx 示例：workspace 双机拆分（/ws 与终端 WS 转发到 Workspace 开发服务器（大机））](./small-nginx-workspace-split.conf.example)
 - [最小可落地监控方案（Prometheus + Grafana）](./monitoring-minimal.md)

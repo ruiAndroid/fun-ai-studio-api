@@ -10,9 +10,18 @@ import fun.ai.studio.entity.response.FunAiWorkspaceFileTreeResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceProjectDirResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceRunStatusResponse;
 import fun.ai.studio.entity.request.WorkspaceMongoFindRequest;
+import fun.ai.studio.entity.request.WorkspaceMongoCreateCollectionRequest;
+import fun.ai.studio.entity.request.WorkspaceMongoInsertOneRequest;
+import fun.ai.studio.entity.request.WorkspaceMongoUpdateByIdRequest;
+import fun.ai.studio.entity.request.WorkspaceMongoDeleteByIdRequest;
+import fun.ai.studio.entity.request.WorkspaceMongoOpRequest;
 import fun.ai.studio.entity.response.WorkspaceMongoCollectionsResponse;
 import fun.ai.studio.entity.response.WorkspaceMongoDocResponse;
 import fun.ai.studio.entity.response.WorkspaceMongoFindResponse;
+import fun.ai.studio.entity.response.WorkspaceMongoCreateCollectionResponse;
+import fun.ai.studio.entity.response.WorkspaceMongoInsertOneResponse;
+import fun.ai.studio.entity.response.WorkspaceMongoUpdateOneResponse;
+import fun.ai.studio.entity.response.WorkspaceMongoDeleteOneResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -129,6 +138,66 @@ public class WorkspaceNodeClient {
                 "id", id == null ? "" : id
         ));
         return requestJson("GET", path, query, null, new TypeReference<Result<WorkspaceMongoDocResponse>>() {});
+    }
+
+    public WorkspaceMongoCreateCollectionResponse mongoCreateCollection(Long userId, Long appId, WorkspaceMongoCreateCollectionRequest req) {
+        String path = "/api/fun-ai/workspace/mongo/create-collection";
+        String query = query(Map.of("userId", String.valueOf(userId), "appId", String.valueOf(appId)));
+        byte[] body;
+        try {
+            body = objectMapper.writeValueAsBytes(req);
+        } catch (Exception e) {
+            throw new RuntimeException("mongo create-collection request encode failed: " + e.getMessage(), e);
+        }
+        return requestJson("POST", path, query, body, new TypeReference<Result<WorkspaceMongoCreateCollectionResponse>>() {});
+    }
+
+    public WorkspaceMongoInsertOneResponse mongoInsertOne(Long userId, Long appId, WorkspaceMongoInsertOneRequest req) {
+        String path = "/api/fun-ai/workspace/mongo/insert-one";
+        String query = query(Map.of("userId", String.valueOf(userId), "appId", String.valueOf(appId)));
+        byte[] body;
+        try {
+            body = objectMapper.writeValueAsBytes(req);
+        } catch (Exception e) {
+            throw new RuntimeException("mongo insert-one request encode failed: " + e.getMessage(), e);
+        }
+        return requestJson("POST", path, query, body, new TypeReference<Result<WorkspaceMongoInsertOneResponse>>() {});
+    }
+
+    public WorkspaceMongoUpdateOneResponse mongoUpdateById(Long userId, Long appId, WorkspaceMongoUpdateByIdRequest req) {
+        String path = "/api/fun-ai/workspace/mongo/update-by-id";
+        String query = query(Map.of("userId", String.valueOf(userId), "appId", String.valueOf(appId)));
+        byte[] body;
+        try {
+            body = objectMapper.writeValueAsBytes(req);
+        } catch (Exception e) {
+            throw new RuntimeException("mongo update-by-id request encode failed: " + e.getMessage(), e);
+        }
+        return requestJson("POST", path, query, body, new TypeReference<Result<WorkspaceMongoUpdateOneResponse>>() {});
+    }
+
+    public WorkspaceMongoDeleteOneResponse mongoDeleteById(Long userId, Long appId, WorkspaceMongoDeleteByIdRequest req) {
+        String path = "/api/fun-ai/workspace/mongo/delete-by-id";
+        String query = query(Map.of("userId", String.valueOf(userId), "appId", String.valueOf(appId)));
+        byte[] body;
+        try {
+            body = objectMapper.writeValueAsBytes(req);
+        } catch (Exception e) {
+            throw new RuntimeException("mongo delete-by-id request encode failed: " + e.getMessage(), e);
+        }
+        return requestJson("POST", path, query, body, new TypeReference<Result<WorkspaceMongoDeleteOneResponse>>() {});
+    }
+
+    public Object mongoOp(Long userId, Long appId, WorkspaceMongoOpRequest req) {
+        String path = "/api/fun-ai/workspace/mongo/op";
+        String query = query(Map.of("userId", String.valueOf(userId), "appId", String.valueOf(appId)));
+        byte[] body;
+        try {
+            body = objectMapper.writeValueAsBytes(req);
+        } catch (Exception e) {
+            throw new RuntimeException("mongo op request encode failed: " + e.getMessage(), e);
+        }
+        return requestJson("POST", path, query, body, new TypeReference<Result<Object>>() {});
     }
 
     private boolean containsPackageJson(List<FunAiWorkspaceFileNode> nodes) {

@@ -10,6 +10,7 @@
 
 - **目标**：给用户提供“应用管理 + 在线开发环境（Workspace）”的一体化能力：打开编辑器、同步文件、运行预览、查看日志、在线终端、可选的容器内 Mongo。
 - **体验关键**：前端尽量通过少量 API 即可进入编辑/预览；后端通过受控脚本与状态文件，保证“平台拥有最终控制权”（避免进程/端口/状态错乱）。
+- **发布能力（新增）**：用户完成开发后，平台将“用户前后端一体应用”部署到 Runtime 节点（容器）并对公网统一域名下路径暴露（`/apps/{appId}/...`）。
 
 ---
 
@@ -133,6 +134,31 @@ flowchart TD
 
 - 扩容关键是把 **userId 落点（nodeId/hostPort）** 存起来，并让 Gateway 能按 userId 路由到正确的 WorkspaceNode。
 
+### 3.4 Deploy 域子架构图（控制面 / Runner / Runtime）
+
+```mermaid
+flowchart TD
+  FE["前端/用户(User/Console)"] --> API["API(统一入口_fun-ai-studio-api)"]
+  API --> Deploy["Deploy 控制面(fun-ai-studio-deploy)"]
+  Runner["Runner(执行面_fun-ai-studio-runner)"] --> Deploy
+  Agent["Runtime-Agent(fun-ai-studio-runtime)"] --> Deploy
+  Runner --> Agent
+
+  GW["Runtime 网关(Traefik/Nginx)"] --> App["用户应用容器(AppContainer)"]
+  FE -->|"访问 /apps/{appId}/..."| GW
+```
+
+说明（配合图看）：
+
+- **用户只访问 API**：API 负责鉴权与入口编排，内部调用 Deploy 创建/查询 Job。
+- **Deploy 不执行用户代码**：Deploy 只负责任务编排与记录（控制面），执行动作由 Runner 完成（执行面）。
+- **Runtime 对外暴露统一入口**：用户应用最终跑在 Runtime 节点的容器里，通过网关统一域名下按路径访问。
+
+深入阅读：
+
+- `doc/domains/deploy/README.md`（API 入口与调用链）
+- `doc/domains/deploy/architecture.md`（整体架构与互联矩阵/运维视角）
+
 ---
 
 ## 4. 关键链路（时序图）
@@ -202,6 +228,7 @@ Api-->>Browser: Result{data}(结果)
 
 - `doc/domains/app/README.md`
 - `doc/domains/workspace/README.md`
+- `doc/domains/deploy/README.md`
 - `doc/domains/server/scaling-workspace.md`
 
 

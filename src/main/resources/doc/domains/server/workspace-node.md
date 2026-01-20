@@ -178,6 +178,63 @@ workspace-node.internal.require-signature=false
 
 解决：改为 `workspace-node.internal.*`（见上文）。
 
+## 4.3 节点注册表（心跳）与多节点扩容（推荐）
+
+目标：当有多台 workspace-node 时，API 能基于 **userId -> nodeId** 的粘性落点稳定路由，并能过滤“不健康节点”（心跳过期）。
+
+### 4.3.1 API 侧：心跳接口与鉴权
+
+接口（内部）：
+
+- `POST /api/fun-ai/admin/workspace-nodes/heartbeat`
+- Header：`X-WS-Node-Token: <token>`
+- body（示例）：
+  - `nodeName`：节点名（唯一，例如 ws-node-01）
+  - `nginxBaseUrl`：该节点 Nginx 基址（供 /ws 路由）
+  - `apiBaseUrl`：该节点 workspace-node API 基址（供 API 侧转发/签名）
+
+配置（API 服务 `application-prod.properties`）：
+
+- `funai.workspace-node-registry.enabled=true`
+- `funai.workspace-node-registry.shared-secret=4f2b1a9c8d3e7a60b1c9d7e5f3a8b6c4d2e0f9a7c5b3d1e8f6a4c2e9b7d5f0a1c3e8b2d6f9a0c4e7b1d5f8a2c6e9b3d7f0a4c8e1b5d9f2a6c0e3b7d1f4a8c2e5b9d0f3a7c1e4b8d2f5a9c3e6b0d4f7a1c5e8b2d6f9a0c4e7b1d5f8a2c6e9b3d7f0a4c8e1b5d9f2a6c0e3b7d1f4a8c2`
+- `funai.workspace-node-registry.allowed-ips=172.21.138.87`（可选）
+- `funai.workspace-node-registry.heartbeat-stale-seconds=60`
+
+说明：
+
+- 心跳接口位于 `/api/fun-ai/admin/**` 下，但**不使用** `X-Admin-Token`，而是使用独立的 `X-WS-Node-Token`（更符合职责分离）。
+
+### 4.3.2 workspace-node 侧：心跳上报
+
+配置（workspace 服务 `application-prod.properties`）：
+
+- `funai.workspace-node-registry-client.enabled=true`
+- `funai.workspace-node-registry-client.api-base-url=http://<API_HOST>:8080`
+- `funai.workspace-node-registry-client.node-name=ws-node-01`
+- `funai.workspace-node-registry-client.nginx-base-url=http://<THIS_NODE_NGINX>`
+- `funai.workspace-node-registry-client.node-api-base-url=http://<THIS_NODE>:7001`
+- `funai.workspace-node-registry-client.token=CHANGE_ME_STRONG_SECRET`
+- `funai.workspace-node-registry-client.interval-seconds=15`
+
+### 4.3.3 路由与健康：manual-drain + 条件自动迁移（默认关闭）
+
+- **默认策略（manual-drain）**：\n  当 userId 已绑定的节点心跳过期时，API 侧会提示 “node unhealthy，请人工迁移”，不会自动改写 placement。\n
+- **条件自动迁移（guarded auto-reassign，默认关闭）**：\n  仅当满足安全条件（例如 placement.last_active_at 距今超过阈值）且开关打开时，才允许自动重分配。\n
+相关配置（API 服务侧）：\n
+- `workspace-node.failover.auto-reassign.enabled=false`\n
+- `workspace-node.failover.auto-reassign.max-idle-minutes=30`\n
+
+### 4.3.4 运维：placements / reassign / drain
+
+API 管理接口（需要 `X-Admin-Token`）：\n
+- `GET /api/fun-ai/admin/workspace-nodes/placements?nodeId=...&offset=0&limit=200`\n
+- `POST /api/fun-ai/admin/workspace-nodes/reassign`（body：`userId`、`targetNodeId`）\n
+- `POST /api/fun-ai/admin/workspace-nodes/drain`（body：`sourceNodeId`、`targetNodeId`、`limit`）\n
+
+说明：
+
+- 这些接口只改 “userId -> nodeId” 的路由落点；是否触发容器重建/数据迁移需要后续能力配合。
+
 ## 5. Workspace 开发服务器（大机）基础环境要求（Alibaba Cloud Linux 3）
 
 ### 5.1 容器运行时（Podman）

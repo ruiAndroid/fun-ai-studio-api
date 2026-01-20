@@ -103,11 +103,11 @@
       <table>
         <thead>
           <tr>
-            <th>id</th><th>name</th><th>enabled</th><th>落盘用户数</th><th>占比</th><th>nginx（IP/URL）</th><th>api（IP/URL）</th><th>操作</th>
+            <th>id</th><th>name</th><th>enabled</th><th>健康</th><th>心跳</th><th>落盘用户数</th><th>占比</th><th>nginx（IP/URL）</th><th>api（IP/URL）</th><th>操作</th>
           </tr>
         </thead>
         <tbody id="tbody">
-          <tr><td colspan="8" class="small">暂无数据，点击“刷新列表”。</td></tr>
+          <tr><td colspan="10" class="small">暂无数据，点击“刷新列表”。</td></tr>
         </tbody>
       </table>
     </div>
@@ -163,9 +163,44 @@
           <div class="small" style="margin-top:10px">
             方案 A（只让新用户进新节点）：把新节点 enabled=1，保持老节点 baseUrl 不变即可。
           </div>
+          <hr style="margin:14px 0;border:0;border-top:1px solid var(--bd2)"/>
+          <h3 style="margin:0 0 10px 0;font-size:14px">功能区：Placements / 迁移 / Drain</h3>
+          <div class="small" style="margin-top:2px">
+            提示：心跳接口使用 <code>X-WS-Node-Token</code>，本页面不会调用；本页面仅使用 <code>X-Admin-Token</code> 操作 placements/reassign/drain。
+          </div>
+          <label>选中 NodeId</label>
+          <input id="p_nodeId" placeholder="在右侧表格选中一行后自动填充" />
+          <div class="row" style="margin-top:10px">
+            <button id="btnPlacements" class="btn secondary">查看 Placements</button>
+            <button id="btnDrain" class="btn danger">Drain 到目标节点</button>
+          </div>
+          <label style="margin-top:12px">Drain 目标 NodeId</label>
+          <input id="p_targetNodeId" placeholder="例如 2" />
+          <label>Drain limit（单次最多迁移）</label>
+          <input id="p_drainLimit" value="100" />
+
+          <label style="margin-top:12px">手工迁移：UserId</label>
+          <input id="p_userId" placeholder="例如 10000021" />
+          <label>手工迁移：目标 NodeId</label>
+          <input id="p_userTargetNodeId" placeholder="例如 2" />
+          <div class="row" style="margin-top:10px">
+            <button id="btnReassign" class="btn">Reassign</button>
+          </div>
+
+          <div class="small" style="margin-top:10px">
+            自动迁移开关在后端配置：<code>workspace-node.failover.auto-reassign.enabled</code>（默认关闭）。
+          </div>
+
+          <div class="card" style="margin-top:12px;padding:10px">
+            <div class="small">Placements 结果：</div>
+            <div id="placementsBox" class="small" style="margin-top:8px;max-height:260px;overflow:auto"></div>
+          </div>
         `;
         $("btnUpsert").onclick = onUpsert;
         $("btnClear").onclick = onClear;
+        $("btnPlacements").onclick = onPlacements;
+        $("btnDrain").onclick = onDrain;
+        $("btnReassign").onclick = onReassign;
       } else {
         document.title = "Fun AI Studio - Deploy Node 管理";
         $("pageTitle").textContent = "Deploy Node 管理（暂未开放）";
@@ -216,7 +251,7 @@
       const tb = $("tbody");
       tb.innerHTML = "";
       if (!rows || rows.length === 0) {
-        tb.innerHTML = '<tr><td colspan="8" class="small">（空）</td></tr>';
+        tb.innerHTML = '<tr><td colspan="10" class="small">（空）</td></tr>';
         return;
       }
       rows.forEach((r) => {
@@ -227,10 +262,18 @@
           tr.style.background = "rgba(96,165,250,.08)";
         }
         const share = pct(r.assignedUsers, state.totalPlacements || rows.reduce((a,x)=>a+(x.assignedUsers||0),0));
+        const hbMs = r.lastHeartbeatAtMs;
+        const hbText = hbMs ? new Date(hbMs).toLocaleString() : "-";
+        const health = (r.health || "UNKNOWN");
+        const healthBadge = health === "HEALTHY" ? '<span class="ok">HEALTHY</span>'
+                           : health === "STALE" ? '<span class="warn">STALE</span>'
+                           : '<span class="small">UNKNOWN</span>';
         tr.innerHTML = `
           <td>${r.nodeId ?? ""}</td>
           <td><code>${escapeHtml(r.name ?? "")}</code></td>
           <td>${(r.enabled === 1 ? '<span class="ok">1</span>' : '<span class="err">0</span>')}</td>
+          <td>${healthBadge}</td>
+          <td><code>${escapeHtml(hbText)}</code></td>
           <td>${r.assignedUsers ?? 0}</td>
           <td>${share}</td>
           <td><code>${escapeHtml(r.nginxBaseUrl ?? "")}</code></td>
@@ -326,8 +369,61 @@
       if ($("f_api")) $("f_api").value = r.apiBaseUrl ?? "";
       if ($("f_enabled")) $("f_enabled").value = String(r.enabled ?? 0);
       if ($("f_weight")) $("f_weight").value = String(r.weight ?? 100);
+      if ($("p_nodeId")) $("p_nodeId").value = String(r.nodeId ?? "");
       setStatus("已填充选中行", "ok");
     };
+
+    async function onPlacements() {
+      try {
+        const nodeId = ($("p_nodeId")?.value || "").trim();
+        if (!nodeId) throw new Error("请先选择 nodeId");
+        const res = await apiGet("/api/fun-ai/admin/workspace-nodes/placements", { nodeId, offset: 0, limit: 200 });
+        if (res.code !== 200) throw new Error(res.message || "请求失败");
+        const data = res.data || {};
+        const items = data.items || [];
+        const box = $("placementsBox");
+        box.innerHTML = items.length
+          ? items.map(it => `<div><code>userId=${escapeHtml(it.userId)}</code> <span class="pillTag">lastActiveAt=${escapeHtml(it.lastActiveAt||"")}</span></div>`).join("")
+          : '<div class="small">（空）</div>';
+        setStatus(`placements OK: nodeId=${nodeId} total=${data.total ?? items.length}`, "ok");
+      } catch (e) {
+        setStatus(String(e.message || e), "err");
+      }
+    }
+
+    async function onReassign() {
+      try {
+        const userId = ($("p_userId")?.value || "").trim();
+        const targetNodeId = ($("p_userTargetNodeId")?.value || "").trim();
+        if (!userId) throw new Error("userId 不能为空");
+        if (!targetNodeId) throw new Error("targetNodeId 不能为空");
+        const body = { userId: parseInt(userId, 10), targetNodeId: parseInt(targetNodeId, 10) };
+        const res = await apiPost("/api/fun-ai/admin/workspace-nodes/reassign", null, body);
+        if (res.code !== 200) throw new Error(res.message || "请求失败");
+        await reload();
+        setStatus(`reassign OK: userId=${userId} -> nodeId=${targetNodeId}`, "ok");
+      } catch (e) {
+        setStatus(String(e.message || e), "err");
+      }
+    }
+
+    async function onDrain() {
+      try {
+        const sourceNodeId = ($("p_nodeId")?.value || "").trim();
+        const targetNodeId = ($("p_targetNodeId")?.value || "").trim();
+        const limit = parseInt((($("p_drainLimit")?.value || "100").trim()), 10);
+        if (!sourceNodeId) throw new Error("请先选择 source nodeId");
+        if (!targetNodeId) throw new Error("targetNodeId 不能为空");
+        if (String(sourceNodeId) === String(targetNodeId)) throw new Error("source/target 不能相同");
+        const body = { sourceNodeId: parseInt(sourceNodeId, 10), targetNodeId: parseInt(targetNodeId, 10), limit: isFinite(limit) ? limit : 100 };
+        const res = await apiPost("/api/fun-ai/admin/workspace-nodes/drain", null, body);
+        if (res.code !== 200) throw new Error(res.message || "请求失败");
+        await reload();
+        setStatus(`drain OK: moved=${res.data?.moved ?? "?"} ${sourceNodeId} -> ${targetNodeId}`, "ok");
+      } catch (e) {
+        setStatus(String(e.message || e), "err");
+      }
+    }
 
     $("modeSelect").onchange = () => {
       const m = $("modeSelect").value;

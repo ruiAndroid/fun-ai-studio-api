@@ -27,9 +27,15 @@
 - [Workspace：容器内 Mongo（可选）](./workspace/mongo.md)
 - [Workspace：Mongo Explorer（Web，只读）](./workspace/mongo-explorer.md)
 
+## Deploy（应用部署：控制面/执行面/运行态）
+
+- [Deploy 总览（API 入口与调用链）](./deploy/README.md)
+- [Deploy：整体架构与互联矩阵（推荐先读）](./deploy/architecture.md)
+
 ## Server（部署与扩容）
 
 - [Server 总览](./server/README.md)
 - [多机扩容方案（面向 Workspace）](./server/scaling-workspace.md)
+- [多机扩容方案（面向 Deploy / Runner / Runtime）](./server/scaling-deploy-runtime.md)
 
 

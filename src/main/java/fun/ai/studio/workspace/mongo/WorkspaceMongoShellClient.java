@@ -166,6 +166,131 @@ public class WorkspaceMongoShellClient {
         return out;
     }
 
+    public Map<String, Object> createCollection(String containerName, String dbName, String collection) {
+        assertMongoEnabled();
+        assertContainerName(containerName);
+        assertDbName(dbName);
+        assertCollectionName(collection);
+        MongoShell shell = getShellCached(containerName);
+
+        String script = shell.isMongosh()
+                ? ""
+                + "const dbName='" + jsSingleQuoted(dbName) + "';\n"
+                + "const collName='" + jsSingleQuoted(collection) + "';\n"
+                + "const db2=db.getSiblingDB(dbName);\n"
+                + "let created=false; let msg='';\n"
+                + "try{ db2.createCollection(collName); created=true; }\n"
+                + "catch(e){ msg=String(e && e.message ? e.message : e); }\n"
+                + "print(EJSON.stringify({dbName:dbName,collection:collName,created:created,message:msg},{relaxed:true}));\n"
+                : ""
+                + "var dbName='" + jsSingleQuoted(dbName) + "';\n"
+                + "var collName='" + jsSingleQuoted(collection) + "';\n"
+                + "var db2=db.getSiblingDB(dbName);\n"
+                + "var created=false; var msg='';\n"
+                + "try{ db2.createCollection(collName); created=true; }\n"
+                + "catch(e){ msg=String(e && e.message ? e.message : e); }\n"
+                + "print(JSON.stringify({dbName:dbName,collection:collName,created:created,message:msg}));\n";
+
+        Map<?, ?> r = runMongoShellJson(shell, containerName, dbName, script, true);
+        return r == null ? Map.of() : toStringObjectMap(r);
+    }
+
+    public Map<String, Object> insertOne(String containerName, String dbName, String collection, String docJson) {
+        assertMongoEnabled();
+        assertContainerName(containerName);
+        assertDbName(dbName);
+        assertCollectionName(collection);
+        String doc = StringUtils.hasText(docJson) ? docJson : "{}";
+        MongoShell shell = getShellCached(containerName);
+
+        String script = shell.isMongosh()
+                ? ""
+                + "const dbName='" + jsSingleQuoted(dbName) + "';\n"
+                + "const collName='" + jsSingleQuoted(collection) + "';\n"
+                + "const db2=db.getSiblingDB(dbName);\n"
+                + "const doc=EJSON.parse('" + jsSingleQuoted(doc) + "');\n"
+                + "const r=db2.getCollection(collName).insertOne(doc);\n"
+                + "print(EJSON.stringify({dbName:dbName,collection:collName,acknowledged:r.acknowledged,insertedId:r.insertedId},{relaxed:true}));\n"
+                : ""
+                + "var dbName='" + jsSingleQuoted(dbName) + "';\n"
+                + "var collName='" + jsSingleQuoted(collection) + "';\n"
+                + "var db2=db.getSiblingDB(dbName);\n"
+                + "var doc=JSON.parse('" + jsSingleQuoted(doc) + "');\n"
+                + "var r=db2.getCollection(collName).insert(doc);\n"
+                + "print(JSON.stringify({dbName:dbName,collection:collName,acknowledged:true,insertedId:r}));\n";
+
+        Map<?, ?> r = runMongoShellJson(shell, containerName, dbName, script, true);
+        return r == null ? Map.of() : toStringObjectMap(r);
+    }
+
+    public Map<String, Object> updateOneById(String containerName, String dbName, String collection, String id, String updateJson, Boolean upsert) {
+        assertMongoEnabled();
+        assertContainerName(containerName);
+        assertDbName(dbName);
+        assertCollectionName(collection);
+        if (!StringUtils.hasText(id)) throw new IllegalArgumentException("id 不能为空");
+        String upd = StringUtils.hasText(updateJson) ? updateJson : "{}";
+        boolean ups = upsert != null && upsert;
+        MongoShell shell = getShellCached(containerName);
+
+        String script = shell.isMongosh()
+                ? ""
+                + "const dbName='" + jsSingleQuoted(dbName) + "';\n"
+                + "const collName='" + jsSingleQuoted(collection) + "';\n"
+                + "const idStr='" + jsSingleQuoted(id.trim()) + "';\n"
+                + "const db2=db.getSiblingDB(dbName);\n"
+                + "let _id;\n"
+                + "try{ _id=new ObjectId(idStr); }catch(e){ _id=idStr; }\n"
+                + "const update=EJSON.parse('" + jsSingleQuoted(upd) + "');\n"
+                + "const r=db2.getCollection(collName).updateOne({_id:_id}, update, {upsert:" + ups + ", maxTimeMS:" + DEFAULT_MAX_TIME_MS + "});\n"
+                + "print(EJSON.stringify({dbName:dbName,collection:collName,acknowledged:r.acknowledged,matchedCount:r.matchedCount,modifiedCount:r.modifiedCount,upsertedId:r.upsertedId},{relaxed:true}));\n"
+                : ""
+                + "var dbName='" + jsSingleQuoted(dbName) + "';\n"
+                + "var collName='" + jsSingleQuoted(collection) + "';\n"
+                + "var idStr='" + jsSingleQuoted(id.trim()) + "';\n"
+                + "var db2=db.getSiblingDB(dbName);\n"
+                + "var _id;\n"
+                + "try{ _id=ObjectId(idStr); }catch(e){ _id=idStr; }\n"
+                + "var update=JSON.parse('" + jsSingleQuoted(upd) + "');\n"
+                + "var r=db2.getCollection(collName).update({_id:_id}, update, {upsert:" + (ups ? "true" : "false") + "});\n"
+                + "print(JSON.stringify({dbName:dbName,collection:collName,acknowledged:true,matchedCount:(r && r.nMatched)||0,modifiedCount:(r && r.nModified)||0,upsertedId:(r && r.upserted)||null}));\n";
+
+        Map<?, ?> r = runMongoShellJson(shell, containerName, dbName, script, true);
+        return r == null ? Map.of() : toStringObjectMap(r);
+    }
+
+    public Map<String, Object> deleteOneById(String containerName, String dbName, String collection, String id) {
+        assertMongoEnabled();
+        assertContainerName(containerName);
+        assertDbName(dbName);
+        assertCollectionName(collection);
+        if (!StringUtils.hasText(id)) throw new IllegalArgumentException("id 不能为空");
+        MongoShell shell = getShellCached(containerName);
+
+        String script = shell.isMongosh()
+                ? ""
+                + "const dbName='" + jsSingleQuoted(dbName) + "';\n"
+                + "const collName='" + jsSingleQuoted(collection) + "';\n"
+                + "const idStr='" + jsSingleQuoted(id.trim()) + "';\n"
+                + "const db2=db.getSiblingDB(dbName);\n"
+                + "let _id;\n"
+                + "try{ _id=new ObjectId(idStr); }catch(e){ _id=idStr; }\n"
+                + "const r=db2.getCollection(collName).deleteOne({_id:_id},{maxTimeMS:" + DEFAULT_MAX_TIME_MS + "});\n"
+                + "print(EJSON.stringify({dbName:dbName,collection:collName,acknowledged:r.acknowledged,deletedCount:r.deletedCount},{relaxed:true}));\n"
+                : ""
+                + "var dbName='" + jsSingleQuoted(dbName) + "';\n"
+                + "var collName='" + jsSingleQuoted(collection) + "';\n"
+                + "var idStr='" + jsSingleQuoted(id.trim()) + "';\n"
+                + "var db2=db.getSiblingDB(dbName);\n"
+                + "var _id;\n"
+                + "try{ _id=ObjectId(idStr); }catch(e){ _id=idStr; }\n"
+                + "var r=db2.getCollection(collName).remove({_id:_id}, true);\n"
+                + "print(JSON.stringify({dbName:dbName,collection:collName,acknowledged:true,deletedCount:(r && r.nRemoved)||0}));\n";
+
+        Map<?, ?> r = runMongoShellJson(shell, containerName, dbName, script, true);
+        return r == null ? Map.of() : toStringObjectMap(r);
+    }
+
     private Map<?, ?> runMongoShellJson(MongoShell shell, String containerName, String dbName, String script, boolean allowRetry) {
         // 连接串用 localhost，避免依赖容器网络/端口映射
         String uri = "mongodb://127.0.0.1:" + mongoPort() + "/" + dbName;

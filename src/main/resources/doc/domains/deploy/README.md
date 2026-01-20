@@ -2,6 +2,14 @@
 
 本域文档描述：用户点击“部署”时，**用户/前端只访问 API 服务**，API 再去调用 `fun-ai-studio-deploy`（部署控制面）创建 Job，Runner 轮询领取并执行部署动作。
 
+推荐先读：
+
+- [Deploy：整体架构与互联矩阵](./architecture.md)
+
+运维落地（服务器/安全组/联调）：
+
+- [多机扩容方案（面向 Deploy / Runner / Runtime）](../server/scaling-deploy-runtime.md)
+
 ## 1. 三者关系（控制面 / Runner / 用户应用 Runtime）
 
 - **控制面（Deploy 服务）**：决定做什么（创建任务、记录状态、审计、分配 Runner），不直接执行用户代码
