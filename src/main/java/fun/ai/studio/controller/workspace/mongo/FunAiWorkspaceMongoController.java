@@ -279,13 +279,6 @@ public class FunAiWorkspaceMongoController {
             } else {
                 def.put("bsonType", bsonType);
             }
-            // 文档化信息：default/description（Mongo 不强制应用 default，仅用于 schema 展示/约束描述）
-            if (f.getDefaultValue() != null) {
-                def.put("default", f.getDefaultValue());
-            }
-            if (StringUtils.hasText(f.getComment())) {
-                def.put("description", f.getComment().trim());
-            }
             props.put(name, def);
 
             if (f.getRequired() != null && f.getRequired()) {

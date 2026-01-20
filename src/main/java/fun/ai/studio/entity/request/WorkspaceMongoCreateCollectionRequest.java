@@ -26,14 +26,6 @@ public class WorkspaceMongoCreateCollectionRequest {
          */
         private String type;
         /**
-         * 可选：默认值（仅用于 schema 描述，不参与校验）
-         */
-        private Object defaultValue;
-        /**
-         * 可选：注释/描述（写入 schema.description）
-         */
-        private String comment;
-        /**
          * 是否必填（加入 required）
          */
         private Boolean required;
