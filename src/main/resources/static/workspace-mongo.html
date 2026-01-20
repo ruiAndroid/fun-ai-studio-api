@@ -158,46 +158,28 @@
     </div>
 
     <div class="card">
-      <h3>查询（find）</h3>
-      <div class="kv">
-        <div>
-          <label>collection</label>
-          <input id="collection" placeholder="例如 users" />
-        </div>
-        <div class="kv" style="grid-template-columns:1fr 1fr">
-          <div>
-            <label>limit</label>
-            <input id="limit" value="50" />
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px">
+        <h3 style="margin:0">数据列表</h3>
+        <div style="display:flex; gap:10px; align-items:center">
+          <div style="display:flex; gap:6px; align-items:center; font-size:12px">
+            <label style="margin:0; color:var(--muted2)">每页</label>
+            <input id="limit" value="50" style="width:60px; padding:6px 8px; font-size:12px" />
           </div>
-          <div>
-            <label>skip</label>
-            <input id="skip" value="0" />
+          <div style="display:flex; gap:6px; align-items:center; font-size:12px">
+            <label style="margin:0; color:var(--muted2)">跳过</label>
+            <input id="skip" value="0" style="width:60px; padding:6px 8px; font-size:12px" />
           </div>
+          <button id="btnFind" class="btn" style="width:auto; padding:6px 14px; font-size:12px">刷新</button>
         </div>
       </div>
-      <div class="kv">
-        <div>
-          <label>filter (JSON)</label>
-          <textarea id="filter">{}</textarea>
-        </div>
-        <div>
-          <label>sort (JSON，可空)</label>
-          <textarea id="sort"></textarea>
-        </div>
-      </div>
-      <label>projection (JSON，可空)</label>
-      <textarea id="projection"></textarea>
-      <div class="btn-row" style="margin-top:10px">
-        <button id="btnFind" class="btn">查询</button>
-        <button id="btnPretty" class="btn secondary">格式化 JSON</button>
-      </div>
-      <div class="small" style="margin-top:8px">
-        提示：返回过大可能被后端截断导致解析失败，请降低 limit 或使用 projection。
-      </div>
-      <h3 style="margin-top:14px">结果</h3>
-      <div class="small" style="margin:6px 0 8px">支持行级操作：编辑/删除（按 <code>_id</code>）。</div>
-      <div id="tableBox" class="small" style="overflow:auto; border:1px solid var(--bd2); border-radius:14px; background:rgba(0,0,0,.16)"></div>
-      <pre id="out" style="margin-top:10px">暂无</pre>
+      <div class="small" style="margin-bottom:8px; color:var(--muted2)">支持行级操作：编辑/删除（按 <code>_id</code>）</div>
+      <div id="tableBox" class="small" style="overflow:auto; border:1px solid var(--bd2); border-radius:14px; background:rgba(0,0,0,.16); max-height:calc(100vh - 280px)"></div>
+      <!-- 隐藏的查询参数 -->
+      <input type="hidden" id="collection" />
+      <input type="hidden" id="filter" value="{}" />
+      <input type="hidden" id="sort" value="" />
+      <input type="hidden" id="projection" value="" />
+      <pre id="out" style="display:none">暂无</pre>
     </div>
   </div>
 
@@ -350,30 +332,57 @@
         box.innerHTML = "<div style='padding:10px;color:rgba(232,238,252,.62)'>（无数据）</div>";
         return;
       }
-      // 展示前若干列：_id + json 摘要 + 操作
-      const rows = items.map((it, idx) => {
-        const id = extractId(it);
-        const summary = escHtml(JSON.stringify(it).slice(0, 220));
-        return `
-          <tr>
-            <td style="padding:8px;border-top:1px solid rgba(255,255,255,.08);font-family:var(--mono)">${escHtml(id || "")}</td>
-            <td style="padding:8px;border-top:1px solid rgba(255,255,255,.08);color:rgba(232,238,252,.78)">${summary}${summary.length>=220?"…":""}</td>
-            <td style="padding:8px;border-top:1px solid rgba(255,255,255,.08);white-space:nowrap">
-              <button class="btn secondary" data-act="edit" data-idx="${idx}" style="width:auto;padding:6px 10px;border-radius:10px">编辑</button>
-              <button class="btn secondary" data-act="del" data-idx="${idx}" style="width:auto;padding:6px 10px;border-radius:10px;border-color:rgba(255,138,138,.35)">删除</button>
-            </td>
-          </tr>
-        `;
+      
+      // 推断所有字段
+      const fieldSet = new Set();
+      items.forEach((doc) => {
+        if (doc && typeof doc === "object") {
+          Object.keys(doc).forEach((k) => fieldSet.add(k));
+        }
+      });
+      const fields = Array.from(fieldSet);
+      // _id 放最前面
+      const sortedFields = fields.sort((a, b) => {
+        if (a === "_id") return -1;
+        if (b === "_id") return 1;
+        return a.localeCompare(b);
+      });
+
+      // 生成表头
+      const headers = sortedFields.map((f) => {
+        return `<th style="text-align:left;padding:8px;color:rgba(232,238,252,.78);font-size:12px;white-space:nowrap">${escHtml(f)}</th>`;
+      }).join("") + `<th style="text-align:left;padding:8px;color:rgba(232,238,252,.78);font-size:12px;white-space:nowrap">操作</th>`;
+
+      // 生成数据行
+      const rows = items.map((doc, idx) => {
+        const cells = sortedFields.map((f) => {
+          let val = doc[f];
+          let displayVal = "";
+          if (val === null || val === undefined) {
+            displayVal = "<span style='color:var(--muted2)'>null</span>";
+          } else if (typeof val === "object") {
+            // 对象/数组简化显示
+            const str = JSON.stringify(val);
+            displayVal = escHtml(str.length > 60 ? str.slice(0, 60) + "..." : str);
+          } else {
+            displayVal = escHtml(String(val));
+          }
+          const isId = (f === "_id");
+          return `<td style="padding:8px;border-top:1px solid rgba(255,255,255,.08);${isId?'font-family:var(--mono);':''}max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(JSON.stringify(val))}">${displayVal}</td>`;
+        }).join("");
+        
+        const actions = `<td style="padding:8px;border-top:1px solid rgba(255,255,255,.08);white-space:nowrap">
+          <button class="btn secondary" data-act="edit" data-idx="${idx}" style="width:auto;padding:6px 10px;border-radius:10px;font-size:11px">编辑</button>
+          <button class="btn secondary" data-act="del" data-idx="${idx}" style="width:auto;padding:6px 10px;border-radius:10px;border-color:rgba(255,138,138,.35);font-size:11px">删除</button>
+        </td>`;
+        
+        return `<tr>${cells}${actions}</tr>`;
       }).join("");
 
       box.innerHTML = `
-        <table style="width:100%;border-collapse:collapse">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
           <thead>
-            <tr>
-              <th style="text-align:left;padding:8px;color:rgba(232,238,252,.78);font-size:12px">_id</th>
-              <th style="text-align:left;padding:8px;color:rgba(232,238,252,.78);font-size:12px">doc</th>
-              <th style="text-align:left;padding:8px;color:rgba(232,238,252,.78);font-size:12px">操作</th>
-            </tr>
+            <tr>${headers}</tr>
           </thead>
           <tbody>${rows}</tbody>
         </table>
@@ -498,10 +507,6 @@
       }
     };
 
-    $("btnPretty").onclick = () => {
-      prettyAll();
-      setStatus("已格式化（能解析的 JSON）", "ok");
-    };
 
     $("btnInsertPretty").onclick = () => {
       const v = ($("insertDoc").value || "").trim();
