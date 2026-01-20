@@ -358,17 +358,46 @@
         const cells = sortedFields.map((f) => {
           let val = doc[f];
           let displayVal = "";
+          let titleVal = "";
+          
           if (val === null || val === undefined) {
-            displayVal = "<span style='color:var(--muted2)'>null</span>";
+            displayVal = "<span style='color:var(--muted2);font-style:italic'>null</span>";
+            titleVal = "null";
           } else if (typeof val === "object") {
-            // 对象/数组简化显示
-            const str = JSON.stringify(val);
-            displayVal = escHtml(str.length > 60 ? str.slice(0, 60) + "..." : str);
+            // 对象/数组优化显示
+            if (Array.isArray(val)) {
+              displayVal = `<span style='color:var(--muted2)'>[数组: ${val.length} 项]</span>`;
+              titleVal = JSON.stringify(val);
+            } else if (val.$oid) {
+              // MongoDB ObjectId
+              displayVal = escHtml(val.$oid);
+              titleVal = val.$oid;
+            } else if (val.$date) {
+              // MongoDB Date
+              const dateStr = new Date(val.$date).toLocaleString('zh-CN');
+              displayVal = escHtml(dateStr);
+              titleVal = dateStr;
+            } else {
+              // 普通对象
+              const keys = Object.keys(val);
+              displayVal = `<span style='color:var(--muted2)'>{${keys.length} 个字段}</span>`;
+              titleVal = JSON.stringify(val, null, 2);
+            }
+          } else if (typeof val === "boolean") {
+            displayVal = `<span style='color:${val?'var(--ok)':'var(--danger)'}'>${val}</span>`;
+            titleVal = String(val);
+          } else if (typeof val === "number") {
+            displayVal = `<span style='color:var(--pri)'>${val}</span>`;
+            titleVal = String(val);
           } else {
-            displayVal = escHtml(String(val));
+            // 字符串
+            const strVal = String(val);
+            displayVal = escHtml(strVal.length > 50 ? strVal.slice(0, 50) + "..." : strVal);
+            titleVal = strVal;
           }
+          
           const isId = (f === "_id");
-          return `<td style="padding:8px;border-top:1px solid rgba(255,255,255,.08);${isId?'font-family:var(--mono);':''}max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(JSON.stringify(val))}">${displayVal}</td>`;
+          return `<td style="padding:8px;border-top:1px solid rgba(255,255,255,.08);${isId?'font-family:var(--mono);':''}max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:help" title="${escHtml(titleVal)}">${displayVal}</td>`;
         }).join("");
         
         const actions = `<td style="padding:8px;border-top:1px solid rgba(255,255,255,.08);white-space:nowrap">
@@ -400,10 +429,30 @@
         const div = document.createElement("div");
         div.className = "col-item" + (state.activeCol === c ? " active" : "");
         div.textContent = c;
-        div.onclick = () => {
+        div.onclick = async () => {
           state.activeCol = c;
           $("collection").value = c;
           renderCols(cols);
+          // 自动触发查询
+          setStatus("正在加载 " + c + " 的数据...", "");
+          try {
+            const p = baseParams();
+            const body = {
+              collection: c,
+              filter: ($("filter").value || "").trim() || "{}",
+              projection: ($("projection").value || "").trim(),
+              sort: ($("sort").value || "").trim(),
+              limit: parseInt(($("limit").value || "50").trim(), 10),
+              skip: parseInt(($("skip").value || "0").trim(), 10),
+            };
+            const res = await apiPost("/api/fun-ai/workspace/mongo/find", p, body);
+            if (res.code !== 200) throw new Error(res.message || "请求失败");
+            renderTable((res.data && res.data.items) || []);
+            setStatus("OK: " + c + ", 返回 " + (res.data && res.data.returned) + " 条记录", "ok");
+          } catch (e) {
+            renderTable([]);
+            setStatus(String(e.message || e), "err");
+          }
         };
         box.appendChild(div);
       });
@@ -483,13 +532,17 @@
     };
 
     $("btnFind").onclick = async () => {
-      setStatus("查询中...", "");
-      $("out").textContent = "查询中...";
+      const col = ($("collection").value || "").trim();
+      if (!col) {
+        setStatus("请先选择集合", "err");
+        return;
+      }
+      setStatus("正在刷新 " + col + " 的数据...", "");
       try {
         const p = baseParams();
         const body = {
-          collection: ($("collection").value || "").trim(),
-          filter: ($("filter").value || "").trim(),
+          collection: col,
+          filter: ($("filter").value || "").trim() || "{}",
           projection: ($("projection").value || "").trim(),
           sort: ($("sort").value || "").trim(),
           limit: parseInt(($("limit").value || "50").trim(), 10),
@@ -497,11 +550,9 @@
         };
         const res = await apiPost("/api/fun-ai/workspace/mongo/find", p, body);
         if (res.code !== 200) throw new Error(res.message || "请求失败");
-        $("out").textContent = JSON.stringify(res.data, null, 2);
         renderTable((res.data && res.data.items) || []);
-        setStatus("OK: returned=" + (res.data && res.data.returned), "ok");
+        setStatus("OK: " + col + ", 返回 " + (res.data && res.data.returned) + " 条记录", "ok");
       } catch (e) {
-        $("out").textContent = String(e.stack || e.message || e);
         renderTable([]);
         setStatus(String(e.message || e), "err");
       }
