@@ -167,6 +167,12 @@
         <h3>Collections</h3>
         <div id="cols" class="cols small">请先“加载集合”</div>
       </div>
+
+      <div class="card" style="margin-top:12px">
+        <h3 style="margin:0 0 10px 0">写入</h3>
+        <button id="btnAddDoc" class="btn" style="width:100%">添加集合</button>
+        <div class="small" style="margin-top:8px">向当前选中的集合新增一条记录（弹窗填写字段）。</div>
+      </div>
     </div>
 
     <div class="card">
@@ -192,44 +198,6 @@
       <input type="hidden" id="sort" value="" />
       <input type="hidden" id="projection" value="" />
       <pre id="out" style="display:none">暂无</pre>
-    </div>
-  </div>
-
-  <div class="grid" style="margin-top:12px">
-    <div class="card">
-      <h3>写入</h3>
-      <label>新建集合（collection）</label>
-      <div class="kv" style="grid-template-columns: 1fr 160px">
-        <input id="newCollection" placeholder="例如 users" />
-        <button id="btnCreateCol" class="btn">创建集合</button>
-      </div>
-
-      <label style="margin-top:12px">插入单条（insertOne）doc (JSON)</label>
-      <textarea id="insertDoc">{}</textarea>
-      <div class="btn-row" style="margin-top:10px">
-        <button id="btnInsertOne" class="btn">插入到当前 collection</button>
-        <button id="btnInsertPretty" class="btn secondary">格式化 doc</button>
-      </div>
-      <div class="small" style="margin-top:8px">
-        提示：Mongo 可以不用显式“建表”，但这里仍提供 createCollection 以便更直观。
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>高级：语句执行（安全 JSON 模式）</h3>
-      <div class="small">不是任意 JS，也不是标准 SQL；请用 JSON 描述 op，后端按固定模板执行。</div>
-      <label>op JSON</label>
-      <textarea id="opJson">{
-  "op": "find",
-  "collection": "",
-  "filter": "{}",
-  "limit": 20,
-  "skip": 0
-}</textarea>
-      <div class="btn-row" style="margin-top:10px">
-        <button id="btnOpExec" class="btn">执行</button>
-        <button id="btnOpPretty" class="btn secondary">格式化</button>
-      </div>
     </div>
   </div>
 
@@ -264,6 +232,7 @@
       <div class="small" style="color:var(--muted2)">
         提示：值会做智能解析（<code>null/true/false/数字</code>、以及以 <code>{</code>/<code>[</code> 开头的 JSON）。字段名不可修改。
       </div>
+      <div id="editStatus" class="small" style="margin-top:8px"></div>
 
       <div id="editFields" class="field-grid"></div>
 
@@ -274,9 +243,30 @@
     </div>
   </div>
 
+  <!-- 新增记录弹窗（字段级填写） -->
+  <div id="addBackdrop" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3>新增记录</h3>
+      <div class="small" style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:8px">
+        <span class="chip">collection: <code id="addCol"></code></span>
+      </div>
+      <div class="small" style="color:var(--muted2)">
+        提示：字段来自当前列表的列（先点左侧集合加载一次数据）。值会做智能解析（<code>null/true/false/数字</code>、以及以 <code>{</code>/<code>[</code> 开头的 JSON）。留空则不写入该字段。
+      </div>
+      <div id="addStatus" class="small" style="margin-top:8px"></div>
+
+      <div id="addFields" class="field-grid"></div>
+
+      <div class="btn-row" style="margin-top:12px">
+        <button id="btnAddSave" class="btn">保存</button>
+        <button id="btnAddCancel" class="btn secondary">取消</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const $ = (id) => document.getElementById(id);
-    const state = { activeCol: null, lastQueryData: null, editCtx: null };
+    const state = { activeCol: null, lastQueryData: null, editCtx: null, lastFields: [] };
 
     function parseParamsFromUrl() {
       const q = new URLSearchParams(location.search || "");
@@ -293,6 +283,20 @@
       const el = $("status");
       el.textContent = text || "";
       el.className = "statusline " + (kind === "err" ? "err" : kind === "ok" ? "ok" : "");
+    }
+
+    function setEditStatus(text, kind) {
+      const el = $("editStatus");
+      if (!el) return;
+      el.textContent = text || "";
+      el.className = "small " + (kind === "err" ? "err" : kind === "ok" ? "ok" : "");
+    }
+
+    function setAddStatus(text, kind) {
+      const el = $("addStatus");
+      if (!el) return;
+      el.textContent = text || "";
+      el.className = "small " + (kind === "err" ? "err" : kind === "ok" ? "ok" : "");
     }
 
     function guessTokenFromStorage() {
@@ -430,6 +434,7 @@
       state.editCtx = { col, id, idx, rows, original: clone };
       $("editCol").textContent = col;
       $("editId").textContent = id;
+      setEditStatus("", "");
       renderEditFields();
       openEditModal();
     }
@@ -438,6 +443,7 @@
       const box = $("tableBox");
       if (!items || items.length === 0) {
         box.innerHTML = "<div style='padding:10px;color:rgba(232,238,252,.62)'>（无数据）</div>";
+        state.lastFields = [];
         return;
       }
       
@@ -455,6 +461,9 @@
         if (b === "_id") return 1;
         return a.localeCompare(b);
       });
+
+      // 保存当前列（供“新增记录”弹窗使用）
+      state.lastFields = sortedFields.filter((f) => f !== "_id");
 
       // 生成表头
       const headers = sortedFields.map((f) => {
@@ -669,69 +678,7 @@
     };
 
 
-    $("btnInsertPretty").onclick = () => {
-      const v = ($("insertDoc").value || "").trim();
-      if (!v) return;
-      try { $("insertDoc").value = JSON.stringify(JSON.parse(v), null, 2); } catch (e) {}
-    };
-
-    $("btnCreateCol").onclick = async () => {
-      setStatus("创建集合中...", "");
-      try {
-        const p = baseParams();
-        const body = { collection: ($("newCollection").value || "").trim() };
-        const res = await apiPost("/api/fun-ai/workspace/mongo/create-collection", p, body);
-        if (res.code !== 200) throw new Error(res.message || "请求失败");
-        setStatus("OK: created=" + (res.data && res.data.created) + (res.data && res.data.message ? (", msg=" + res.data.message) : ""), "ok");
-        // 刷新列表
-        $("btnLoadCols").click();
-      } catch (e) {
-        setStatus(String(e.message || e), "err");
-      }
-    };
-
-    $("btnInsertOne").onclick = async () => {
-      setStatus("插入中...", "");
-      try {
-        const p = baseParams();
-        const col = ($("collection").value || "").trim();
-        if (!col) throw new Error("请先选择/输入 collection");
-        const doc = ($("insertDoc").value || "").trim();
-        // 先本地校验 JSON（避免后端报错难看）
-        JSON.parse(doc);
-        const res = await apiPost("/api/fun-ai/workspace/mongo/insert-one", p, { collection: col, doc });
-        if (res.code !== 200) throw new Error(res.message || "请求失败");
-        setStatus("OK: insertedId=" + (res.data && res.data.insertedId), "ok");
-        // 重新查询当前页
-        $("btnFind").click();
-      } catch (e) {
-        setStatus(String(e.message || e), "err");
-      }
-    };
-
-    $("btnOpPretty").onclick = () => {
-      const v = ($("opJson").value || "").trim();
-      if (!v) return;
-      try { $("opJson").value = JSON.stringify(JSON.parse(v), null, 2); } catch (e) {}
-    };
-
-    $("btnOpExec").onclick = async () => {
-      setStatus("执行中...", "");
-      try {
-        const p = baseParams();
-        const txt = ($("opJson").value || "").trim();
-        const obj = JSON.parse(txt);
-        const res = await apiPost("/api/fun-ai/workspace/mongo/op", p, obj);
-        if (res.code !== 200) throw new Error(res.message || "请求失败");
-        $("out").textContent = JSON.stringify(res.data, null, 2);
-        // 若返回 find 结构则也渲染表格
-        const items = res.data && res.data.items;
-        renderTable(Array.isArray(items) ? items : []);
-        setStatus("OK", "ok");
-      } catch (e) {
-        setStatus(String(e.message || e), "err");
-      }
-    };
+    // 已收敛旧的“写入/高级”区域：现在用左侧一个按钮 + 弹窗来新增记录
 
     $("btnClear").onclick = () => {
       $("cols").textContent = "请先“加载集合”";
@@ -757,6 +704,7 @@
       if (e.key === "Escape") {
         closeHelp();
         closeEditModal();
+        closeAddModal();
       }
     });
 
@@ -775,6 +723,7 @@
     });
 
     $("btnEditSave").onclick = async () => {
+      const saveBtn = $("btnEditSave");
       try {
         if (!state.editCtx) throw new Error("编辑上下文丢失");
         const { col, id, rows, original } = state.editCtx;
@@ -800,22 +749,114 @@
 
         // 没有任何修改：允许直接关闭，不报错
         if (Object.keys(setObj).length === 0) {
-          setStatus("未检测到修改，已关闭。", "ok");
+          setEditStatus("未检测到修改。", "ok");
           closeEditModal();
           return;
         }
         const update = { $set: setObj };
 
         const p = baseParams();
+        if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "保存中..."; }
+        setEditStatus("保存中...", "");
         setStatus(`保存中：${col} / _id=${id}`, "");
         const res = await apiPost("/api/fun-ai/workspace/mongo/update-by-id", p, { collection: col, id, update: JSON.stringify(update), upsert: false });
         if (res.code !== 200) throw new Error(res.message || "请求失败");
         setStatus("OK: matched=" + (res.data && res.data.matchedCount) + ", modified=" + (res.data && res.data.modifiedCount), "ok");
+        setEditStatus("保存成功。", "ok");
         closeEditModal();
         // 刷新列表
         try { $("btnFind").click(); } catch (e) {}
       } catch (e) {
+        setEditStatus(String(e.message || e), "err");
         setStatus(String(e.message || e), "err");
+      } finally {
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "保存"; }
+      }
+    };
+
+    // ===== Add modal =====
+    function openAddModal() { $("addBackdrop").style.display = "block"; }
+    function closeAddModal() { $("addBackdrop").style.display = "none"; setAddStatus("", ""); }
+
+    $("btnAddCancel").onclick = closeAddModal;
+    $("addBackdrop").addEventListener("click", (e) => {
+      if (e.target && e.target.id === "addBackdrop") closeAddModal();
+    });
+
+    function renderAddFields(fields) {
+      const box = $("addFields");
+      box.innerHTML = "";
+      (fields || []).forEach((k, i) => {
+        const row = document.createElement("div");
+        row.className = "field-row";
+        row.innerHTML = `
+          <div class="k">
+            <label style="margin:0 0 6px">字段</label>
+            <input value="${escHtml(k)}" disabled />
+          </div>
+          <div class="v">
+            <label style="margin:0 0 6px">值</label>
+            <input data-role="addv" data-idx="${i}" value="" placeholder="留空则不写入；例如 123 / true / null / 文本 / {\"a\":1}" />
+          </div>
+        `;
+        box.appendChild(row);
+      });
+    }
+
+    function openAddForCurrentCollection() {
+      const col = state.activeCol || ($("collection").value || "").trim();
+      if (!col) throw new Error("请先选择集合");
+      $("addCol").textContent = col;
+      setAddStatus("", "");
+
+      let fields = Array.isArray(state.lastFields) ? state.lastFields.slice() : [];
+      if (fields.length === 0) {
+        const items = (state.lastQueryData && state.lastQueryData.items) || [];
+        const s = new Set();
+        items.forEach((d) => { if (d && typeof d === "object") Object.keys(d).forEach((k) => { if (k !== "_id") s.add(k); }); });
+        fields = Array.from(s).sort();
+      }
+      if (fields.length === 0) throw new Error("暂无字段信息：请先点击左侧集合加载一次数据");
+      renderAddFields(fields);
+      openAddModal();
+    }
+
+    const btnAddDoc = $("btnAddDoc");
+    if (btnAddDoc) {
+      btnAddDoc.onclick = () => {
+        try { openAddForCurrentCollection(); } catch (e) { setStatus(String(e.message || e), "err"); }
+      };
+    }
+
+    $("btnAddSave").onclick = async () => {
+      const saveBtn = $("btnAddSave");
+      try {
+        const col = state.activeCol || ($("collection").value || "").trim();
+        if (!col) throw new Error("请先选择集合");
+        const fields = Array.isArray(state.lastFields) ? state.lastFields : [];
+        const doc = {};
+        for (let i = 0; i < fields.length; i++) {
+          const el = document.querySelector(`[data-role="addv"][data-idx="${i}"]`);
+          if (!el) continue;
+          const raw = (el.value || "");
+          if (!raw.trim()) continue;
+          doc[fields[i]] = parseSmartValue(raw);
+        }
+        if (Object.keys(doc).length === 0) throw new Error("请至少填写一个字段的值");
+
+        const p = baseParams();
+        if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "保存中..."; }
+        setAddStatus("保存中...", "");
+        const res = await apiPost("/api/fun-ai/workspace/mongo/insert-one", p, { collection: col, doc: JSON.stringify(doc) });
+        if (res.code !== 200) throw new Error(res.message || "请求失败");
+        setAddStatus("保存成功。", "ok");
+        closeAddModal();
+        try { $("btnFind").click(); } catch (e) {}
+      } catch (e) {
+        setAddStatus(String(e.message || e), "err");
+        setStatus(String(e.message || e), "err");
+      } finally {
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "保存"; }
       }
     };
 
