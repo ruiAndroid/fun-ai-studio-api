@@ -274,19 +274,25 @@ public class WorkspaceNodeClient {
             throw new RuntimeException("workspace-node request failed: " + e.getMessage(), e);
         }
 
+        Result<T> r;
         try {
-            Result<T> r = objectMapper.readValue(resp.body(), typeRef);
-            if (r == null) {
-                throw new RuntimeException("workspace-node response is empty");
-            }
-            if (r.getCode() == null || r.getCode() != 200) {
-                throw new RuntimeException("workspace-node error: code=" + r.getCode() + ", msg=" + r.getMessage());
-            }
-            return r.getData();
+            r = objectMapper.readValue(resp.body(), typeRef);
         } catch (Exception e) {
             String raw = new String(resp.body() == null ? new byte[0] : resp.body(), StandardCharsets.UTF_8);
             throw new RuntimeException("workspace-node decode failed: http=" + resp.statusCode() + ", body=" + raw, e);
         }
+        if (r == null) {
+            throw new RuntimeException("workspace-node response is empty");
+        }
+        // 业务错误：直接抛 IllegalArgumentException，让上层 controller 走“无堆栈的友好错误”分支，避免污染日志
+        if (r.getCode() == null || r.getCode() != 200) {
+            String msg = r.getMessage();
+            if (msg == null || msg.isBlank()) {
+                msg = "workspace-node error: code=" + r.getCode();
+            }
+            throw new IllegalArgumentException(msg);
+        }
+        return r.getData();
     }
 
     private String joinUrl(String baseUrl, String path, String query) {
