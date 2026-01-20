@@ -111,6 +111,16 @@
     .modal .content ul{margin:8px 0 0 18px}
     .modal .content li{margin:4px 0}
     .modal .close-row{display:flex; justify-content:flex-end; margin-top:10px}
+
+    /* edit modal */
+    .field-grid{display:flex; flex-direction:column; gap:8px; margin-top:10px}
+    .field-row{display:grid; grid-template-columns: 180px 1fr 86px; gap:10px; align-items:start}
+    .field-row .k input{width:100%}
+    .field-row .v input,.field-row .v textarea{width:100%}
+    .field-row .v textarea{min-height:64px; font-family:var(--mono)}
+    .field-row .d{display:flex; flex-direction:column; gap:8px; align-items:flex-end; padding-top:2px}
+    .chip{display:inline-flex; align-items:center; gap:6px; font-size:12px; padding:2px 8px; border-radius:999px; border:1px solid var(--bd2); background:rgba(255,255,255,.06); color:var(--muted)}
+    .chip code{background:transparent; padding:0}
   </style>
 </head>
 <body>
@@ -241,9 +251,31 @@
     </div>
   </div>
 
+  <!-- 编辑弹窗（字段级编辑） -->
+  <div id="editBackdrop" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3>编辑文档</h3>
+      <div class="small" style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:8px">
+        <span class="chip">collection: <code id="editCol"></code></span>
+        <span class="chip">_id: <code id="editId"></code></span>
+      </div>
+      <div class="small" style="color:var(--muted2)">
+        提示：值会做智能解析（<code>null/true/false/数字</code>、以及以 <code>{</code>/<code>[</code> 开头的 JSON）。勾选“删除”会生成 <code>$unset</code>。
+      </div>
+
+      <div id="editFields" class="field-grid"></div>
+
+      <div class="btn-row" style="margin-top:12px">
+        <button id="btnEditAdd" class="btn secondary">+ 添加字段</button>
+        <button id="btnEditSave" class="btn">保存</button>
+        <button id="btnEditCancel" class="btn secondary">取消</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const $ = (id) => document.getElementById(id);
-    const state = { activeCol: null, lastQueryData: null };
+    const state = { activeCol: null, lastQueryData: null, editCtx: null };
 
     function parseParamsFromUrl() {
       const q = new URLSearchParams(location.search || "");
@@ -324,6 +356,92 @@
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
+    }
+
+    // ===== Edit modal =====
+    function openEditModal() { $("editBackdrop").style.display = "block"; }
+    function closeEditModal() { $("editBackdrop").style.display = "none"; state.editCtx = null; }
+
+    function valueToText(v) {
+      if (v === null || v === undefined) return "null";
+      if (typeof v === "object") return JSON.stringify(v, null, 2);
+      return String(v);
+    }
+
+    function isMultilineValText(txt) {
+      if (!txt) return false;
+      return txt.includes("\n") || txt.trim().startsWith("{") || txt.trim().startsWith("[") || txt.length > 60;
+    }
+
+    function parseSmartValue(txt) {
+      const t = (txt ?? "").trim();
+      if (t === "") return ""; // 空串
+      if (t === "null") return null;
+      if (t === "true") return true;
+      if (t === "false") return false;
+      // number（避免把 001 误判为数字：仅当标准数字格式）
+      if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
+      if (t.startsWith("{") || t.startsWith("[")) {
+        return JSON.parse(t);
+      }
+      return txt; // 保留原始（含空格）
+    }
+
+    function renderEditFields() {
+      const box = $("editFields");
+      box.innerHTML = "";
+      const rows = (state.editCtx && state.editCtx.rows) || [];
+      if (rows.length === 0) {
+        box.innerHTML = "<div class='small' style='color:var(--muted2)'>（无可编辑字段）</div>";
+        return;
+      }
+      rows.forEach((r, i) => {
+        const row = document.createElement("div");
+        row.className = "field-row";
+        const valTxt = r.valueText ?? "";
+        const useTA = isMultilineValText(valTxt);
+        row.innerHTML = `
+          <div class="k">
+            <label style="margin:0 0 6px">字段</label>
+            <input data-role="k" data-idx="${i}" value="${escHtml(r.key || "")}" placeholder="field_name" />
+          </div>
+          <div class="v">
+            <label style="margin:0 0 6px">值</label>
+            ${useTA
+              ? `<textarea data-role="v" data-idx="${i}" placeholder='例如：123 / true / null / \"文本\" / {\"a\":1}'>${escHtml(valTxt)}</textarea>`
+              : `<input data-role="v" data-idx="${i}" value="${escHtml(valTxt)}" placeholder='例如：123 / true / null / 文本 / {"a":1}' />`
+            }
+          </div>
+          <div class="d">
+            <label style="margin:0 0 6px">操作</label>
+            <label class="small" style="display:flex;align-items:center;gap:6px; margin:0">
+              <input type="checkbox" data-role="del" data-idx="${i}" ${r.remove ? "checked" : ""} style="width:auto" />
+              删除
+            </label>
+            <button class="btn secondary" data-role="rm" data-idx="${i}" style="width:auto;padding:6px 10px;border-radius:10px">移除行</button>
+          </div>
+        `;
+        box.appendChild(row);
+      });
+    }
+
+    function openEditForDoc(doc, idx) {
+      const col = state.activeCol || ($("collection").value || "").trim();
+      const id = extractId(doc);
+      if (!col) throw new Error("collection 为空");
+      if (!id) throw new Error("该文档缺少 _id，无法编辑");
+
+      const clone = JSON.parse(JSON.stringify(doc));
+      delete clone._id;
+      const rows = Object.keys(clone).sort().map((k) => ({ key: k, valueText: valueToText(clone[k]), remove: false }));
+      // 没字段也允许新增
+      if (rows.length === 0) rows.push({ key: "", valueText: "", remove: false });
+
+      state.editCtx = { col, id, idx, rows };
+      $("editCol").textContent = col;
+      $("editId").textContent = id;
+      renderEditFields();
+      openEditModal();
     }
 
     function renderTable(items) {
@@ -646,8 +764,83 @@
       if (e.target && e.target.id === "helpBackdrop") closeHelp();
     });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") closeHelp();
+      if (e.key === "Escape") {
+        closeHelp();
+        closeEditModal();
+      }
     });
+
+    // edit modal events
+    $("btnEditCancel").onclick = closeEditModal;
+    $("editBackdrop").addEventListener("click", (e) => {
+      if (e.target && e.target.id === "editBackdrop") closeEditModal();
+    });
+    $("btnEditAdd").onclick = () => {
+      if (!state.editCtx) return;
+      state.editCtx.rows.push({ key: "", valueText: "", remove: false });
+      renderEditFields();
+    };
+    $("editFields").addEventListener("input", (e) => {
+      const t = e.target;
+      if (!t || !t.getAttribute) return;
+      const role = t.getAttribute("data-role");
+      const i = parseInt(t.getAttribute("data-idx"), 10);
+      if (!state.editCtx || !state.editCtx.rows[i]) return;
+      if (role === "k") state.editCtx.rows[i].key = t.value;
+      if (role === "v") state.editCtx.rows[i].valueText = t.value;
+      if (role === "del") state.editCtx.rows[i].remove = !!t.checked;
+    });
+    $("editFields").addEventListener("click", (e) => {
+      const t = e.target && e.target.closest ? e.target.closest("[data-role]") : null;
+      if (!t) return;
+      const role = t.getAttribute("data-role");
+      const i = parseInt(t.getAttribute("data-idx"), 10);
+      if (role === "rm" && state.editCtx && state.editCtx.rows[i]) {
+        state.editCtx.rows.splice(i, 1);
+        if (state.editCtx.rows.length === 0) state.editCtx.rows.push({ key: "", valueText: "", remove: false });
+        renderEditFields();
+      }
+    });
+
+    $("btnEditSave").onclick = async () => {
+      try {
+        if (!state.editCtx) throw new Error("编辑上下文丢失");
+        const { col, id, rows } = state.editCtx;
+        const setObj = {};
+        const unsetObj = {};
+        const seen = new Set();
+
+        for (const r of rows) {
+          const k = (r.key || "").trim();
+          if (!k) continue; // 忽略空行
+          if (k === "_id") throw new Error("禁止修改 _id");
+          if (seen.has(k)) throw new Error("字段重复：" + k);
+          seen.add(k);
+          if (r.remove) {
+            unsetObj[k] = "";
+            continue;
+          }
+          setObj[k] = parseSmartValue(r.valueText || "");
+        }
+        if (Object.keys(setObj).length === 0 && Object.keys(unsetObj).length === 0) {
+          throw new Error("没有可保存的修改（请至少填写一个字段或勾选删除）");
+        }
+        const update = {};
+        if (Object.keys(setObj).length) update.$set = setObj;
+        if (Object.keys(unsetObj).length) update.$unset = unsetObj;
+
+        const p = baseParams();
+        setStatus(`保存中：${col} / _id=${id}`, "");
+        const res = await apiPost("/api/fun-ai/workspace/mongo/update-by-id", p, { collection: col, id, update: JSON.stringify(update), upsert: false });
+        if (res.code !== 200) throw new Error(res.message || "请求失败");
+        setStatus("OK: matched=" + (res.data && res.data.matchedCount) + ", modified=" + (res.data && res.data.modifiedCount), "ok");
+        closeEditModal();
+        // 刷新列表
+        try { $("btnFind").click(); } catch (e) {}
+      } catch (e) {
+        setStatus(String(e.message || e), "err");
+      }
+    };
 
     // 初始化：URL 参数优先，其次 localStorage；token 若为空再尝试自动猜测。
     try {
@@ -708,25 +901,38 @@
         if (act === "del") {
           const ok = confirm(`确认删除？\ncollection=${col}\n_id=${id}`);
           if (!ok) return;
+          // UI feedback：禁用按钮，避免重复点击
+          btn.disabled = true;
+          const oldText = btn.textContent;
+          btn.textContent = "删除中...";
+          setStatus(`删除中：${col} / _id=${id}`, "");
           const res = await apiPost("/api/fun-ai/workspace/mongo/delete-by-id", p, { collection: col, id });
           if (res.code !== 200) throw new Error(res.message || "请求失败");
-          setStatus("OK: deletedCount=" + (res.data && res.data.deletedCount), "ok");
-          $("btnFind").click();
+          const dc = (res.data && res.data.deletedCount) || 0;
+          if (dc > 0) {
+            // 立即从当前视图移除，用户能立刻看到变化
+            const nextItems = items.slice(0, idx).concat(items.slice(idx + 1));
+            if (state.lastQueryData && Array.isArray(state.lastQueryData.items)) {
+              state.lastQueryData.items = nextItems;
+              if (typeof state.lastQueryData.returned === "number") {
+                state.lastQueryData.returned = Math.max(0, state.lastQueryData.returned - 1);
+              }
+            }
+            renderTable(nextItems);
+            setStatus("OK: deletedCount=" + dc, "ok");
+            // 后台再刷新一次，保证与后端一致
+            setTimeout(() => { try { $("btnFind").click(); } catch (e) {} }, 10);
+          } else {
+            setStatus("未删除成功（deletedCount=0）。可能 _id 类型不匹配或记录已不存在。", "err");
+          }
+          // 恢复按钮状态
+          btn.disabled = false;
+          btn.textContent = oldText;
           return;
         }
 
         if (act === "edit") {
-          // 以 $set 方式更新：默认把 doc 除 _id 外全部 set 回去（可在弹窗里改）
-          const clone = JSON.parse(JSON.stringify(doc));
-          delete clone._id;
-          const txt = prompt("编辑并保存（将作为 {$set: ...} 提交；不要包含 _id）", JSON.stringify(clone, null, 2));
-          if (txt == null) return;
-          const setObj = JSON.parse(txt);
-          const update = JSON.stringify({ $set: setObj });
-          const res = await apiPost("/api/fun-ai/workspace/mongo/update-by-id", p, { collection: col, id, update, upsert: false });
-          if (res.code !== 200) throw new Error(res.message || "请求失败");
-          setStatus("OK: matched=" + (res.data && res.data.matchedCount) + ", modified=" + (res.data && res.data.modifiedCount), "ok");
-          $("btnFind").click();
+          openEditForDoc(doc, idx);
           return;
         }
       } catch (err) {
