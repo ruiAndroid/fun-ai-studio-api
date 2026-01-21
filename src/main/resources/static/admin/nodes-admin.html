@@ -72,7 +72,7 @@
       <button id="btnFillFromSel" class="btn secondary">填充选中行</button>
       <select id="modeSelect" style="max-width:220px">
         <option value="workspace">Workspace Node 管理</option>
-        <option value="deploy">Deploy Node 管理（暂未开放）</option>
+        <option value="deploy">Deploy Node 管理</option>
       </select>
     </div>
   </div>
@@ -101,11 +101,7 @@
       </div>
       <div class="small" id="listHint" style="margin-top:8px"></div>
       <table>
-        <thead>
-          <tr>
-            <th>id</th><th>name</th><th>enabled</th><th>健康</th><th>心跳</th><th>落盘用户数</th><th>占比</th><th>nginx（IP/URL）</th><th>api（IP/URL）</th><th>操作</th>
-          </tr>
-        </thead>
+        <thead id="thead"></thead>
         <tbody id="tbody">
           <tr><td colspan="10" class="small">暂无数据，点击“刷新列表”。</td></tr>
         </tbody>
@@ -123,6 +119,15 @@
       el.className = "status " + (kind === "err" ? "err" : kind === "ok" ? "ok" : "");
     }
 
+    function ensureToken() {
+      const tok = ($("adminToken")?.value || "").trim();
+      if (!tok) {
+        setStatus("请先填写 Admin Token（Header: X-Admin-Token）", "err");
+        return false;
+      }
+      return true;
+    }
+
     function parseHashToken() {
       const h = new URLSearchParams((location.hash || "").replace(/^#/, ""));
       return (h.get("token") || "").trim();
@@ -137,6 +142,10 @@
     function setMode(mode) {
       state.mode = mode;
       $("modeSelect").value = mode;
+      renderThead();
+      // 同步刷新当前表格占位行的列数（避免 mode 切换后 colspan 不一致）
+      renderKpi();
+      renderTable(state.rows);
       if (mode === "workspace") {
         document.title = "Fun AI Studio - Workspace Node 管理";
         $("pageTitle").textContent = "Workspace Node 管理";
@@ -203,13 +212,56 @@
         $("btnReassign").onclick = onReassign;
       } else {
         document.title = "Fun AI Studio - Deploy Node 管理";
-        $("pageTitle").textContent = "Deploy Node 管理（暂未开放）";
+        $("pageTitle").textContent = "Deploy Node 管理";
         $("listTitle").textContent = "节点列表（Deploy）";
-        $("listHint").innerHTML = '<span class="warn">暂未开放</span>：当前仅占位接口，后续对接 deploy 集群节点管理。';
+        $("listHint").innerHTML = '说明：该模块通过后端 <code>deploy-proxy</code> 转发到 Deploy 控制面 <code>/admin/runtime-nodes/**</code>；需在后端开启 <code>deploy-proxy.enabled=true</code> 并配置 <code>deploy-proxy.base-url</code>。';
         $("featureBox").innerHTML = `
-          <h3 style="margin:0 0 10px 0;font-size:14px">功能区（暂未开放）</h3>
-          <div class="small">该模块预留给 deploy 集群节点管理；后续会提供节点注册/心跳、队列容量、版本等运维字段。</div>
+          <h3 style="margin:0 0 10px 0;font-size:14px">功能区：新增/更新 Deploy runtime 节点</h3>
+          <label>name（必填，唯一）</label>
+          <input id="d_name" placeholder="deploy-node-01" />
+          <label>agentBaseUrl（运行时 Agent / 管理面）</label>
+          <input id="d_agent" placeholder="http://127.0.0.1:18080" />
+          <label>gatewayBaseUrl（对外网关）</label>
+          <input id="d_gateway" placeholder="http://127.0.0.1:8080" />
+          <label>enabled（true/false）</label>
+          <input id="d_enabled" value="true" />
+          <label>weight（可选）</label>
+          <input id="d_weight" value="100" />
+          <div class="row" style="margin-top:10px">
+            <button id="btnDeployUpsert" class="btn">保存</button>
+            <button id="btnDeployClear" class="btn secondary">清空</button>
+          </div>
+          <hr style="margin:14px 0;border:0;border-top:1px solid var(--bd2)"/>
+          <h3 style="margin:0 0 10px 0;font-size:14px">功能区：Placements / 迁移 / Drain</h3>
+          <label>选中 NodeId</label>
+          <input id="d_nodeId" placeholder="在右侧表格选中一行后自动填充" />
+          <div class="row" style="margin-top:10px">
+            <button id="btnDeployPlacements" class="btn secondary">查看 Placements</button>
+            <button id="btnDeployDrain" class="btn danger">Drain 到目标节点</button>
+          </div>
+          <label style="margin-top:12px">Drain 目标 NodeId</label>
+          <input id="d_targetNodeId" placeholder="例如 2" />
+          <label>Drain limit（单次最多迁移）</label>
+          <input id="d_drainLimit" value="200" />
+
+          <label style="margin-top:12px">手工迁移：AppId</label>
+          <input id="d_appId" placeholder="例如 10001" />
+          <label>手工迁移：目标 NodeId</label>
+          <input id="d_appTargetNodeId" placeholder="例如 2" />
+          <div class="row" style="margin-top:10px">
+            <button id="btnDeployReassign" class="btn">Reassign</button>
+          </div>
+
+          <div class="card" style="margin-top:12px;padding:10px">
+            <div class="small">Placements 结果：</div>
+            <div id="deployPlacementsBox" class="small" style="margin-top:8px;max-height:260px;overflow:auto"></div>
+          </div>
         `;
+        $("btnDeployUpsert").onclick = onDeployUpsert;
+        $("btnDeployClear").onclick = onDeployClear;
+        $("btnDeployPlacements").onclick = onDeployPlacements;
+        $("btnDeployDrain").onclick = onDeployDrain;
+        $("btnDeployReassign").onclick = onDeployReassign;
       }
     }
 
@@ -221,18 +273,27 @@
     async function apiGet(path, params) {
       const qs = params ? ("?" + new URLSearchParams(params).toString()) : "";
       const r = await fetch(path + qs, { headers: adminHeaders() });
-      return await r.json();
+      const txt = await r.text();
+      try { return JSON.parse(txt); } catch (e) { throw new Error("响应不是 JSON：" + txt.slice(0, 200)); }
     }
 
     async function apiPost(path, params, body) {
       const qs = params ? ("?" + new URLSearchParams(params).toString()) : "";
       const r = await fetch(path + qs, { method: "POST", headers: adminHeaders(), body: JSON.stringify(body || {}) });
-      return await r.json();
+      const txt = await r.text();
+      try { return JSON.parse(txt); } catch (e) { throw new Error("响应不是 JSON：" + txt.slice(0, 200)); }
     }
 
     function renderKpi() {
-      $("k_totalUsers").textContent = String(state.totalUsers ?? 0);
-      $("k_totalPlacements").textContent = String(state.totalPlacements ?? 0);
+      if (state.mode === "workspace") {
+        $("k_totalUsers").textContent = String(state.totalUsers ?? 0);
+        $("k_totalPlacements").textContent = String(state.totalPlacements ?? 0);
+        $("k_nodes").textContent = String((state.rows || []).length);
+        return;
+      }
+      // deploy：没有 totalUsers/totalPlacements 概念；只显示节点数
+      $("k_totalUsers").textContent = "-";
+      $("k_totalPlacements").textContent = "-";
       $("k_nodes").textContent = String((state.rows || []).length);
     }
 
@@ -247,52 +308,108 @@
       return (Math.round((nn / dd) * 1000) / 10).toFixed(1) + "%";
     }
 
+    function renderThead() {
+      const th = $("thead");
+      if (!th) return;
+      if (state.mode === "deploy") {
+        th.innerHTML = `
+          <tr>
+            <th>nodeId</th><th>name</th><th>enabled</th><th>健康</th><th>心跳</th><th>agentBaseUrl</th><th>gatewayBaseUrl</th><th>weight</th><th>操作</th>
+          </tr>
+        `;
+      } else {
+        th.innerHTML = `
+          <tr>
+            <th>id</th><th>name</th><th>enabled</th><th>健康</th><th>心跳</th><th>落盘用户数</th><th>占比</th><th>nginx（IP/URL）</th><th>api（IP/URL）</th><th>操作</th>
+          </tr>
+        `;
+      }
+    }
+
+    function enabledBadge(mode, enabled) {
+      if (mode === "deploy") {
+        const ok = (enabled === true || enabled === "true" || enabled === 1 || enabled === "1");
+        return ok ? '<span class="ok">true</span>' : '<span class="err">false</span>';
+      }
+      return (enabled === 1 ? '<span class="ok">1</span>' : '<span class="err">0</span>');
+    }
+
+    function healthBadge(health) {
+      const h = (health || "UNKNOWN");
+      return h === "HEALTHY" ? '<span class="ok">HEALTHY</span>'
+           : h === "STALE" ? '<span class="warn">STALE</span>'
+           : '<span class="small">UNKNOWN</span>';
+    }
+
     function renderTable(rows) {
       const tb = $("tbody");
       tb.innerHTML = "";
+      const colCount = (state.mode === "deploy") ? 9 : 10;
       if (!rows || rows.length === 0) {
-        tb.innerHTML = '<tr><td colspan="10" class="small">（空）</td></tr>';
+        tb.innerHTML = `<tr><td colspan="${colCount}" class="small">（空）</td></tr>`;
         return;
       }
       rows.forEach((r) => {
         const tr = document.createElement("tr");
         tr.style.cursor = "pointer";
         tr.onclick = () => { state.selected = r; renderTable(state.rows); };
-        if (state.selected && String(state.selected.nodeId) === String(r.nodeId)) {
+        const selKey = state.mode === "deploy" ? String(state.selected?.nodeId ?? "") : String(state.selected?.nodeId ?? "");
+        const rowKey = String(r.nodeId ?? r.id ?? "");
+        if (state.selected && selKey && selKey === rowKey) {
           tr.style.background = "rgba(96,165,250,.08)";
         }
-        const share = pct(r.assignedUsers, state.totalPlacements || rows.reduce((a,x)=>a+(x.assignedUsers||0),0));
         const hbMs = r.lastHeartbeatAtMs;
         const hbText = hbMs ? new Date(hbMs).toLocaleString() : "-";
-        const health = (r.health || "UNKNOWN");
-        const healthBadge = health === "HEALTHY" ? '<span class="ok">HEALTHY</span>'
-                           : health === "STALE" ? '<span class="warn">STALE</span>'
-                           : '<span class="small">UNKNOWN</span>';
-        tr.innerHTML = `
-          <td>${r.nodeId ?? ""}</td>
-          <td><code>${escapeHtml(r.name ?? "")}</code></td>
-          <td>${(r.enabled === 1 ? '<span class="ok">1</span>' : '<span class="err">0</span>')}</td>
-          <td>${healthBadge}</td>
-          <td><code>${escapeHtml(hbText)}</code></td>
-          <td>${r.assignedUsers ?? 0}</td>
-          <td>${share}</td>
-          <td><code>${escapeHtml(r.nginxBaseUrl ?? "")}</code></td>
-          <td><code>${escapeHtml(r.apiBaseUrl ?? "")}</code></td>
-          <td>
-            <button class="btn secondary" data-act="enable">启用</button>
-            <button class="btn danger" data-act="disable" style="margin-left:6px">禁用</button>
-          </td>
-        `;
+        if (state.mode === "deploy") {
+          tr.innerHTML = `
+            <td>${r.nodeId ?? ""}</td>
+            <td><code>${escapeHtml(r.name ?? "")}</code></td>
+            <td>${enabledBadge("deploy", r.enabled)}</td>
+            <td>${healthBadge(r.health)}</td>
+            <td><code>${escapeHtml(hbText)}</code></td>
+            <td><code>${escapeHtml(r.agentBaseUrl ?? "")}</code></td>
+            <td><code>${escapeHtml(r.gatewayBaseUrl ?? "")}</code></td>
+            <td>${r.weight ?? "-"}</td>
+            <td>
+              <button class="btn secondary" data-act="enable">启用</button>
+              <button class="btn danger" data-act="disable" style="margin-left:6px">禁用</button>
+            </td>
+          `;
+        } else {
+          const share = pct(r.assignedUsers, state.totalPlacements || rows.reduce((a,x)=>a+(x.assignedUsers||0),0));
+          tr.innerHTML = `
+            <td>${r.nodeId ?? ""}</td>
+            <td><code>${escapeHtml(r.name ?? "")}</code></td>
+            <td>${enabledBadge("workspace", r.enabled)}</td>
+            <td>${healthBadge(r.health)}</td>
+            <td><code>${escapeHtml(hbText)}</code></td>
+            <td>${r.assignedUsers ?? 0}</td>
+            <td>${share}</td>
+            <td><code>${escapeHtml(r.nginxBaseUrl ?? "")}</code></td>
+            <td><code>${escapeHtml(r.apiBaseUrl ?? "")}</code></td>
+            <td>
+              <button class="btn secondary" data-act="enable">启用</button>
+              <button class="btn danger" data-act="disable" style="margin-left:6px">禁用</button>
+            </td>
+          `;
+        }
         tr.querySelectorAll("button").forEach((btn) => {
-          btn.disabled = (state.mode !== "workspace");
           btn.onclick = async (e) => {
             e.stopPropagation();
-            if (state.mode !== "workspace") return;
             const act = btn.getAttribute("data-act");
-            const enabled = act === "enable" ? 1 : 0;
             try {
-              const res = await apiPost("/api/fun-ai/admin/workspace-nodes/set-enabled", { nodeId: r.nodeId, enabled });
-              if (res.code !== 200) throw new Error(res.message || "请求失败");
+              if (!ensureToken()) return;
+              if (state.mode === "deploy") {
+                const enabled = act === "enable" ? 1 : 0;
+                const name = (r.name || "").trim();
+                if (!name) throw new Error("name 为空，无法 set-enabled");
+                const res = await apiPost("/api/fun-ai/admin/deploy-nodes/set-enabled", { name, enabled }, {});
+                if (res.code !== 200) throw new Error(res.message || "请求失败");
+              } else {
+                const enabled = act === "enable" ? 1 : 0;
+                const res = await apiPost("/api/fun-ai/admin/workspace-nodes/set-enabled", { nodeId: r.nodeId, enabled });
+                if (res.code !== 200) throw new Error(res.message || "请求失败");
+              }
               await reload();
             } catch (err) {
               setStatus(String(err.message || err), "err");
@@ -305,6 +422,7 @@
 
     async function reload() {
       setStatus("加载中...", "");
+      if (!ensureToken()) return;
       if (state.mode === "deploy") {
         const res = await apiGet("/api/fun-ai/admin/deploy-nodes/list");
         if (res.code !== 200) throw new Error(res.message || "请求失败");
@@ -313,7 +431,7 @@
         state.rows = res.data || [];
         renderKpi();
         renderTable(state.rows);
-        setStatus("OK：deploy 节点管理暂未开放（占位接口返回空列表）", "ok");
+        setStatus(`OK：deploy nodes=${state.rows.length}`, "ok");
         return;
       }
 
@@ -331,6 +449,7 @@
 
     async function onUpsert() {
       try {
+        if (!ensureToken()) return;
         const body = {
           id: (($("f_id")?.value || "").trim()) ? parseInt($("f_id").value.trim(), 10) : null,
           name: ($("f_name")?.value || "").trim(),
@@ -339,6 +458,9 @@
           enabled: parseInt((($("f_enabled")?.value || "0").trim()), 10),
           weight: parseInt((($("f_weight")?.value || "100").trim()), 10),
         };
+        if (!body.name) throw new Error("name 不能为空");
+        if (!body.nginxBaseUrl) throw new Error("nginxBaseUrl 不能为空");
+        if (!body.apiBaseUrl) throw new Error("apiBaseUrl 不能为空");
         const res = await apiPost("/api/fun-ai/admin/workspace-nodes/upsert", null, body);
         if (res.code !== 200) throw new Error(res.message || "请求失败");
         await reload();
@@ -346,6 +468,46 @@
       } catch (e) {
         setStatus(String(e.message || e), "err");
       }
+    }
+
+    function parseBoolLike(v) {
+      const s = String(v ?? "").trim().toLowerCase();
+      if (s === "true" || s === "1" || s === "yes" || s === "y") return true;
+      if (s === "false" || s === "0" || s === "no" || s === "n") return false;
+      return null;
+    }
+
+    async function onDeployUpsert() {
+      try {
+        if (!ensureToken()) return;
+        const enabled = parseBoolLike(($("d_enabled")?.value || "").trim());
+        if (enabled === null) throw new Error("enabled 只能填 true/false 或 1/0");
+        const body = {
+          name: ($("d_name")?.value || "").trim(),
+          agentBaseUrl: ($("d_agent")?.value || "").trim(),
+          gatewayBaseUrl: ($("d_gateway")?.value || "").trim(),
+          enabled,
+          weight: parseInt((($("d_weight")?.value || "100").trim()), 10),
+        };
+        if (!body.name) throw new Error("name 不能为空");
+        const res = await apiPost("/api/fun-ai/admin/deploy-nodes/upsert", null, body);
+        if (res.code !== 200) throw new Error(res.message || "请求失败");
+        await reload();
+        setStatus("保存成功", "ok");
+      } catch (e) {
+        setStatus(String(e.message || e), "err");
+      }
+    }
+
+    function onDeployClear() {
+      ["d_name","d_agent","d_gateway","d_enabled","d_weight","d_nodeId","d_targetNodeId","d_drainLimit","d_appId","d_appTargetNodeId"].forEach((k) => {
+        const el = $(k);
+        if (el) el.value = "";
+      });
+      if ($("d_enabled")) $("d_enabled").value = "true";
+      if ($("d_weight")) $("d_weight").value = "100";
+      if ($("d_drainLimit")) $("d_drainLimit").value = "200";
+      setStatus("", "");
     }
 
     function onClear() {
@@ -360,21 +522,30 @@
 
     $("btnReload").onclick = async () => { try { await reload(); } catch (e) { setStatus(String(e.message || e), "err"); } };
     $("btnFillFromSel").onclick = () => {
-      if (state.mode !== "workspace") { setStatus("Deploy 节点暂未开放", "err"); return; }
       const r = state.selected;
       if (!r) { setStatus("请先在表格中选中一行", "err"); return; }
-      if ($("f_id")) $("f_id").value = r.nodeId ?? "";
-      if ($("f_name")) $("f_name").value = r.name ?? "";
-      if ($("f_nginx")) $("f_nginx").value = r.nginxBaseUrl ?? "";
-      if ($("f_api")) $("f_api").value = r.apiBaseUrl ?? "";
-      if ($("f_enabled")) $("f_enabled").value = String(r.enabled ?? 0);
-      if ($("f_weight")) $("f_weight").value = String(r.weight ?? 100);
-      if ($("p_nodeId")) $("p_nodeId").value = String(r.nodeId ?? "");
+      if (state.mode === "deploy") {
+        if ($("d_name")) $("d_name").value = r.name ?? "";
+        if ($("d_agent")) $("d_agent").value = r.agentBaseUrl ?? "";
+        if ($("d_gateway")) $("d_gateway").value = r.gatewayBaseUrl ?? "";
+        if ($("d_enabled")) $("d_enabled").value = String(r.enabled ?? false);
+        if ($("d_weight")) $("d_weight").value = String(r.weight ?? 100);
+        if ($("d_nodeId")) $("d_nodeId").value = String(r.nodeId ?? "");
+      } else {
+        if ($("f_id")) $("f_id").value = r.nodeId ?? "";
+        if ($("f_name")) $("f_name").value = r.name ?? "";
+        if ($("f_nginx")) $("f_nginx").value = r.nginxBaseUrl ?? "";
+        if ($("f_api")) $("f_api").value = r.apiBaseUrl ?? "";
+        if ($("f_enabled")) $("f_enabled").value = String(r.enabled ?? 0);
+        if ($("f_weight")) $("f_weight").value = String(r.weight ?? 100);
+        if ($("p_nodeId")) $("p_nodeId").value = String(r.nodeId ?? "");
+      }
       setStatus("已填充选中行", "ok");
     };
 
     async function onPlacements() {
       try {
+        if (!ensureToken()) return;
         const nodeId = ($("p_nodeId")?.value || "").trim();
         if (!nodeId) throw new Error("请先选择 nodeId");
         const res = await apiGet("/api/fun-ai/admin/workspace-nodes/placements", { nodeId, offset: 0, limit: 200 });
@@ -391,8 +562,28 @@
       }
     }
 
+    async function onDeployPlacements() {
+      try {
+        if (!ensureToken()) return;
+        const nodeId = ($("d_nodeId")?.value || "").trim();
+        if (!nodeId) throw new Error("请先选择 nodeId");
+        const res = await apiGet("/api/fun-ai/admin/deploy-nodes/placements", { nodeId, offset: 0, limit: 200 });
+        if (res.code !== 200) throw new Error(res.message || "请求失败");
+        const data = res.data || {};
+        const items = data.items || [];
+        const box = $("deployPlacementsBox");
+        box.innerHTML = items.length
+          ? items.map(it => `<div><code>appId=${escapeHtml(it.appId)}</code> <span class="pillTag">lastActiveAt=${escapeHtml(it.lastActiveAt||"")}</span></div>`).join("")
+          : '<div class="small">（空）</div>';
+        setStatus(`deploy placements OK: nodeId=${nodeId} total=${data.total ?? items.length}`, "ok");
+      } catch (e) {
+        setStatus(String(e.message || e), "err");
+      }
+    }
+
     async function onReassign() {
       try {
+        if (!ensureToken()) return;
         const userId = ($("p_userId")?.value || "").trim();
         const targetNodeId = ($("p_userTargetNodeId")?.value || "").trim();
         if (!userId) throw new Error("userId 不能为空");
@@ -407,8 +598,26 @@
       }
     }
 
+    async function onDeployReassign() {
+      try {
+        if (!ensureToken()) return;
+        const appId = ($("d_appId")?.value || "").trim();
+        const targetNodeId = ($("d_appTargetNodeId")?.value || "").trim();
+        if (!appId) throw new Error("appId 不能为空");
+        if (!targetNodeId) throw new Error("targetNodeId 不能为空");
+        const body = { appId: parseInt(appId, 10), targetNodeId: parseInt(targetNodeId, 10) };
+        const res = await apiPost("/api/fun-ai/admin/deploy-nodes/reassign", null, body);
+        if (res.code !== 200) throw new Error(res.message || "请求失败");
+        await reload();
+        setStatus(`deploy reassign OK: appId=${appId} -> nodeId=${targetNodeId}`, "ok");
+      } catch (e) {
+        setStatus(String(e.message || e), "err");
+      }
+    }
+
     async function onDrain() {
       try {
+        if (!ensureToken()) return;
         const sourceNodeId = ($("p_nodeId")?.value || "").trim();
         const targetNodeId = ($("p_targetNodeId")?.value || "").trim();
         const limit = parseInt((($("p_drainLimit")?.value || "100").trim()), 10);
@@ -420,6 +629,25 @@
         if (res.code !== 200) throw new Error(res.message || "请求失败");
         await reload();
         setStatus(`drain OK: moved=${res.data?.moved ?? "?"} ${sourceNodeId} -> ${targetNodeId}`, "ok");
+      } catch (e) {
+        setStatus(String(e.message || e), "err");
+      }
+    }
+
+    async function onDeployDrain() {
+      try {
+        if (!ensureToken()) return;
+        const sourceNodeId = ($("d_nodeId")?.value || "").trim();
+        const targetNodeId = ($("d_targetNodeId")?.value || "").trim();
+        const limit = parseInt((($("d_drainLimit")?.value || "200").trim()), 10);
+        if (!sourceNodeId) throw new Error("请先选择 source nodeId");
+        if (!targetNodeId) throw new Error("targetNodeId 不能为空");
+        if (String(sourceNodeId) === String(targetNodeId)) throw new Error("source/target 不能相同");
+        const body = { sourceNodeId: parseInt(sourceNodeId, 10), targetNodeId: parseInt(targetNodeId, 10), limit: isFinite(limit) ? limit : 200 };
+        const res = await apiPost("/api/fun-ai/admin/deploy-nodes/drain", null, body);
+        if (res.code !== 200) throw new Error(res.message || "请求失败");
+        await reload();
+        setStatus(`deploy drain OK: moved=${res.data?.moved ?? "?"} ${sourceNodeId} -> ${targetNodeId}`, "ok");
       } catch (e) {
         setStatus(String(e.message || e), "err");
       }

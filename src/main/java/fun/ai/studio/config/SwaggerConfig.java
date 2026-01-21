@@ -53,7 +53,7 @@ public class SwaggerConfig implements WebMvcConfigurer {
                                 【节点管理（运维）】
                                 - 入口页：`/admin/nodes.html#token={{adminToken}}`
                                 - Workspace 节点：`/admin/nodes-admin.html?mode=workspace#token={{adminToken}}`
-                                - Deploy 节点：`/admin/nodes-admin.html?mode=deploy#token={{adminToken}}`（暂未开放）
+                                - Deploy 节点：`/admin/nodes-admin.html?mode=deploy#token={{adminToken}}`（需启用 deploy-proxy）
                                 - 鉴权：Header `X-Admin-Token` + 来源 IP 白名单（见 `funai.admin.*` 配置）
 
                                 【排障提示】
