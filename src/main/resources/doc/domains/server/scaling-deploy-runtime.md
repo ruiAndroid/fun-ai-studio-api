@@ -7,21 +7,27 @@
 
 ---
 
-## 1. 推荐服务器划分（最小可运维的 3 台）
+## 1. 推荐服务器划分（现网 5 台：其中 Deploy/Runner/Runtime 为 3 台）
 
 - **API 服务器（ControlPlane 入口）**
   - 部署：`fun-ai-studio-api`（Spring Boot）
   - 作用：用户统一入口、鉴权、业务编排；内部调用 Deploy 控制面创建 Job
   - 备注：对公网通常只通过网关暴露 80/443；API 自身端口建议只对网关开放
 
-- **Deploy 服务器（发布控制面 + 执行面）**
-  - 部署：`fun-ai-studio-deploy`（Spring Boot）+ `fun-ai-studio-runner`（Python）
-  - 作用：控制面管理 Job / runtime 节点；Runner 在本机执行构建/部署动作
-  - 备注：早期只有 1 台部署机时，Deploy 与 Runner 同机是合理起步形态
+- **Deploy 服务器（发布控制面）**
+  - 部署：`fun-ai-studio-deploy`（Spring Boot）
+  - 作用：控制面管理 Job / runtime 节点；对外提供 claim/heartbeat/report 与 admin 运维接口
+  - 现网：`172.21.138.100`
+
+- **Runner 服务器（执行面）**
+  - 部署：`fun-ai-studio-runner`（Python）
+  - 作用：轮询 claim 任务、执行构建/推送镜像（后续）、调用 runtime-agent 部署，回传 report
+  - 现网：`172.21.138.101`
 
 - **Runtime 节点（可多台，横向扩容）**
   - 部署：`runtime-agent`（FastAPI）+ Docker/Podman + 网关（Traefik/Nginx）
   - 作用：承载用户应用容器，对外提供 `/apps/{appId}/...` 访问
+  - 现网：`172.21.138.102`
 
 ---
 
