@@ -37,5 +37,6 @@
 - [Server 总览](./server/README.md)
 - [多机扩容方案（面向 Workspace）](./server/scaling-workspace.md)
 - [多机扩容方案（面向 Deploy / Runner / Runtime）](./server/scaling-deploy-runtime.md)
+- [安全组/防火墙放行矩阵（现网最小可用）](./server/security-groups.md)
 
 
