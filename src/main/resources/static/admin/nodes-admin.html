@@ -216,6 +216,19 @@
         $("listTitle").textContent = "节点列表（Deploy）";
         $("listHint").innerHTML = '说明：该模块通过后端 <code>deploy-proxy</code> 转发到 Deploy 控制面 <code>/admin/runtime-nodes/**</code>；需在后端开启 <code>deploy-proxy.enabled=true</code> 并配置 <code>deploy-proxy.base-url</code>。';
         $("featureBox").innerHTML = `
+          <h3 style="margin:0 0 10px 0;font-size:14px">在线状态：Deploy / Runner</h3>
+          <div class="row" style="margin-top:6px">
+            <button id="btnDeployStatus" class="btn secondary">刷新状态</button>
+          </div>
+          <div class="small" style="margin-top:10px">
+            Deploy 健康检查：
+            <div id="deployHealthBox" class="small" style="margin-top:8px;max-height:140px;overflow:auto"></div>
+          </div>
+          <div class="small" style="margin-top:10px">
+            Runner 列表：
+            <div id="deployRunnerBox" class="small" style="margin-top:8px;max-height:200px;overflow:auto"></div>
+          </div>
+          <hr style="margin:14px 0;border:0;border-top:1px solid var(--bd2)"/>
           <h3 style="margin:0 0 10px 0;font-size:14px">功能区：新增/更新 Deploy runtime 节点</h3>
           <label>name（必填，唯一）</label>
           <input id="d_name" placeholder="deploy-node-01" />
@@ -257,6 +270,7 @@
             <div id="deployPlacementsBox" class="small" style="margin-top:8px;max-height:260px;overflow:auto"></div>
           </div>
         `;
+        $("btnDeployStatus").onclick = onDeployStatus;
         $("btnDeployUpsert").onclick = onDeployUpsert;
         $("btnDeployClear").onclick = onDeployClear;
         $("btnDeployPlacements").onclick = onDeployPlacements;
@@ -576,6 +590,49 @@
           ? items.map(it => `<div><code>appId=${escapeHtml(it.appId)}</code> <span class="pillTag">lastActiveAt=${escapeHtml(it.lastActiveAt||"")}</span></div>`).join("")
           : '<div class="small">（空）</div>';
         setStatus(`deploy placements OK: nodeId=${nodeId} total=${data.total ?? items.length}`, "ok");
+      } catch (e) {
+        setStatus(String(e.message || e), "err");
+      }
+    }
+
+    async function onDeployStatus() {
+      try {
+        if (!ensureToken()) return;
+        const hb = $("deployHealthBox");
+        const rb = $("deployRunnerBox");
+        if (hb) hb.innerHTML = '<div class="small">加载中...</div>';
+        if (rb) rb.innerHTML = '<div class="small">加载中...</div>';
+
+        const resHealth = await apiGet("/api/fun-ai/admin/deploy-nodes/health");
+        if (resHealth.code !== 200) throw new Error(resHealth.message || "deploy health 请求失败");
+        const data = resHealth.data || {};
+        const deploy = data.deploy || {};
+        const ts = deploy.timestamp ? String(deploy.timestamp) : "-";
+        const svc = deploy.service ? String(deploy.service) : "deploy";
+        const proxyBaseUrl = data.proxyBaseUrl ? String(data.proxyBaseUrl) : "-";
+        if (hb) {
+          hb.innerHTML = `
+            <div><span class="pillTag">proxyBaseUrl=${escapeHtml(proxyBaseUrl)}</span></div>
+            <div style="margin-top:6px"><code>${escapeHtml(svc)}</code> <span class="pillTag">timestamp=${escapeHtml(ts)}</span></div>
+          `;
+        }
+
+        const resRunners = await apiGet("/api/fun-ai/admin/deploy-nodes/runners/list");
+        if (resRunners.code !== 200) throw new Error(resRunners.message || "runner list 请求失败");
+        const runners = resRunners.data || [];
+        if (rb) {
+          rb.innerHTML = runners.length
+            ? runners.map(r => {
+                const at = r.lastSeenAtMs ? new Date(r.lastSeenAtMs).toLocaleString() : "-";
+                const h = r.health || "UNKNOWN";
+                const badge = h === "HEALTHY" ? '<span class="ok">HEALTHY</span>'
+                            : h === "STALE" ? '<span class="warn">STALE</span>'
+                            : '<span class="small">UNKNOWN</span>';
+                return `<div>${badge} <code>${escapeHtml(r.runnerId||"")}</code> <span class="pillTag">lastSeen=${escapeHtml(at)}</span></div>`;
+              }).join("")
+            : '<div class="small">（空）</div>';
+        }
+        setStatus("状态刷新成功", "ok");
       } catch (e) {
         setStatus(String(e.message || e), "err");
       }

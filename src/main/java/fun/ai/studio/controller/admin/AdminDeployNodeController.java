@@ -6,6 +6,7 @@ import fun.ai.studio.entity.request.AdminDeployDrainNodeRequest;
 import fun.ai.studio.entity.request.AdminDeployReassignPlacementRequest;
 import fun.ai.studio.entity.request.AdminUpsertDeployRuntimeNodeRequest;
 import fun.ai.studio.entity.response.AdminDeployRuntimeNodeSummary;
+import fun.ai.studio.entity.response.AdminDeployRunnerSummary;
 import fun.ai.studio.entity.response.AdminDeployRuntimePlacementItem;
 import fun.ai.studio.entity.response.AdminDeployRuntimePlacementsResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -76,6 +78,50 @@ public class AdminDeployNodeController {
 
         List<AdminDeployRuntimeNodeSummary> out = (res.getData() == null ? List.<Map<String, Object>>of() : res.getData()).stream()
                 .map(this::toSummary)
+                .collect(Collectors.toList());
+        return Result.success(out);
+    }
+
+    @GetMapping("/health")
+    @Operation(summary = "Deploy 控制面在线状态（转发到 deploy /internal/health）")
+    public Result<Map<String, Object>> health(@RequestHeader(value = "X-Admin-Token", required = false) String adminToken) {
+        Result<Map<String, Object>> g = guardEnabled();
+        if (g != null) return g;
+
+        Result<Map<String, Object>> res = proxy.get(
+                "/internal/health",
+                null,
+                adminToken,
+                new ParameterizedTypeReference<>() {
+                }
+        );
+        if (res == null || res.getCode() == null || res.getCode() != 200) {
+            return Result.error(res == null ? "deploy-proxy 请求失败" : res.getMessage());
+        }
+        Map<String, Object> out = new HashMap<>();
+        out.put("proxyBaseUrl", proxy.baseUrl());
+        out.put("deploy", res.getData());
+        return Result.success(out);
+    }
+
+    @GetMapping("/runners/list")
+    @Operation(summary = "Runner 在线状态列表（转发到 deploy /admin/runners/list）")
+    public Result<List<AdminDeployRunnerSummary>> runners(@RequestHeader(value = "X-Admin-Token", required = false) String adminToken) {
+        Result<List<AdminDeployRunnerSummary>> g = guardEnabled();
+        if (g != null) return g;
+
+        Result<List<Map<String, Object>>> res = proxy.get(
+                "/admin/runners/list",
+                null,
+                adminToken,
+                new ParameterizedTypeReference<>() {
+                }
+        );
+        if (res == null || res.getCode() == null || res.getCode() != 200) {
+            return Result.error(res == null ? "deploy-proxy 请求失败" : res.getMessage());
+        }
+        List<AdminDeployRunnerSummary> out = (res.getData() == null ? List.<Map<String, Object>>of() : res.getData()).stream()
+                .map(this::toRunnerSummary)
                 .collect(Collectors.toList());
         return Result.success(out);
     }
@@ -275,6 +321,20 @@ public class AdminDeployNodeController {
         } catch (Exception ignore) {
         }
         return resp;
+    }
+
+    private AdminDeployRunnerSummary toRunnerSummary(Map<String, Object> m) {
+        AdminDeployRunnerSummary s = new AdminDeployRunnerSummary();
+        if (m == null) return s;
+        s.setRunnerId(m.get("runnerId") == null ? null : String.valueOf(m.get("runnerId")));
+        try {
+            Object v = m.get("lastSeenAtMs");
+            if (v instanceof Number n) s.setLastSeenAtMs(n.longValue());
+            else if (v != null) s.setLastSeenAtMs(Long.parseLong(String.valueOf(v)));
+        } catch (Exception ignore) {
+        }
+        s.setHealth(m.get("health") == null ? null : String.valueOf(m.get("health")));
+        return s;
     }
 }
 
