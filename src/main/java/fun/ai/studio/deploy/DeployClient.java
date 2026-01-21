@@ -21,7 +21,7 @@ import java.util.Map;
 /**
  * API 服务侧轻量客户端：调用 Deploy 控制面（fun-ai-studio-deploy）。
  *
- * 注意：本客户端当前不做签名，仅依赖内网+安全组；shared-secret 为后续 internal auth 预留。
+ * 注意：shared-secret 用于 API -> Deploy 内部鉴权（Deploy 侧校验 Header：X-DEPLOY-SECRET）。
  */
 @Component
 public class DeployClient {
@@ -79,7 +79,7 @@ public class DeployClient {
         if (bodyObj != null) {
             b.header("Content-Type", "application/json");
         }
-        // 预留：后续 internal auth 再启用
+        // internal auth：API -> Deploy 共享密钥
         if (StringUtils.hasText(props.getSharedSecret())) {
             b.header("X-DEPLOY-SECRET", props.getSharedSecret());
         }

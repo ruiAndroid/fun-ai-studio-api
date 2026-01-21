@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
  * <pre>
  * deploy-proxy.enabled=true
  * deploy-proxy.base-url=http://127.0.0.1:7002
- * deploy-proxy.shared-secret=xxxx   # 预留：后续 deploy 服务加 internal auth 时启用
+ * deploy-proxy.shared-secret=xxxx   # API -> Deploy 内部鉴权密钥（Deploy 侧校验 Header：X-DEPLOY-SECRET）
  * </pre>
  */
 @Component

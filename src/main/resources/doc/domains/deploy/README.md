@@ -47,6 +47,6 @@ Base：`/api/fun-ai/deploy`
 
 - `deploy-proxy.enabled`
 - `deploy-proxy.base-url`
-- `deploy-proxy.shared-secret`（预留：后续 deploy 服务加 internal auth）
+- `deploy-proxy.shared-secret`（**API -> Deploy 内部鉴权密钥**，Deploy 侧校验 Header：`X-DEPLOY-SECRET`）
 
 
