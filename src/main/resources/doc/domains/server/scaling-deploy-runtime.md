@@ -59,6 +59,7 @@
 
 ### 3.1 Deploy 服务器（Runner 执行需要）
 
+- Java 17（运行 `fun-ai-studio-deploy`）
 - Docker/Podman（用于构建、镜像操作，后续可接 `buildx`）
 - Python 3.10+（Runner）
 - （可选）BuildKit/buildx：用于高效 `docker buildx build --push`
@@ -68,6 +69,123 @@
 - Docker/Podman（运行用户应用容器）
 - Python 3.10+（runtime-agent）
 - Traefik/Nginx（统一域名路径路由 `/apps/{appId}`）
+
+---
+
+## 3.3 Deploy 控制面（fun-ai-studio-deploy）在全新服务器落地（建议照抄）
+
+> 目标：把 `fun-ai-studio-deploy` 跑成一个 systemd 常驻服务（端口 `7002`），并能通过 `/internal/health` 自检。
+
+### 3.3.1 安全组/防火墙（先做，避免“跑起来但连不上”）
+
+- **入站（Deploy 服务器 100）**：
+  - `7002/tcp`：仅允许 **API 服务器**、**Runner 所在机（若不同）**、以及 **Runtime 节点**访问（心跳/claim/report 走这个端口）
+- **不要**把 `7002` 暴露公网
+
+### 3.3.2 安装 Java 17（两种常见发行版命令）
+
+> 你只需要其一：根据服务器 OS 选择对应命令。
+
+**Alibaba Cloud Linux 3 / CentOS / RHEL 系：**
+
+```bash
+sudo yum -y install java-17-openjdk java-17-openjdk-devel
+java -version
+```
+
+**Ubuntu / Debian 系：**
+
+```bash
+sudo apt-get update -y
+sudo apt-get install -y openjdk-17-jdk
+java -version
+```
+
+### 3.3.3 准备部署目录与运行用户
+
+```bash
+sudo useradd -r -s /sbin/nologin funai || true
+sudo mkdir -p /opt/funai/deploy /opt/funai/deploy/config /var/log/funai-deploy
+sudo chown -R funai:funai /opt/funai/deploy /var/log/funai-deploy
+```
+
+### 3.3.4 产出/上传 Jar（推荐：在构建机打包，把 jar 上传到 100）
+
+在你的构建机（开发机/CI）打包：
+
+```bash
+cd fun-ai-studio-deploy
+mvn -DskipTests clean package
+```
+
+把 `target/*.jar` 上传到 100（示例路径）：
+
+- `/opt/funai/deploy/app.jar`
+
+> 备注：不推荐在生产机上装 Maven 全量依赖来构建（能跑就行，构建尽量交给 CI）。
+
+### 3.3.5 配置文件（生产建议改 token/secret 与 allowed-ips）
+
+把 Deploy 配置放到：
+
+- `/opt/funai/deploy/config/application-prod.properties`
+
+你至少需要确认（并替换 `CHANGE_ME_*`）：
+
+- `deploy.admin.token`
+- `deploy.runtime-node-registry.shared-secret`
+- （可选）`deploy.admin.allowed-ips`、`deploy.runtime-node-registry.allowed-ips`
+
+> 参考默认配置：`fun-ai-studio-deploy/src/main/resources/application.properties`
+
+### 3.3.6 systemd 常驻（Deploy 7002）
+
+创建文件：`/etc/systemd/system/fun-ai-studio-deploy.service`
+
+```ini
+[Unit]
+Description=fun-ai-studio deploy control plane (7002)
+After=network.target
+
+[Service]
+Type=simple
+User=funai
+WorkingDirectory=/opt/funai/deploy
+Environment="JAVA_OPTS=-Xms256m -Xmx512m"
+ExecStart=/usr/bin/java $JAVA_OPTS -jar /opt/funai/deploy/app.jar --spring.profiles.active=prod --spring.config.location=/opt/funai/deploy/config/
+Restart=always
+RestartSec=3
+SuccessExitStatus=143
+StandardOutput=append:/var/log/funai-deploy/stdout.log
+StandardError=append:/var/log/funai-deploy/stderr.log
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+```
+
+启动并设置开机自启：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now fun-ai-studio-deploy
+sudo systemctl status fun-ai-studio-deploy --no-pager
+```
+
+### 3.3.7 健康检查与日志排查
+
+健康检查（本机）：
+
+```bash
+curl -sS http://127.0.0.1:7002/internal/health
+```
+
+看日志：
+
+```bash
+sudo tail -n 200 /var/log/funai-deploy/stdout.log
+sudo tail -n 200 /var/log/funai-deploy/stderr.log
+```
 
 ---
 

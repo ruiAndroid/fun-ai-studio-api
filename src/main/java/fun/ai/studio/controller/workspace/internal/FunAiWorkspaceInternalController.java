@@ -2,7 +2,6 @@ package fun.ai.studio.controller.workspace.internal;
 
 import fun.ai.studio.workspace.WorkspaceProperties;
 import fun.ai.studio.workspace.WorkspaceActivityTracker;
-import fun.ai.studio.service.FunAiWorkspaceService;
 import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -27,16 +26,13 @@ import jakarta.servlet.http.HttpServletRequest;
 public class FunAiWorkspaceInternalController {
     private static final Logger log = LoggerFactory.getLogger(FunAiWorkspaceInternalController.class);
 
-    private final FunAiWorkspaceService workspaceService;
     private final WorkspaceProperties workspaceProperties;
     private final WorkspaceActivityTracker activityTracker;
 
     public FunAiWorkspaceInternalController(
-            FunAiWorkspaceService workspaceService,
             WorkspaceProperties workspaceProperties,
             WorkspaceActivityTracker activityTracker
     ) {
-        this.workspaceService = workspaceService;
         this.workspaceProperties = workspaceProperties;
         this.activityTracker = activityTracker;
     }
@@ -74,17 +70,8 @@ public class FunAiWorkspaceInternalController {
             }
 
             // API 服务器（小机）裁剪模式下，本机不再维护 workspace-meta.json（由 Workspace 开发服务器（大机）维护）。
-            // 只有在本机 workspace 实现存在时，才支持端口查询。
-            Integer port = null;
-            if (workspaceService instanceof fun.ai.studio.service.impl.FunAiWorkspaceServiceImpl impl) {
-                port = impl.getHostPortForNginx(userId);
-            }
-            if (port == null || port <= 0) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
-            }
-            return ResponseEntity.noContent()
-                    .header("X-WS-Port", String.valueOf(port))
-                    .build();
+            // 因此 API 工程不再提供端口查询能力：该能力应由 workspace-node（大机）本机实现并供 nginx 调用。
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         } catch (Exception e) {
             log.warn("nginx port lookup failed: userId={}, error={}", userId, e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();

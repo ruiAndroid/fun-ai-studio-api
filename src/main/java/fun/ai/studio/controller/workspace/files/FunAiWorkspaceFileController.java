@@ -30,8 +30,7 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Set;
+
 
 /**
  * Workspace 文件域：文件树/读写/上传下载（宿主机持久化目录）
@@ -256,16 +255,11 @@ public class FunAiWorkspaceFileController {
             activityTracker.touch(userId);
             String filename = "app_" + appId + ".zip";
 
-            Path hostAppDir = Paths.get(workspaceService.ensureAppDir(userId, appId).getHostAppDir());
-
-            Set<String> excludes = includeNodeModules
-                    // 即使 includeNodeModules=true，也不打包缓存/内部元数据目录
-                    ? Set.of(".git", "dist", "build", ".next", "target", ".npm-cache", ".funai")
-                    : Set.of("node_modules", ".git", "dist", "build", ".next", "target", ".npm-cache", ".funai");
-
             StreamingResponseBody body = outputStream -> {
-                fun.ai.studio.workspace.ZipUtils.zipDirectory(hostAppDir, outputStream, excludes);
-                outputStream.flush();
+                // 双机模式：该接口请求会在 API 层被 workspace-node-proxy 直接转发到 workspace-node（大机），此处逻辑通常不会执行。
+                // 为减少 API 工程中“重实现/工具类”重复代码，这里不再直接依赖 ZipUtils。
+                // 若确需在 API 工程本机执行打包，请改用 workspace-node（大机）侧实现。
+                throw new UnsupportedOperationException("download-zip should be handled by workspace-node");
             };
 
             ContentDisposition disposition = ContentDisposition.attachment()
