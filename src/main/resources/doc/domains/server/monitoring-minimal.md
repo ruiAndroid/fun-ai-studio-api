@@ -51,7 +51,10 @@ Prometheus 在 API(91) 上抓取其它机器指标，所以其它机器需要对
 
 ---
 
-## 3. API 服务器（小机）：Prometheus + Grafana（Podman-docker / docker run）
+## 3. API 服务器（小机）：Prometheus + Grafana
+
+> 说明：有些 API 服务器（91）不安装 Docker/Podman（只跑 Spring Boot），这种情况下请使用 **systemd（二进制安装）**。
+> 若你们 91 已经有 Docker/Podman，也可以继续使用容器方式（见下文 3B）。
 
 ### 3.1 目录约定（建议落盘）
 
@@ -130,7 +133,74 @@ scrape_configs:
 >
 > 告警规则示例见：`./monitoring-prometheus-alerts-minimal.yml`（复制到 `/data/funai/monitoring/prometheus/rules/alerts.yml`）。
 
-### 3.3 运行 Prometheus（只监听本机 127.0.0.1）
+### 3.3A 方式 A：systemd（二进制安装，推荐：适用于 91 无 Docker）
+
+#### 3.3A.1 安装 Prometheus
+
+```bash
+set -e
+PROM_VERSION="2.54.1"
+
+useradd -r -s /sbin/nologin prometheus || true
+
+mkdir -p /opt/prometheus /etc/prometheus /data/funai/monitoring/prometheus/rules
+cd /opt/prometheus
+
+curl -L -o prometheus.tar.gz \
+  https://github.com/prometheus/prometheus/releases/download/v${PROM_VERSION}/prometheus-${PROM_VERSION}.linux-amd64.tar.gz
+tar -zxf prometheus.tar.gz
+cp -f prometheus-${PROM_VERSION}.linux-amd64/prometheus /usr/local/bin/prometheus
+cp -f prometheus-${PROM_VERSION}.linux-amd64/promtool /usr/local/bin/promtool
+chmod +x /usr/local/bin/prometheus /usr/local/bin/promtool
+
+# 配置文件按本仓库文档写到 /data/funai/monitoring/prometheus/prometheus.yml
+# 规则文件可复制：monitoring-prometheus-alerts-minimal.yml -> /data/funai/monitoring/prometheus/rules/alerts.yml
+chown -R prometheus:prometheus /data/funai/monitoring/prometheus
+```
+
+#### 3.3A.2 配置 systemd（Prometheus 仅监听本机 127.0.0.1）
+
+创建：`/etc/systemd/system/prometheus.service`
+
+```ini
+[Unit]
+Description=Prometheus
+After=network.target
+
+[Service]
+Type=simple
+User=prometheus
+ExecStart=/usr/local/bin/prometheus \
+  --web.listen-address=127.0.0.1:9090 \
+  --config.file=/data/funai/monitoring/prometheus/prometheus.yml \
+  --storage.tsdb.path=/data/funai/monitoring/prometheus/data \
+  --storage.tsdb.retention.time=15d
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+```
+
+启动：
+
+```bash
+systemctl daemon-reload
+systemctl enable --now prometheus
+systemctl status prometheus --no-pager -l
+```
+
+#### 3.3A.3 快速自检
+
+```bash
+curl -sS http://127.0.0.1:9090/-/healthy
+```
+
+### 3.3B 方式 B：容器方式（docker/podman，若 91 已安装）
+
+> 保留旧方式：用 docker/podman 启动 Prometheus，仅适用于 91 上确实存在容器运行时。
+
+### 3.3B.1 运行 Prometheus（只监听本机 127.0.0.1）
 
 ```bash
 mkdir -p /data/funai/monitoring/prometheus/rules
@@ -149,7 +219,13 @@ docker run -d --name funai-prometheus --restart=always \
   --storage.tsdb.retention.time=15d
 ```
 
-### 3.4 运行 Grafana（只监听本机 127.0.0.1）
+### 3.4A 方式 A：systemd（二进制/包安装，适用于 91 无 Docker）
+
+Grafana 推荐走官方仓库安装（不同发行版命令略有差异）。若你们希望“最小可用”，也可以先跳过 Grafana，先用 Prometheus UI 验证 targets/查询。
+
+> Alibaba Cloud Linux 3 / RHEL8 系安装 Grafana 的方式可能需要启用 Grafana 官方 repo；如遇到网络/源问题，优先用公司/阿里云镜像源。
+
+### 3.4B 方式 B：容器方式（docker/podman）
 
 ```bash
 docker run -d --name funai-grafana --restart=always \
