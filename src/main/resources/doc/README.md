@@ -2,10 +2,11 @@
 
 ## 部署与运维
 
-- [现网 5 台模式：安全组/防火墙放行矩阵](./domains/server/security-groups.md)
-- [现网 5 台模式：最小可落地监控方案](./domains/server/monitoring-minimal.md)
+- [现网 6 台模式：安全组/防火墙放行矩阵](./domains/server/security-groups.md)
+- [现网 6 台模式：最小可落地监控方案](./domains/server/monitoring-minimal.md)
 - [Deploy/Runner/Runtime：整体架构与互联矩阵](./domains/deploy/architecture.md)
-- [真实部署闭环落地计划（现网 5 台）](./domains/deploy/real-deploy-rollout.md)
+- [真实部署闭环落地计划（现网 6 台）](./domains/deploy/real-deploy-rollout.md)
+- [方案 C：自建 Git（内网）——103 上从零部署 Gitea（SSH 拉代码）](./domains/deploy/git-server-gitea.md)
 - [多机扩容方案（面向 Deploy / Runner / Runtime）](./domains/server/scaling-deploy-runtime.md)
 - [Workspace 节点（workspace-dev / workspace-node）联调说明](./domains/server/workspace-node.md)
 - [阿里云部署文档（单机版，历史/最小版）](./阿里云部署文档.md)

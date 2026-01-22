@@ -122,6 +122,27 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
         return existingApp;
     }
 
+    @Override
+    public long countRunningSlotsByUserId(Long userId) {
+        if (userId == null) return 0;
+        // 运行中槽位：DEPLOYING + READY（避免“正在部署的第4个”成功后超限）
+        return this.lambdaQuery()
+                .eq(FunAiApp::getUserId, userId)
+                .in(FunAiApp::getAppStatus, FunAiAppStatus.DEPLOYING.code(), FunAiAppStatus.READY.code())
+                .count();
+    }
+
+    @Override
+    public boolean markDeploying(Long userId, Long appId) {
+        if (userId == null || appId == null) return false;
+        return this.lambdaUpdate()
+                .eq(FunAiApp::getId, appId)
+                .eq(FunAiApp::getUserId, userId)
+                .set(FunAiApp::getAppStatus, FunAiAppStatus.DEPLOYING.code())
+                .set(FunAiApp::getLastDeployError, null)
+                .update();
+    }
+
     // 旧链路（zip 上传 + 解压 + npm build + /fun-ai-app 静态站点部署）已移除：
     // - uploadAppFile / getLatestUploadedZipPath / deployApp
     // deploy 相关工具方法也一并移除（避免误用与依赖旧目录结构）

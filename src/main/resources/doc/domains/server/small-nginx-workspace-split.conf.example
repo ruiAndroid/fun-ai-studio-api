@@ -14,6 +14,27 @@ map $http_upgrade $connection_upgrade {
     '' close;
 }
 
+# -----------------------------
+# 0) /doc 文档与静态资源（必须固定走 API 上游）
+# -----------------------------
+# 背景：很多 Nginx 配置会写类似 location ~* \.(js|css|png|ico)$ 的规则，
+# 这类“正则 location”优先级高，可能把 /doc-mermaid.js /favicon.ico 错误路由到 workspace-dev（大机）导致 502。
+# 解决：用精确匹配/前缀匹配把这些路径强制走 API（并且放在所有 regex location 之前）。
+#
+# 说明：把 API_UPSTREAM 替换为你本机后端地址，例如 http://127.0.0.1:8080
+#
+set $API_UPSTREAM http://127.0.0.1:8080;
+
+location = /doc-mermaid.js {
+    proxy_pass $API_UPSTREAM;
+}
+location = /favicon.ico {
+    proxy_pass $API_UPSTREAM;
+}
+location ^~ /doc/ {
+    proxy_pass $API_UPSTREAM;
+}
+
 # 1) 预览入口：/ws/{userId}/...
 location ^~ /ws/ {
     proxy_http_version 1.1;

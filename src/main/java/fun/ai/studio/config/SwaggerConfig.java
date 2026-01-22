@@ -23,12 +23,12 @@ public class SwaggerConfig implements WebMvcConfigurer {
     private static final String WORKSPACE_API_PREFIX = "/api/fun-ai/workspace/";
 
     /**
-     * 多机部署提示（现网 5 台）：Workspace 接口对外仍由 API 服务器（入口）展示/鉴权，但会转发到 workspace-dev 的 workspace-node 执行。
+     * 多机部署提示（现网 6 台）：Workspace 接口对外仍由 API 服务器（入口）展示/鉴权，但会转发到 workspace-dev 的 workspace-node 执行。
      * <p>
      * 注意：这里的文案刻意写成“在多机部署时”，以兼容单机/本地开发环境。
      */
     private static final String WORKSPACE_FORWARDED_HINT =
-            "【多机部署提示（现网 5 台）】该接口在 API 服务器（入口）上展示/鉴权；在多机部署时会通过 workspace-node-proxy 转发到 workspace-dev（workspace-node，7001）执行。\n\n"
+            "【多机部署提示（现网 6 台）】该接口在 API 服务器（入口）上展示/鉴权；在多机部署时会通过 workspace-node-proxy 转发到 workspace-dev（workspace-node，7001）执行。\n\n"
             + "【常见错误提示】如果你看到 code=502，通常表示“转发链路未生效或 workspace-dev 不可用”。请依次检查：\n"
             + "1) API 配置：workspace-node-proxy.enabled=true\n"
             + "2) API -> workspace-dev:7001 的网络/安全组是否放行（见 /doc/domains/server/security-groups.md）\n"
@@ -44,12 +44,13 @@ public class SwaggerConfig implements WebMvcConfigurer {
                         .description("""
                                 风行Ai创作平台-Api接口文档
 
-                                【现网 5 台部署总览】
+                                【现网 6 台部署总览】
                                 - API（入口 / Control Plane）：对外入口（网关/Nginx 80/443）、业务 API（fun-ai-studio-api）、MySQL（按你们实际可同机/独立）；负责鉴权/授权与业务编排。
                                 - Workspace-dev（开发容器节点）：workspace-node(7001) + Nginx(/ws) + 用户 workspace 容器 + verdaccio/npm 缓存 + workspace 落盘目录。
                                 - Deploy（发布控制面）：fun-ai-studio-deploy(7002)，维护 Job 队列与 runtime 节点注册表/选址。
                                 - Runner（执行面）：fun-ai-studio-runner(Python)，轮询 claim 任务并执行构建/部署动作。
                                 - Runtime（运行态，可多台横向扩容）：runtime-agent(7005) + Docker/Podman + 网关(80/443)，承载用户应用容器并对外暴露 /apps/{appId}/...
+                                - Git（源码真相源）：Gitea（103；Runner 用 SSH 拉代码构建，Workspace push 源码）
 
                                 【接口/流量说明】
                                 - `/api/fun-ai/workspace/**`：对外仍由 API 暴露（本 Swagger 可见），多机部署时会转发到 workspace-dev 的 workspace-node 执行。
@@ -64,7 +65,7 @@ public class SwaggerConfig implements WebMvcConfigurer {
 
                                 【文档入口（建议收藏）】
                                 - 总目录：`/doc/`
-                                - 5 台模式安全组矩阵：`/doc/domains/server/security-groups.md`
+                                - 6 台模式安全组矩阵：`/doc/domains/server/security-groups.md`
                                 - Deploy/Runner/Runtime 架构：`/doc/domains/deploy/architecture.md`
                                 - Deploy/Runner/Runtime 扩容落地：`/doc/domains/server/scaling-deploy-runtime.md`
 

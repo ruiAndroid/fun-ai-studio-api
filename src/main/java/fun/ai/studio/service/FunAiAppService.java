@@ -69,4 +69,16 @@ public interface FunAiAppService extends IService<FunAiApp> {
      */
     FunAiApp updateBasicInfo(Long userId, Long appId, String appName, String appDescription, String appType)
             throws IllegalArgumentException;
+
+    /**
+     * 统计用户“运行中占用槽位”的项目数量（用于限制同时在线/部署中的项目数）。
+     * 说明：目前按 app_status in (DEPLOYING, READY) 统计。
+     */
+    long countRunningSlotsByUserId(Long userId);
+
+    /**
+     * 将应用标记为部署中（DEPLOYING），并清空 last_deploy_error。
+     * 仅允许操作自己名下的应用。
+     */
+    boolean markDeploying(Long userId, Long appId);
 }

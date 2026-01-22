@@ -8,9 +8,9 @@ Workspace 域的目标：给每个用户提供一个可持久化的“在线开�
 - 在线终端（WebSocket + docker exec）
 - 依赖安装加速（npm 缓存/后续私有仓库）
 
-## 多机部署提示（现网 5 台：接口会转发到容器节点执行）
+## 多机部署提示（现网 6 台：接口会转发到容器节点执行）
 
-在“多机部署”（现网 5 台：API / workspace-dev / Deploy / Runner / Runtime）模式下：
+在“多机部署”（现网 6 台：API / workspace-dev / Deploy / Runner / Runtime / Git）模式下：
 
 - **对外 URL 不变**：前端/调用方仍请求 API（入口）暴露的 `/api/fun-ai/workspace/**` 与 `/ws/{userId}/...`
 - **实际执行在 workspace-dev**：API 会将 workspace 相关请求（以及 `/ws/*` 预览流量）转发到 workspace-dev（workspace-node + workspace-dev Nginx）完成

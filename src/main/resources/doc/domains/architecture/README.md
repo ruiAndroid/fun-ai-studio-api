@@ -14,7 +14,78 @@
 
 ---
 
-## 2. 总架构图（单机版：当前默认形态）
+## 2. 总架构图（现网 6 台为主，兼容单机/最小环境）
+
+> 说明：你们现网已演进为 **6 台模式（API / workspace-dev / Deploy / Runner / Runtime / Git）**。  
+> 本章会先给出现网总架构图，再保留“单机版”用于本地/最小环境。
+
+### 2.1 现网 6 台模式（推荐/当前）
+
+```mermaid
+flowchart TD
+  subgraph Public["公网/统一入口"]
+    Browser["用户浏览器/控制台"]
+    Gateway["统一入口网关(Nginx/Traefik 80/443)"]
+  end
+
+  subgraph APIPlane["API（入口 / Control Plane）"]
+    Api["fun-ai-studio-api (8080)"]
+    Mysql[("MySQL(按实际可同机/独立)")]
+  end
+
+  subgraph WorkspacePlane["workspace-dev（开发态）"]
+    WsNginx["workspace-dev Nginx (80)"]
+    WsNode["workspace-node (fun-ai-studio-workspace 7001)"]
+    WsUser["workspace 用户容器(ws-u-{userId})"]
+    Verdaccio["Verdaccio npm proxy (4873, in-net)"]
+    HostFS["宿主机目录(/data/funai/workspaces/{userId})"]
+  end
+
+  subgraph GitPlane["源码真相源(Git Plane)"]
+    Git["Gitea (103:3000/2222)"]
+  end
+
+  subgraph DeployPlane["发布能力（Deploy / Runner / Runtime）"]
+    Deploy["fun-ai-studio-deploy (7002)"]
+    Runner["fun-ai-studio-runner (Python)"]
+    RTGW["Runtime 网关(80/443)"]
+    Agent["runtime-agent (7005)"]
+    AppCtn["用户应用容器(appId)"]
+  end
+
+  Browser --> Gateway
+  Gateway -->|"业务 API (/api/fun-ai/**)"| Api
+  Gateway -->|"预览入口 (/ws/{userId}/...)"| WsNginx
+  Gateway -->|"应用访问 (/apps/{appId}/...)"| RTGW
+
+  Api --> Mysql
+
+  %% workspace-dev
+  Api -->|"workspace 接口转发(workspace-node-proxy)"| WsNode
+  WsNginx -->|"auth_request 查端口"| WsNode
+  WsNginx -->|"反代到 hostPort"| WsUser
+  WsUser --> HostFS
+  WsUser --> Verdaccio
+
+  %% deploy pipeline
+  Api -->|"内部调用(创建/查询 Job)"| Deploy
+  Runner -->|"claim/heartbeat/report"| Deploy
+  Runner -->|"ssh clone/pull 源码"| Git
+  Agent -->|"runtime 节点心跳"| Deploy
+  Runner -->|"deploy/stop/status"| Agent
+  RTGW --> AppCtn
+```
+
+### 关键点（现网）
+
+- **API 是用户唯一入口**：前端只访问 API；预览 `/ws/**` 与运行态 `/apps/**` 都由网关按路径分流。
+- **workspace-dev 专注“开发态容器”**：容器/端口池/verdaccio/npm/运行日志等重负载集中在 87。
+- **发布能力三件套**：Deploy（控制面）+ Runner（执行面）+ Runtime（运行态）。
+- **源码真相源（Git）**：Runner 从 Git(103) 拉取源码进行构建；Workspace(87) 负责开发态编辑与 push。
+
+---
+
+### 2.2 单机版（本地/最小环境）
 
 ```mermaid
 flowchart TD
@@ -111,19 +182,22 @@ flowchart TD
 ```mermaid
 flowchart TD
   Browser["浏览器(BrowserUI)"] --> Gateway["网关(Nginx_or_Gateway)"]
-  Gateway --> Api["控制面(ControlPlane_FunAiStudioAPI)"]
+  Gateway --> Api["API(入口_fun-ai-studio-api)"]
 
   Api --> Mysql[("数据库(MySQL)")]
   Api --> Redis[("缓存/锁(Redis)")]
 
-  Gateway --> NodeA["工作节点(WorkspaceNode_A)"]
-  Gateway --> NodeB["工作节点(WorkspaceNode_B)"]
+  Gateway --> WsNginxA["workspace-dev Nginx_A (/ws)"]
+  Gateway --> WsNginxB["workspace-dev Nginx_B (/ws)"]
+
+  WsNginxA --> NodeA["workspace-node_A (7001)"]
+  WsNginxB --> NodeB["workspace-node_B (7001)"]
 
   NodeA --> DockerA["容器运行时(DockerEngine_A)"]
   NodeB --> DockerB["容器运行时(DockerEngine_B)"]
 
-  DockerA --> CtnA["用户容器(ws_u_userId_containers)"]
-  DockerB --> CtnB["用户容器(ws_u_userId_containers)"]
+  DockerA --> CtnA["用户容器(ws-u-{userId})"]
+  DockerB --> CtnB["用户容器(ws-u-{userId})"]
 
   Api --> Placement[("用户落点表(userId_to_node_hostPort)")]
   Placement --> Mysql

@@ -9,13 +9,14 @@
 
 ---
 
-## 1. 当前在线服务器清单（5 台）
+## 1. 当前在线服务器清单（6 台）
 
 - **API（统一入口 / Control Plane）**：`172.21.138.91`
 - **Workspace-dev（workspace-node + Nginx）**：`172.21.138.87`
 - **Deploy（Deploy 控制面）**：`172.21.138.100`
 - **Runner（执行面）**：`172.21.138.101`
 - **Runtime（runtime-agent + 容器运行时 + 网关）**：`172.21.138.102`
+- **Git（Gitea，源码真相源）**：`172.21.138.103`
 
 ---
 
@@ -104,6 +105,8 @@
     - 用途：Runner → Deploy（claim/heartbeat/report）
   - **TCP 7005** → **`172.21.138.102/32`**
     - 用途：Runner → runtime-agent（deploy/stop/status；Header：`X-Runtime-Token`）
+  - **TCP 2222** → **`172.21.138.103/32`**
+    - 用途：Runner → Gitea（SSH clone/pull 源码）
   - （按需）**TCP 443** → 公网/镜像仓库/Git 仓库
     - 用途：拉取依赖、推送镜像（后续接入镜像仓库时必需）
 
@@ -124,6 +127,20 @@
     - 用途：runtime-agent → Deploy（心跳注册）
   - （按需）**TCP 443** → 公网/镜像仓库
     - 用途：拉取镜像（如果 Runtime 节点需要自行拉镜像）
+
+### 3.6 Git（Gitea，172.21.138.103）
+
+- **入站（Inbound）**
+  - **TCP 2222**：允许来源 **`172.21.138.87/32`、`172.21.138.101/32`**
+    - 用途：
+      - Workspace-dev(87) → Gitea（SSH push/pull）
+      - Runner(101) → Gitea（SSH clone/pull）
+  - **TCP 3000**：仅允许来源 **运维/堡垒机/内网白名单**
+    - 用途：访问 Gitea Web（创建仓库/管理 deploy key）
+  - 说明：**不要**将 `2222/3000` 暴露公网
+
+- **出站（Outbound）**
+  - 默认放开即可（若你们要严格收敛，至少需要 53/123/443 视情况而定）
 ---
 
 ## 4. 联调自检（建议）

@@ -13,7 +13,10 @@
 
 ---
 
-## 1. 总体架构（建议三台服务器：API / Deploy&Runner / RuntimeNodes）
+## 1. 总体架构（现网 6 台：API / workspace-dev / Deploy / Runner / Runtime / Git）
+
+> 说明：Deploy/Runner/Runtime 属于“发布能力”的 3 件套；workspace-dev 属于“开发态容器节点”。  
+> 本文聚焦发布能力互联矩阵，但会在总览图中把 workspace-dev 放出来，避免与现网口径冲突。
 
 ```mermaid
 flowchart TD
@@ -26,6 +29,14 @@ flowchart TD
     API["fun-ai-studio-api (Spring Boot)"]
     Deploy["fun-ai-studio-deploy (Spring Boot)"]
     DB[("MySQL/Redis(可选)")]
+  end
+
+  subgraph GitPlane["源码真相源(Git Plane)"]
+    Git["Gitea (Git Server)"]
+  end
+
+  subgraph WorkspacePlane["开发态(Workspace Plane)"]
+    WSDev["workspace-dev (Nginx 80 + workspace-node 7001 + workspace containers)"]
   end
 
   subgraph ExecPlane["执行面(Execution Plane)"]
@@ -41,12 +52,15 @@ flowchart TD
 
   Browser --> Gateway
   Gateway -->|"业务 API"| API
+  Gateway -->|"预览 /ws/{userId}/..."| WSDev
   Gateway -->|"应用访问 /apps/{appId}/..."| RTGW
 
   API -->|"内部调用(创建/查询 Job)"| Deploy
+  API -->|"workspace 接口转发"| WSDev
   Runner -->|"claim/heartbeat/report"| Deploy
   Agent -->|"runtime 节点心跳"| Deploy
   Runner -->|"部署/停止/查询"| Agent
+  Runner -->|"SSH clone/pull 源码"| Git
 
   API --> DB
   Deploy --> DB

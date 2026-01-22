@@ -7,7 +7,7 @@
 
 ---
 
-## 1. 推荐服务器划分（现网 5 台：其中 Deploy/Runner/Runtime 为 3 台）
+## 1. 推荐服务器划分（现网 6 台：其中 Deploy/Runner/Runtime 为 3 台，Git 为源码真相源）
 
 - **API 服务器（ControlPlane 入口）**
   - 部署：`fun-ai-studio-api`（Spring Boot）
@@ -29,6 +29,11 @@
   - 作用：承载用户应用容器，对外提供 `/apps/{appId}/...` 访问
   - 现网：`172.21.138.102`
 
+- **Git 服务器（源码真相源）**
+  - 部署：Gitea（推荐）
+  - 作用：承载“可被 Runner 拉取”的源码仓库；Workspace/用户 push，Runner clone/pull 构建
+  - 现网：`172.21.138.103`（示例端口：Web 3000，SSH 2222）
+
 ---
 
 ## 2. 端口与安全组放行建议（按最小暴露）
@@ -48,6 +53,7 @@
   - `7002`（Deploy：API、Runner、runtime-agent 心跳需要访问）
 - 出站：
   - 到 Runtime-Agent：`7005`
+  - 到 Git（源码拉取）：`2222`（SSH；或按你们 Git 服务器实际端口）
   - 到镜像仓库（后续）：`443`
 
 ### 2.3 Runtime 节点
@@ -58,6 +64,14 @@
 - 出站：
   - 到 Deploy：`7002`（心跳注册）
   - 到镜像仓库（后续）：`443`
+
+### 2.4 Git 服务器（Gitea）
+
+- 入站（内网）：
+  - `2222`：仅允许 Workspace-dev / Runner 访问（SSH push/pull、clone/pull）
+  - `3000`：仅允许运维/内网白名单访问（Web 管理/创建仓库/deploy key）
+- 出站：
+  - 默认放开即可（若你们严格收敛，按需放行 DNS/NTP/外部依赖）
 
 ---
 

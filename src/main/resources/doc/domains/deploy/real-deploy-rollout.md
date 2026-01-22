@@ -1,12 +1,13 @@
-# 真实部署闭环落地计划（现网 5 台：API/Workspace/Deploy/Runner/Runtime）
+# 真实部署闭环落地计划（现网 6 台：API/Workspace/Deploy/Runner/Runtime/Git）
 
-本文档把“从用户点击部署到公网可访问”的全链路拆成可落地步骤，适用于你当前的 5 台现网：
+本文档把“从用户点击部署到公网可访问”的全链路拆成可落地步骤，适用于你当前的 6 台现网：
 
 - API：`172.21.138.91`
 - Workspace-dev：`172.21.138.87`
 - Deploy：`172.21.138.100`
 - Runner：`172.21.138.101`
 - Runtime：`172.21.138.102`
+- Git（Gitea）：`172.21.138.103`
 
 目标：先跑通最小闭环（Deploy→Runner→Runtime），再逐步引入“源码获取/构建/回滚/多 Runtime 扩容”等复杂度。
 
@@ -37,6 +38,55 @@ Deploy 控制面的主数据落库（MySQL 在 91）：
 - `fun_ai_deploy_app_run`（last-known：最后一次部署/错误/落点）
 
 > 结论：节点管理页面（`/admin/nodes-admin.html`）调用 Deploy 的 admin 接口即可；页面不直连 DB。
+
+### 1.4 走 Git 以后，“用户数据落盘”是否还需要？
+
+需要，但要区分“落盘的是什么”：
+
+- **源码（代码）**：如果 Runner 从 Git 拉代码，那么“源码的长期存储”由 Git 承担，**不需要**你们在 87/100/101/102 再做一份“源码落盘副本”。
+  - Runner 只需要一个**临时工作目录**（clone/build 用），job 结束即可清理（可选保留少量缓存加速）。
+- **开发态文件**：Workspace 仍然需要落盘（87 的 workspaces），这是给在线开发/依赖缓存/临时文件用的。
+- **控制面数据**：Deploy 的 job / placement / app_run 等必须落库（91 的 MySQL），否则页面状态、重启恢复、排障都会受影响。
+- **运行态持久数据**：如果用户应用需要“上传文件/生成文件/持久化目录”，Runtime(102) 仍然需要提供 volume（或上对象存储/数据库）。
+  - 第一阶段强烈建议：先把用户应用当作**尽量无状态**服务跑通闭环；确实需要持久化再引入 volume/OSS。
+
+### 1.5 你们是“前后端一体 Node 项目”，Mongo 数据在部署后怎么处理？
+
+你们 Workspace 目前的 Mongo 属于**开发态便利能力**（默认仅容器内 `127.0.0.1:27017` 可访问）。真实部署后，Mongo 必须变成**运行态独立资源**，否则会出现：
+
+- Runtime(102) 上的应用容器无法访问 Workspace(87) 容器内 `127.0.0.1` 的 Mongo
+- Workspace 容器回收/重建会导致线上数据丢失（如果数据只在容器内，且没做宿主机 volume）
+
+因此建议把 Mongo 分成两套：
+
+- **开发态 Mongo（Workspace）**：继续按当前方式（容器内/用户级/项目级 dbName），用于预览与开发
+- **运行态 Mongo（Deploy/Runtime）**：独立 Mongo 服务（或托管 Mongo），由运行态应用通过 `MONGODB_URI` 连接
+
+运行态 Mongo 的三种选型（按推荐顺序）：
+
+1) **托管 Mongo（推荐）**：稳定、备份/高可用由云产品负责（第一阶段最省事）
+2) **自建 Mongo（单独宿主机/单独服务）**：例如先在 91 或 102 上跑一个 `mongod`（systemd 或容器都行），并挂载 volume 做持久化
+3) **每个 app 一个 Mongo 容器（不推荐）**：运维复杂，资源浪费，备份/升级麻烦
+
+第一阶段（最小闭环）推荐口径：
+
+- 先统一只支持 **一套“共享运行态 Mongo”**（一个 mongod，多库隔离：`db_{appId}`）
+- Runtime 部署应用容器时注入：
+  - `MONGODB_URI=mongodb://<mongoHost>:27017/db_{appId}`
+  - （可选）用户名/密码：`MONGO_USER`/`MONGO_PASSWORD`
+- Mongo 端口 **不对公网开放**，只允许内网（至少允许 102 的应用容器访问）
+
+从 Workspace 开发态迁移到运行态 Mongo（最小可用做法）：
+
+- 如果你们认为 Workspace 的 Mongo 数据都属于**测试数据**，那么可以**不迁移数据**，只保证运行态 Mongo 的“结构性要素”一致即可（Mongo 语境下主要是：collection、index、可选的校验规则）。
+  - 最简单做法：运行态使用空库，由应用启动时自动创建 collection 并创建 index（很多 ODM/初始化逻辑都支持）。
+  - 更稳妥做法：在 Runner 部署前增加一个 init 步骤（例如执行 `npm run db:init`），把“建库/建索引/初始化校验规则”显式化。
+
+- 在 Workspace 容器内对某个 app 的库做导出：
+  - `mongodump --uri "mongodb://127.0.0.1:27017/db_{appId}" --archive > dump.archive`
+- 把 `dump.archive` 拷贝到运行态 Mongo 所在机器（或直接通过 Runner 作为中转）
+- 在运行态 Mongo 执行导入：
+  - `mongorestore --uri "mongodb://<mongoHost>:27017/db_{appId}" --archive < dump.archive`
 
 ---
 
@@ -87,7 +137,7 @@ Deploy 控制面的主数据落库（MySQL 在 91）：
 
 - `appId`（必填）
 - **阶段 1（最小闭环）**：`image`（必填，镜像全名，Runner 直接部署无需构建）
-- **阶段 2（引入构建）**：`repoUrl`、`commit`、`dockerfilePath`、`buildContext`、`imageRepo`
+- **阶段 2（引入构建：内网 Git）**：`repoSshUrl`、`gitRef`、`dockerfilePath`、`buildContext`、`imageRepo`
 
 > 建议：阶段 1 先用“预构建镜像”，把链路跑通；再接入从 git 拉源码构建。
 
@@ -109,14 +159,15 @@ Deploy 控制面的主数据落库（MySQL 在 91）：
   - Deploy：`fun_ai_deploy_app_run` 有 last-known
   - Runtime：容器存在，网关路由 `/apps/{appId}` 可访问
 
-### 5.2 阶段 2：引入 git 拉源码 + build + push（推荐）
+### 5.2 阶段 2：引入 Git（内网）拉源码 + build + push（推荐）
 
 **目标**：Runner 真正完成 “拉代码→构建镜像→推 ACR→部署”。
 
-建议 Runner 统一支持：
+建议 Runner 统一支持（SSH）：
 
-- `repoUrl`（建议 http(s)）
-- `commit`（可选，默认 main/master）
+- `repoSshUrl`（必填，例如 `ssh://git@172.21.138.103:2222/funai/u10001-app20002.git`）
+- `gitRef`（可选：branch/tag/commitSha；默认 `main`）
+- `knownHostsPath`（可选：建议 `/opt/fun-ai-studio/keys/gitea/known_hosts`）
 - `dockerfilePath`（默认 `Dockerfile`）
 - `image`（最终 push 的完整 tag）
 

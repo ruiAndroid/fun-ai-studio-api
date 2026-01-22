@@ -31,7 +31,7 @@
 
 - [Deploy 总览（API 入口与调用链）](./deploy/README.md)
 - [Deploy：整体架构与互联矩阵（推荐先读）](./deploy/architecture.md)
-- [真实部署闭环落地计划（现网 5 台）](./deploy/real-deploy-rollout.md)
+- [真实部署闭环落地计划（现网 6 台）](./deploy/real-deploy-rollout.md)
 
 ## Server（部署与扩容）
 

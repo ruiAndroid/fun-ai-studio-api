@@ -102,6 +102,13 @@
 
 ```nginx
 # API 服务器（小机）：把 /ws/ 转发到 Workspace 开发服务器（大机）Nginx
+
+# 重要：/doc 文档与 doc-mermaid.js 必须走 API（否则会出现浏览器 GET /doc-mermaid.js 502，导致 sequenceDiagram 不渲染）
+# 若你的 Nginx 有正则静态规则（例如 location ~* \.(js|css|ico)$），请优先加下面的精确/前缀匹配并放在 regex 之前：
+# location = /doc-mermaid.js { proxy_pass http://127.0.0.1:8080; }
+# location = /favicon.ico    { proxy_pass http://127.0.0.1:8080; }
+# location ^~ /doc/          { proxy_pass http://127.0.0.1:8080; }
+
 location ^~ /ws/ {
     proxy_http_version 1.1;
 

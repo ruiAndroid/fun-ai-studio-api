@@ -1,6 +1,6 @@
 # 最小可落地监控方案（Prometheus + Grafana）
 
-适用场景：当前采用 **5 台模式**（API / workspace-dev / Deploy / Runner / Runtime），希望优先监控：
+适用场景：当前采用 **6 台模式**（API / workspace-dev / Deploy / Runner / Runtime / Git），希望优先监控：
 
 - 宿主机资源：CPU/内存/磁盘/网络/load/inode
 - 容器资源：容器数量、每容器 CPU/内存、重启次数、PIDs、网络/磁盘 IO（主要关注 workspace-dev / runtime）
@@ -29,6 +29,7 @@
 - **Deploy 服务器（100）**：node_exporter `:9100`
 - **Runner 服务器（101）**：node_exporter `:9100`
 - **Runtime 服务器（102）**：node_exporter `:9100` +（推荐）cAdvisor `:8080`
+- **Git 服务器（103，Gitea）**：node_exporter `:9100`
 
 > 说明：Prometheus/Grafana 只绑定到 `127.0.0.1`，避免公网暴露；通过 SSH 隧道访问即可。
 
@@ -40,7 +41,7 @@ Prometheus 在 API(91) 上抓取其它机器指标，所以其它机器需要对
 
 ### 2.1 需要放行的入站（建议全部只允许来源 `172.21.138.91/32`）
 
-- **所有需要监控的机器（87/100/101/102）**：
+- **所有需要监控的机器（87/100/101/102/103）**：
   - `9100/tcp`：node_exporter
 - **需要容器指标的机器（87/102）**：
   - `8080/tcp`：cAdvisor
@@ -106,6 +107,11 @@ scrape_configs:
   - job_name: "node_runtime"
     static_configs:
       - targets: ["172.21.138.102:9100"]
+
+  # Git（103）宿主机指标
+  - job_name: "node_git"
+    static_configs:
+      - targets: ["172.21.138.103:9100"]
 
   # workspace-dev（大机）容器指标（cAdvisor）
   - job_name: "cadvisor_workspace_dev"
