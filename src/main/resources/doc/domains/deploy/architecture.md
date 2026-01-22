@@ -78,7 +78,7 @@ flowchart TD
 - Job 队列：`PENDING -> RUNNING -> SUCCEEDED/FAILED/CANCELLED`
 - Runner 协议：`claim / heartbeat / report`（HTTP polling）
 - Runtime Node Registry：runtime-agent 定时 heartbeat，上报 `agentBaseUrl` 与 `gatewayBaseUrl`
-- Placement（选址）：`appId -> runtimeNode` 粘性落点（当前 InMemory，未来可持久化）
+- Placement（选址）：`appId -> runtimeNode` 粘性落点（支持 InMemory/DB 落库切换；生产建议落库避免 Deploy 重启丢数据）
 
 ### 2.3 `fun-ai-studio-workspace`（Workspace 节点服务）
 
