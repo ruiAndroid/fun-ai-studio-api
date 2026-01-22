@@ -38,5 +38,7 @@
 - [多机扩容方案（面向 Workspace）](./server/scaling-workspace.md)
 - [多机扩容方案（面向 Deploy / Runner / Runtime）](./server/scaling-deploy-runtime.md)
 - [安全组/防火墙放行矩阵（现网最小可用）](./server/security-groups.md)
+- [最小可落地监控方案（Prometheus + Grafana）](./server/monitoring-minimal.md)
+- [Prometheus 最小告警规则示例](./server/monitoring-prometheus-alerts-minimal.yml)
 
 
