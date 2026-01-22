@@ -1,6 +1,7 @@
 package fun.ai.studio.config;
 
 import io.swagger.v3.oas.models.Components;
+import io.swagger.v3.oas.models.ExternalDocumentation;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.info.License;
@@ -22,17 +23,18 @@ public class SwaggerConfig implements WebMvcConfigurer {
     private static final String WORKSPACE_API_PREFIX = "/api/fun-ai/workspace/";
 
     /**
-     * 双机部署提示：Workspace 接口对外仍由 API 服务器（小机）展示/鉴权，但会转发到 Workspace 开发服务器（大机）的 workspace-node 执行。
+     * 多机部署提示（现网 5 台）：Workspace 接口对外仍由 API 服务器（入口）展示/鉴权，但会转发到 workspace-dev 的 workspace-node 执行。
      * <p>
-     * 注意：这里的文案刻意写成“在双机部署时”，以兼容单机开发环境。
+     * 注意：这里的文案刻意写成“在多机部署时”，以兼容单机/本地开发环境。
      */
     private static final String WORKSPACE_FORWARDED_HINT =
-            "【双机部署提示】该接口在 API 服务器（小机）上展示/鉴权；在双机部署时会转发到 Workspace 开发服务器（大机）的容器节点（workspace-node）执行。\n\n"
-            + "【常见错误提示】如果你看到 code=502，通常表示“代理链路未生效或 Workspace 开发服务器（大机）不可用”。请依次检查：\n"
-            + "1) API 服务器（小机）配置：workspace-node-proxy.enabled=true\n"
-            + "2) API 服务器（小机）到 Workspace 开发服务器（大机）7001 的网络/安全组是否放行\n"
-            + "3) shared-secret 是否一致（API 服务器（小机）workspace-node-proxy.shared-secret 与 Workspace 开发服务器（大机）workspace-node.internal.shared-secret）\n"
-            + "4) Workspace 开发服务器（大机）workspace-node 服务是否在线（7001）";
+            "【多机部署提示（现网 5 台）】该接口在 API 服务器（入口）上展示/鉴权；在多机部署时会通过 workspace-node-proxy 转发到 workspace-dev（workspace-node，7001）执行。\n\n"
+            + "【常见错误提示】如果你看到 code=502，通常表示“转发链路未生效或 workspace-dev 不可用”。请依次检查：\n"
+            + "1) API 配置：workspace-node-proxy.enabled=true\n"
+            + "2) API -> workspace-dev:7001 的网络/安全组是否放行（见 /doc/domains/server/security-groups.md）\n"
+            + "3) shared-secret 是否一致（API：workspace-node-proxy.shared-secret 与 workspace-dev：workspace-node.internal.shared-secret）\n"
+            + "4) workspace-dev 的 workspace-node 服务是否在线（7001）\n"
+            + "5) 若启用 workspace 节点注册表：检查 /admin/nodes.html 或 /admin/nodes-admin.html?mode=workspace 是否显示节点 healthy";
 
     @Bean
     public OpenAPI customOpenAPI() {
@@ -42,13 +44,17 @@ public class SwaggerConfig implements WebMvcConfigurer {
                         .description("""
                                 风行Ai创作平台-Api接口文档
 
-                                【双机部署总览】
-                                - API 服务器（小机）：对外入口（Nginx）、业务 API（fun-ai-studio-api）、MySQL；负责鉴权/授权与业务数据。
-                                - Workspace 开发服务器（大机）：容器节点（workspace-node）、workspace 用户容器、verdaccio/npm 缓存、workspace 落盘目录等重负载能力。
+                                【现网 5 台部署总览】
+                                - API（入口 / Control Plane）：对外入口（网关/Nginx 80/443）、业务 API（fun-ai-studio-api）、MySQL（按你们实际可同机/独立）；负责鉴权/授权与业务编排。
+                                - Workspace-dev（开发容器节点）：workspace-node(7001) + Nginx(/ws) + 用户 workspace 容器 + verdaccio/npm 缓存 + workspace 落盘目录。
+                                - Deploy（发布控制面）：fun-ai-studio-deploy(7002)，维护 Job 队列与 runtime 节点注册表/选址。
+                                - Runner（执行面）：fun-ai-studio-runner(Python)，轮询 claim 任务并执行构建/部署动作。
+                                - Runtime（运行态，可多台横向扩容）：runtime-agent(7005) + Docker/Podman + 网关(80/443)，承载用户应用容器并对外暴露 /apps/{appId}/...
 
                                 【接口/流量说明】
-                                - `/api/fun-ai/workspace/**`：对外仍由 API 服务器（小机）暴露（本 Swagger 可见），双机部署时会转发到 Workspace 开发服务器（大机）容器节点执行。
-                                - `/ws/{userId}/...`：用户预览入口，双机部署时由 API 服务器（小机）转发到 Workspace 开发服务器（大机）Nginx，再反代到该用户容器的 hostPort。
+                                - `/api/fun-ai/workspace/**`：对外仍由 API 暴露（本 Swagger 可见），多机部署时会转发到 workspace-dev 的 workspace-node 执行。
+                                - `/ws/{userId}/...`：用户预览入口，公网入口通常先到 API 网关/Nginx，再转发到 workspace-dev Nginx，再反代到该用户容器 hostPort。
+                                - `/api/fun-ai/deploy/**`：用户创建部署任务入口（只访问 API）；API 内部调用 Deploy(7002) 创建 Job，Runner 领取执行，Runtime 对外提供 `/apps/{appId}/...`。
 
                                 【节点管理（运维）】
                                 - 入口页：`/admin/nodes.html#token={{adminToken}}`
@@ -56,13 +62,22 @@ public class SwaggerConfig implements WebMvcConfigurer {
                                 - Deploy 节点：`/admin/nodes-admin.html?mode=deploy#token={{adminToken}}`（需启用 deploy-proxy）
                                 - 鉴权：Header `X-Admin-Token` + 来源 IP 白名单（见 `funai.admin.*` 配置）
 
+                                【文档入口（建议收藏）】
+                                - 总目录：`/doc/`
+                                - 5 台模式安全组矩阵：`/doc/domains/server/security-groups.md`
+                                - Deploy/Runner/Runtime 架构：`/doc/domains/deploy/architecture.md`
+                                - Deploy/Runner/Runtime 扩容落地：`/doc/domains/server/scaling-deploy-runtime.md`
+
                                 【排障提示】
-                                - 容器/端口池/运行日志/verdaccio/npm 安装问题：优先在 Workspace 开发服务器（大机）侧排查。
+                                - workspace 容器/端口池/运行日志/verdaccio/npm 安装问题：优先在 workspace-dev 侧排查。
                                 """)
                         .version("1.0")
                         .license(new License()
                                 .name("Apache 2.0")
                                 .url("http://springdoc.org")))
+                .externalDocs(new ExternalDocumentation()
+                        .description("部署/架构/运维文档（/doc）")
+                        .url("/doc/"))
                 .addSecurityItem(new SecurityRequirement().addList("Authorization"))
                 .components(new Components()
                         .addSecuritySchemes("Authorization",
@@ -74,7 +89,7 @@ public class SwaggerConfig implements WebMvcConfigurer {
     }
     
     /**
-     * 为 Swagger 中的 workspace 接口自动追加“双机部署转发”提示，避免访问不到 Workspace 开发服务器（大机）Swagger 时信息缺失。
+     * 为 Swagger 中的 workspace 接口自动追加“多机部署转发”提示，避免访问不到 workspace-dev Swagger 时信息缺失。
      */
     @Bean
     public OpenApiCustomizer workspaceForwardedHintCustomiser() {

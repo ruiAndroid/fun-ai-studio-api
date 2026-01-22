@@ -2,7 +2,12 @@
 
 ## 部署与运维
 
-- [阿里云部署文档（单机版）](./阿里云部署文档.md)
+- [现网 5 台模式：安全组/防火墙放行矩阵](./domains/server/security-groups.md)
+- [现网 5 台模式：最小可落地监控方案](./domains/server/monitoring-minimal.md)
+- [Deploy/Runner/Runtime：整体架构与互联矩阵](./domains/deploy/architecture.md)
+- [多机扩容方案（面向 Deploy / Runner / Runtime）](./domains/server/scaling-deploy-runtime.md)
+- [Workspace 节点（workspace-dev / workspace-node）联调说明](./domains/server/workspace-node.md)
+- [阿里云部署文档（单机版，历史/最小版）](./阿里云部署文档.md)
 
 ## 子系统文档（面向 AI）
 
