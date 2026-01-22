@@ -13,7 +13,7 @@
 
 ---
 
-## 1. 总体架构（现网 5 台：API / Workspace-dev / Deploy / Runner / Runtime）
+## 1. 总体架构（建议三台服务器：API / Deploy&Runner / RuntimeNodes）
 
 ```mermaid
 flowchart TD
@@ -26,12 +26,6 @@ flowchart TD
     API["fun-ai-studio-api (Spring Boot)"]
     Deploy["fun-ai-studio-deploy (Spring Boot)"]
     DB[("MySQL/Redis(可选)")]
-  end
-
-  subgraph WorkspacePlane["开发态(Workspace Plane)"]
-    WSDevNginx["workspace-dev Nginx (80)"]
-    WSNode["workspace-node (fun-ai-studio-workspace 7001)"]
-    WSUser["workspace 用户容器(每用户 1 个)"]
   end
 
   subgraph ExecPlane["执行面(Execution Plane)"]
@@ -47,19 +41,15 @@ flowchart TD
 
   Browser --> Gateway
   Gateway -->|"业务 API"| API
-  Gateway -->|"预览 /ws/{userId}/..."| WSDevNginx
   Gateway -->|"应用访问 /apps/{appId}/..."| RTGW
 
   API -->|"内部调用(创建/查询 Job)"| Deploy
-  API -->|"workspace 相关接口转发"| WSNode
-  WSDevNginx -->|"反代到 hostPort"| WSUser
   Runner -->|"claim/heartbeat/report"| Deploy
   Agent -->|"runtime 节点心跳"| Deploy
   Runner -->|"部署/停止/查询"| Agent
 
   API --> DB
   Deploy --> DB
-  WSNode --> WSUser
   RTGW --> AppCtn
   Agent --> Docker
   Docker --> AppCtn
@@ -68,7 +58,6 @@ flowchart TD
 一句话记忆：
 
 - **API（入口）**：用户/前端只打 API，API 负责鉴权与业务入口编排，然后内部调用 Deploy 控制面创建 Job
-- **Workspace-dev（开发态）**：承载 workspace 容器/预览/终端/文件等重负载能力；对外预览走 `/ws/{userId}/...`
 - **Deploy（控制面）**：决定“做什么、由谁做、做到哪台 Runtime 上”，维护 Job 状态与 runtime 节点注册表/选址
 - **Runner（执行面）**：领取 Job，把构建/部署动作真正做完（构建镜像、推送、调用 Runtime-Agent 部署），再回传结果
 - **Runtime（运行态）**：真正承载用户应用容器，对外统一域名下路径路由（`/apps/{appId}/...`）
