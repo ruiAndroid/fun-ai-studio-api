@@ -22,6 +22,9 @@
 ## 2. 端口用途速查
 
 - **API**：`8080`（业务 API，通常由同机 Nginx/网关对外 80/443 转发）
+- **监控（Prometheus 抓取）**
+  - `9100`：node_exporter（宿主机指标）
+  - `8080`：cAdvisor（容器指标，若部署）
 - **Workspace-dev**
   - `7001`：workspace-node API（仅内网）
   - `80`：Workspace-dev Nginx（仅供 API(91) 的 Nginx 转发 `/ws/*`）
@@ -46,6 +49,8 @@
       - Runner(101) → Deploy（`/deploy/jobs/claim`、`/heartbeat`、`/report`）
       - Runtime(102) → Deploy（`/internal/runtime-nodes/heartbeat`）
   - 说明：**不要**将 `7002` 暴露公网
+  - （监控）**TCP 9100**：允许来源 **`172.21.138.91/32`**
+    - 用途：API(91) 上 Prometheus → Deploy(100) node_exporter
 
 - **出站（Outbound）**
   - 默认放开即可（如后续要在该机进行构建/拉依赖/访问仓库，再按需收敛 `443`）
@@ -58,6 +63,10 @@
   - **TCP 80**：允许来源 **`172.21.138.91/32`**
     - 用途：API(91) 上 Nginx → Workspace-dev(87) 上 Nginx（转发 `/ws/{userId}/...` 预览流量）
   - 说明：**不建议**把 `87:80`、`87:7001` 对公网开放
+  - （监控）**TCP 9100**：允许来源 **`172.21.138.91/32`**
+    - 用途：API(91) 上 Prometheus → Workspace-dev(87) node_exporter
+  - （监控）**TCP 8080**：允许来源 **`172.21.138.91/32`**
+    - 用途：API(91) 上 Prometheus → Workspace-dev(87) cAdvisor（容器指标）
 
 - **出站（Outbound）**
   - **TCP 8080**：允许访问目标 **`172.21.138.91/32`**
@@ -78,11 +87,17 @@
     - 用途：API → workspace-node API
   - **TCP 80** → **`172.21.138.87/32`**
     - 用途：API Nginx → Workspace-dev Nginx（`/ws/*` 转发）
+  - （监控）**TCP 9100** → **`172.21.138.87/32,172.21.138.100/32,172.21.138.101/32,172.21.138.102/32`**
+    - 用途：Prometheus 抓取各机器 node_exporter
+  - （监控）**TCP 8080** → **`172.21.138.87/32,172.21.138.102/32`**
+    - 用途：Prometheus 抓取 cAdvisor（容器指标）
 
 ### 3.4 Runner（172.21.138.101）
 
 - **入站（Inbound）**
   - 无（Runner 主动向外发起访问即可；SSH/运维端口按你们通用基线配置，不在本文档展开）
+  - （监控）**TCP 9100**：允许来源 **`172.21.138.91/32`**
+    - 用途：API(91) 上 Prometheus → Runner(101) node_exporter
 
 - **出站（Outbound）**
   - **TCP 7002** → **`172.21.138.100/32`**
@@ -99,6 +114,10 @@
     - 用途：Runner → runtime-agent
   - **TCP 80/443**：对公网开放（或仅对 SLB/网关来源开放）
     - 用途：用户访问统一入口下的 `/apps/{appId}/...`
+  - （监控）**TCP 9100**：允许来源 **`172.21.138.91/32`**
+    - 用途：API(91) 上 Prometheus → Runtime(102) node_exporter
+  - （监控）**TCP 8080**：允许来源 **`172.21.138.91/32`**
+    - 用途：API(91) 上 Prometheus → Runtime(102) cAdvisor（容器指标；如部署）
 
 - **出站（Outbound）**
   - **TCP 7002** → **`172.21.138.100/32`**

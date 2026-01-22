@@ -1,16 +1,19 @@
 # 最小可落地监控方案（Prometheus + Grafana）
 
-适用场景：当前采用“双机模式”（**API 服务器（小机）** + **workspace-dev 服务器（大机）**），容器运行在 workspace-dev（Podman-docker），希望优先监控：
+适用场景：当前采用 **5 台模式**（API / workspace-dev / Deploy / Runner / Runtime），希望优先监控：
 
 - 宿主机资源：CPU/内存/磁盘/网络/load/inode
-- 容器资源：容器数量、每容器 CPU/内存、重启次数、PIDs、网络/磁盘 IO
-- 关键服务：`workspace-node(7001)`、Verdaccio(4873) 的健康/可达性（先用探活 + 日志即可）
+- 容器资源：容器数量、每容器 CPU/内存、重启次数、PIDs、网络/磁盘 IO（主要关注 workspace-dev / runtime）
+- 关键服务存活：
+  - Deploy：`7002`（`/internal/health`）
+  - runtime-agent：`7005`（`/internal/health`）
+  - Runner：无对外端口（建议用 systemd/日志监控）
 
-本方案选择：
+本方案选择（最小可落地）：
 
 - **Prometheus + Grafana 部署在 API 服务器（小机）**
 - **Grafana 不对公网开放**，通过 **SSH 隧道**访问
-- workspace-dev 只开放 **必要端口** 给 API 服务器来源（安全组收敛）
+- 其它服务器只开放 **必要端口** 给 API(91) 来源（安全组收敛）
 
 ---
 
@@ -22,25 +25,27 @@
   - Prometheus：`127.0.0.1:9090`
   - Grafana：`127.0.0.1:3000`
   - node_exporter：`0.0.0.0:9100`（也可只监听内网）
-- **workspace-dev 服务器（大机）**
-  - node_exporter：`0.0.0.0:9100`
-  - cAdvisor：`0.0.0.0:8080`（容器指标导出）
+- **workspace-dev 服务器（大机）**：node_exporter `:9100` + cAdvisor `:8080`
+- **Deploy 服务器（100）**：node_exporter `:9100`
+- **Runner 服务器（101）**：node_exporter `:9100`
+- **Runtime 服务器（102）**：node_exporter `:9100` +（推荐）cAdvisor `:8080`
 
 > 说明：Prometheus/Grafana 只绑定到 `127.0.0.1`，避免公网暴露；通过 SSH 隧道访问即可。
 
 ---
 
-## 2. 安全组最小放行（两台不在同 VPC，走公网互通）
+## 2. 安全组最小放行（同 VPC 内网互通：172.21.138.*）
 
-### 2.1 workspace-dev（大机）入方向（建议）
+Prometheus 在 API(91) 上抓取其它机器指标，所以其它机器需要对 **91** 开放 exporter 端口。
 
-只允许来自 API 服务器公网 IP 的访问：
+### 2.1 需要放行的入站（建议全部只允许来源 `172.21.138.91/32`）
 
-- `9100/tcp`：node_exporter
-- `8080/tcp`：cAdvisor
-- （可选）`7001/tcp`：workspace-node（如果 Prometheus 要抓 `actuator/prometheus` 或你要做探活）
+- **所有需要监控的机器（87/100/101/102）**：
+  - `9100/tcp`：node_exporter
+- **需要容器指标的机器（87/102）**：
+  - `8080/tcp`：cAdvisor
 
-### 2.2 API 服务器（小机）
+### 2.2 API 服务器（91）
 
 - 不需要对公网开放 `9090/3000`（Prometheus/Grafana 都仅本机监听）
 
@@ -84,10 +89,30 @@ scrape_configs:
     static_configs:
       - targets: ["172.21.138.87:9100"]
 
+  # Deploy（100）宿主机指标
+  - job_name: "node_deploy"
+    static_configs:
+      - targets: ["172.21.138.100:9100"]
+
+  # Runner（101）宿主机指标
+  - job_name: "node_runner"
+    static_configs:
+      - targets: ["172.21.138.101:9100"]
+
+  # Runtime（102）宿主机指标
+  - job_name: "node_runtime"
+    static_configs:
+      - targets: ["172.21.138.102:9100"]
+
   # workspace-dev（大机）容器指标（cAdvisor）
   - job_name: "cadvisor_workspace_dev"
     static_configs:
       - targets: ["172.21.138.87:8080"]
+
+  # Runtime（102）容器指标（cAdvisor，推荐）
+  - job_name: "cadvisor_runtime"
+    static_configs:
+      - targets: ["172.21.138.102:8080"]
 
   # （可选）workspace-node 应用指标（Spring Boot actuator）
   # 需要 workspace-node 打开 actuator/prometheus
@@ -179,6 +204,10 @@ After=network.target
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/node_exporter --web.listen-address=:9100
+#
+# 如果你希望把 systemd 服务状态也纳入 Prometheus（监控 fun-ai-studio-*.service 存活），可以加：
+#   --collector.systemd
+# 若遇到 DBus 权限/连接问题，先去掉该参数，保证基础监控先跑通。
 Restart=always
 RestartSec=3
 
@@ -222,6 +251,25 @@ docker run -d --name cadvisor --restart=always \
 ```
 
 如果你使用的是 docker 存储目录（非 podman），把 `-v /var/lib/containers` 改为 `-v /var/lib/docker`。
+
+---
+
+## 5.2 Runtime（102）：cAdvisor（推荐开启）
+
+Runtime 机器承载用户应用容器，建议同样部署 cAdvisor，并只允许 API(91) 抓取：
+
+```bash
+docker run -d --name cadvisor --restart=always \
+  -p 8080:8080 \
+  --privileged \
+  -v /:/rootfs:ro \
+  -v /var/run:/var/run:rw \
+  -v /sys:/sys:ro \
+  -v /var/lib/docker:/var/lib/docker:ro \
+  gcr.io/cadvisor/cadvisor:v0.49.2
+```
+
+> 如果 Runtime 用的是 Podman，存储目录可能是 `/var/lib/containers`，同 workspace-dev 一样调整挂载路径即可。
 
 ### 5.1 Podman-docker 环境注意点
 
