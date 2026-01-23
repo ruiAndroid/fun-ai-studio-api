@@ -6,6 +6,7 @@
 
 - [Deploy：整体架构与互联矩阵](./architecture.md)
 - [真实部署闭环落地计划（现网 6 台）](./real-deploy-rollout.md)
+- [标准流水线：Git 作为源码真相源 + ACR 作为唯一制品](./git-acr-pipeline.md)
 - [Dockerfile 规范（统一构建/部署契约）](./dockerfile-standards.md)
 - [方案 C：自建 Git（内网）——在 103 部署 Gitea（SSH 拉代码）](./git-server-gitea.md)
 
@@ -33,7 +34,9 @@ Base：`/api/fun-ai/deploy`
 ### 3.1 创建部署 Job
 
 - `POST /api/fun-ai/deploy/job/create?userId={userId}&appId={appId}`
-- body（可选）：扩展 payload（Map），例如 `{ "repoSshUrl": "...", "gitRef": "main" }`
+- body（可选）：扩展 payload（Map）
+  - 阶段 1（镜像直部署）建议传：`{ "image": "...", "containerPort": 80 }`
+  - 阶段 2（Git 构建）建议传：`{ "repoSshUrl": "...", "gitRef": "main" }`
 - 行为：API 会调用 deploy 控制面 `POST /deploy/jobs` 创建 `BUILD_AND_DEPLOY` Job
 
 ### 3.2 查询 Job

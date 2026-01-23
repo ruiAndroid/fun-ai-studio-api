@@ -26,12 +26,14 @@
 - [Workspace：npm 缓存（Verdaccio 代理仓库）](./workspace/npm-cache.md)
 - [Workspace：容器内 Mongo（可选）](./workspace/mongo.md)
 - [Workspace：Mongo Explorer（Web，只读）](./workspace/mongo-explorer.md)
+- [Workspace：Git 集成（Workspace ↔ Gitea）](./workspace/git.md)
 
 ## Deploy（应用部署：控制面/执行面/运行态）
 
 - [Deploy 总览（API 入口与调用链）](./deploy/README.md)
 - [Deploy：整体架构与互联矩阵（推荐先读）](./deploy/architecture.md)
 - [真实部署闭环落地计划（现网 6 台）](./deploy/real-deploy-rollout.md)
+- [标准流水线：Git 作为源码真相源 + ACR 作为唯一制品](./deploy/git-acr-pipeline.md)
 - [方案 C：自建 Git（内网）——103 上从零部署 Gitea（SSH 拉代码）](./deploy/git-server-gitea.md)
 
 ## Server（部署与扩容）

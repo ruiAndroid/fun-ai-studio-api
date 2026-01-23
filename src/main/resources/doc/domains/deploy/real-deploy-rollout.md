@@ -159,6 +159,47 @@ Deploy 控制面的主数据落库（MySQL 在 91）：
   - Deploy：`fun_ai_deploy_app_run` 有 last-known
   - Runtime：容器存在，网关路由 `/apps/{appId}` 可访问
 
+#### 5.1.1 你现在就可以怎么做（Git 暂不可用时）
+
+即使 103 的 Git 还没通，你也可以先用“镜像直部署”验证链路。
+
+**步骤 A：准备一个可用镜像（推到 ACR）**
+
+在你本地 Windows（能联网）把一个小镜像推到 ACR（示例用 nginx，端口为 80）：
+
+```bash
+# 例：把 nginx:alpine 推到你们 ACR（namespace 以你们现网为准，比如 funshion）
+docker pull nginx:alpine
+docker tag nginx:alpine <acrRegistry>/<namespace>/demo-nginx:alpine
+docker login <acrRegistry>
+docker push <acrRegistry>/<namespace>/demo-nginx:alpine
+```
+
+> 建议为“用户应用制品”单独使用一个 namespace（你现网已新建：`funaistudio`），避免与基础镜像/运维镜像混放。
+> 如果你们后续要统一端口 3000/8080，请选择对应镜像或自行构建 demo 镜像。
+
+**步骤 B：调用 API 创建部署 Job（用户点击“部署”的等价操作）**
+
+API 入口：
+
+- `POST /api/fun-ai/deploy/job/create?userId={userId}&appId={appId}`
+
+body（关键字段：`image` + `containerPort`）：
+
+```bash
+curl -sS -X POST "http://<api-host>:8080/api/fun-ai/deploy/job/create?userId=10001&appId=20002" \
+  -H "Content-Type: application/json" \
+  -d '{"image":"<acrRegistry>/<namespace>/demo-nginx:alpine","containerPort":80}'
+```
+
+**步骤 C：观察 Runner/Deploy/Runtime**
+
+- Runner(101) 日志应看到：claim 到 job → 调用 `agent/apps/deploy` → report `SUCCEEDED`
+- Deploy(100)：`GET /deploy/jobs?limit=50` 可看到状态变化（或看 DB 表）
+- Runtime(102)：调用
+  - `GET /agent/apps/status?appId=20002`（Header: `X-Runtime-Token`）应为 running
+  - 访问：`http(s)://<runtime-gateway>/apps/20002/`（nginx 示例会返回默认页）
+
 ### 5.2 阶段 2：引入 Git（内网）拉源码 + build + push（推荐）
 
 **目标**：Runner 真正完成 “拉代码→构建镜像→推 ACR→部署”。

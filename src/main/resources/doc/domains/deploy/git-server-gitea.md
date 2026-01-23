@@ -66,6 +66,30 @@ sudo systemctl enable --now docker
 docker version
 ```
 
+#### 2.1.1 常见问题：下载 `containerd.io` 失败（SSL connect error / Cannot download）
+
+在阿里云/内网环境里，`download.docker.com` 可能被网络策略拦截或 TLS 握手异常，表现为：
+
+- `Curl error (35): SSL connect error ... download.docker.com:443`
+- `containerd.io: Cannot download, all mirrors were already tried without success`
+- `docker: command not found` / `docker.service does not exist`
+
+处理建议（按优先级）：
+
+1) **直接切换 Podman（推荐）**：见下节 `2.2`（并安装 `podman-docker` 兼容 `docker` 命令）
+2) 如果你们必须用 Docker CE：将 repo 切到可达的镜像源（例如阿里云镜像），再重试安装
+
+> 重要：如果你已经添加了 `docker-ce.repo`，但 `download.docker.com` 不可达，
+> 那么 **yum 可能会因为该 repo 拉元数据失败而中断任何安装**（包括安装 podman）。
+> 这时先把 docker repo 禁用/删除，再安装 podman：
+>
+> ```bash
+> sudo yum-config-manager --disable docker-ce-stable || true
+> sudo rm -f /etc/yum.repos.d/docker-ce.repo || true
+> sudo yum clean all
+> sudo yum makecache
+> ```
+
 ### 2.2 Podman（CentOS/RHEL 系常见）
 
 ```bash
@@ -135,6 +159,82 @@ sudo systemctl status gitea.service --no-pager -l
 ```bash
 curl -sS http://127.0.0.1:3000/ >/dev/null && echo "gitea web ok" || echo "gitea web FAIL"
 ss -lntp | egrep ':3000|:2222' || true
+```
+
+---
+
+## 3.5 常见问题：拉 Docker Hub 超时（`registry-1.docker.io:443 i/o timeout`）
+
+如果你在 103 上 pull 镜像时遇到：
+
+- `dial tcp ...:443: i/o timeout`
+- `Get "https://registry-1.docker.io/v2/": ... timeout`
+
+这通常意味着该机器无法直连 Docker Hub（网络策略/出口限制/跨境链路不稳定）。
+
+### 3.5.1 推荐方案：用阿里云 ACR 做“内网镜像中转”（最稳）
+
+思路：在一台能联网的机器上把镜像推到 ACR，然后 103 从 ACR 拉取（国内链路更稳定）。
+
+#### 如何确定你的 `<acrRegistry>` / `<namespace>`？
+
+你只需要找到任意一个你们当前正在使用的 ACR 镜像全名，就能拆出来：
+
+- 形式通常是：`<acrRegistry>/<namespace>/<image>:<tag>`
+- 例如（示例）：
+  - `crpi-xxxxx.cn-hangzhou.personal.cr.aliyuncs.com/funai/gitea:1.22.4`
+  - 那么：
+    - `<acrRegistry>` = `crpi-xxxxx.cn-hangzhou.personal.cr.aliyuncs.com`
+    - `<namespace>` = `funai`（示例；以你 ACR 里实际存在的命名空间为准，比如你现网已有 `funshion`）
+
+你也可以在阿里云控制台里查看：
+
+- 容器镜像服务 ACR → 实例 → **访问凭证/登录地址（Login Server）**
+- 命名空间（Namespace）就是你推镜像时登录地址后面的第一段路径
+
+在“能联网的机器”（例如你本机 Windows，或任意可拉到 Docker Hub 的机器）：
+
+```bash
+docker pull gitea/gitea:1.22.4
+
+# 下面用你的 ACR 替换：<acrRegistry>/<namespace>/gitea:1.22.4
+# 示例（你截图里的 login server；namespace 建议用“制品专用”的 `funaistudio`）：
+# crpi-39dn3ekytub82xl9.cn-hangzhou.personal.cr.aliyuncs.com/funaistudio/gitea:1.22.4
+docker tag gitea/gitea:1.22.4 <acrRegistry>/<namespace>/gitea:1.22.4
+docker login <acrRegistry>
+docker push <acrRegistry>/<namespace>/gitea:1.22.4
+```
+
+在 103 上：
+
+```bash
+docker pull <acrRegistry>/<namespace>/gitea:1.22.4
+
+docker rm -f gitea 2>/dev/null || true
+docker run -d --name gitea \
+  -p 3000:3000 \
+  -p 2222:22 \
+  -v /data/funai/gitea/data:/data \
+  -v /data/funai/gitea/config:/etc/gitea \
+  <acrRegistry>/<namespace>/gitea:1.22.4
+```
+
+### 3.5.2 备选方案：离线导入
+
+如果 103 完全无法拉任何公网镜像，也可以离线导入：
+
+在“能联网的机器”：
+
+```bash
+docker pull gitea/gitea:1.22.4
+docker save gitea/gitea:1.22.4 -o gitea-1.22.4.tar
+```
+
+把 `gitea-1.22.4.tar` 传到 103（scp/oss/内网文件传输），然后：
+
+```bash
+docker load -i gitea-1.22.4.tar
+docker images | grep gitea
 ```
 
 ---
