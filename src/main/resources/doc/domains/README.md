@@ -34,6 +34,7 @@
 - [Deploy：整体架构与互联矩阵（推荐先读）](./deploy/architecture.md)
 - [真实部署闭环落地计划（现网 6 台）](./deploy/real-deploy-rollout.md)
 - [标准流水线：Git 作为源码真相源 + ACR 作为唯一制品](./deploy/git-acr-pipeline.md)
+- [必做自动化：Gitea 仓库创建 + 授权 + Runner 拉代码](./deploy/gitea-automation.md)
 - [方案 C：自建 Git（内网）——103 上从零部署 Gitea（SSH 拉代码）](./deploy/git-server-gitea.md)
 
 ## Server（部署与扩容）

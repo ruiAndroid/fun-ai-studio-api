@@ -246,15 +246,57 @@ docker images | grep gitea
 首次进入会出现安装向导（Install Gitea）：
 
 - **Database**：建议先用 SQLite（默认）
-- **Server Domain**：`172.21.138.103`
-- **SSH Server Domain**：`172.21.138.103`
-- **SSH Port**：`2222`
+- **Server Domain**：按你实际访问入口填写
+  - 若你从本机/公网访问：填 **公网 IP/域名**（例如 `182.92.60.159`）
+  - 若你只在内网访问：填 **内网 IP**（例如 `172.21.138.103`）
+- **SSH Server Domain**（如果界面有该项）：建议填 **内网 IP**（`172.21.138.103`），给 Runner/Workspace 用
+- **SSH Port**：**必须填 2222**（因为我们是把宿主机 `2222 -> 容器内 22` 做了端口映射）
+  - 如果你填成 22，后续生成的 clone URL 会指向 `:22`，但实际上宿主机监听的是 `:2222`，会导致 clone 失败
 - **Gitea HTTP Listen Port**：`3000`
-- **Application URL（ROOT_URL）**：`http://172.21.138.103:3000/`
+- **Application URL（ROOT_URL）**：按你实际访问入口填写
+  - 公网访问示例：`http://182.92.60.159:3000/`
+  - 内网访问示例：`http://172.21.138.103:3000/`
 
 完成后创建第一个管理员账号（例如 `admin`）。
 
 > 如果初始化后发现 SSH 端口/域名填错：可以改 `/data/funai/gitea/config/app.ini`（容器方式通常会生成），改完重启容器即可。
+
+### 4.1 数据库选 MySQL（103 本机单独部署）时的注意事项
+
+如果你选择在 **103 本机安装 MySQL**（而 Gitea 跑在容器里），请注意：
+
+- **Gitea 容器里填 `localhost:3306` 会连到容器自身**，不是宿主机 MySQL  
+  - 因此数据库主机应填：`172.21.138.103:3306`
+- 建议为 Gitea 单独创建数据库与账号（不要用 root）
+
+初始化最小命令（在 103）：
+
+```bash
+# 1) 首次安装若 root 是空密码（initialize-insecure），可直接登录：
+mysql -uroot
+```
+
+在 MySQL 里执行：
+
+```sql
+-- 2) 给 root 设置强密码（建议立即做）
+ALTER USER 'root'@'localhost' IDENTIFIED BY 'CHANGE_ME_STRONG_ROOT_PASSWORD';
+FLUSH PRIVILEGES;
+
+-- 3) 创建 gitea 库与账号
+CREATE DATABASE gitea CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'gitea'@'%' IDENTIFIED BY 'CHANGE_ME_STRONG_GITEA_PASSWORD';
+GRANT ALL PRIVILEGES ON gitea.* TO 'gitea'@'%';
+FLUSH PRIVILEGES;
+```
+
+然后在 Gitea 安装向导里填写：
+
+- 数据库类型：MySQL
+- 数据库主机：`172.21.138.103:3306`（不要填 localhost）
+- 用户名：`gitea`
+- 密码：上面设置的 `CHANGE_ME_STRONG_GITEA_PASSWORD`
+- 数据库名：`gitea`
 
 ---
 
