@@ -8,7 +8,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 /**
- * 在“创建应用（app）”时自动创建 Gitea 仓库并授权 runner 只读。
+ * 在“创建应用（app）”时自动创建 Gitea 仓库并授权：
+ * - runner（只读）：runner-team 或 runner-bot
+ * - workspace（写入，可选）：workspace-bot
  *
  * 设计：best-effort，不阻塞主流程；失败后可后续重试（可通过运维脚本/接口补齐）。
  */
@@ -61,6 +63,32 @@ public class GiteaRepoAutomationService {
                     owner, repo, props.getRunnerTeam(), props.getRunnerBot());
         } else {
             log.info("gitea repo ready: {}/{} (runner access granted)", owner, repo);
+        }
+
+        // Workspace 写入：优先 team（Write），兜底 workspace-bot（Write）
+        boolean workspaceGranted = false;
+        if (StringUtils.hasText(props.getWorkspaceTeam())) {
+            try {
+                Long teamId = client.findTeamIdByName(owner, props.getWorkspaceTeam().trim());
+                if (teamId != null && teamId > 0) {
+                    workspaceGranted = client.grantTeamRepo(teamId, owner, repo);
+                }
+            } catch (Exception ignore) {
+            }
+        }
+
+        if (!workspaceGranted && StringUtils.hasText(props.getWorkspaceBot())) {
+            try {
+                workspaceGranted = client.addCollaboratorWrite(owner, repo, props.getWorkspaceBot().trim());
+            } catch (Exception ignore) {
+            }
+        }
+
+        if (!workspaceGranted) {
+            log.warn("gitea grant workspace write failed: owner={}, repo={}, workspaceTeam={}, workspaceBot={}",
+                    owner, repo, props.getWorkspaceTeam(), props.getWorkspaceBot());
+        } else {
+            log.info("gitea repo ready: {}/{} (workspace write granted)", owner, repo);
         }
     }
 

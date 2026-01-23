@@ -55,6 +55,21 @@ Git 集成后，每个 `apps/{appId}` 目录就是一个独立 working copy：
 - 包含 `.git/`（本地仓库元数据）
 - 不建议把 `node_modules/`、`dist/`、`build/` 之类纳入 Git（由 `.gitignore` 控制）
 
+### 3.1 本地目录名与远端 repo 名不一致怎么办？
+
+这是**正常且推荐**的：
+
+- **远端仓库名（Gitea）**：`u{userId}-app{appId}`（用于 Git 侧唯一定位、便于权限与审计）
+- **本地工作目录（Workspace）**：`.../{userId}/apps/{appId}`（用于 Workspace 侧稳定定位、便于与现有 run/files 系统集成）
+
+Git 并不要求本地目录名必须等于仓库名。你只需要把仓库 clone 到目标目录即可：
+
+```bash
+git clone <repoSshUrl> /data/funai/workspaces/{userId}/apps/{appId}
+```
+
+> 说明：`git clone` 支持“指定目标目录”，因此不会在本地创建 `u{userId}-app{appId}` 这个目录名。
+
 ---
 
 ## 4. “创建项目 / 进入编辑器 / 部署”三条链路怎么衔接
@@ -85,6 +100,48 @@ Git 集成后，每个 `apps/{appId}` 目录就是一个独立 working copy：
   - 提示用户先 commit
   - 或提供按钮：stash → pull → pop（可选增强）
 
+#### 4.2.2 `open-editor` vs `git/ensure`：各自的执行时机（推荐）
+
+核心原则：**open-editor 负责“打开编辑器所需的最小信息闭环”，git/ensure 负责“把代码同步到工作区”**，两者拆开避免把 Git 的耗时/失败风险塞进 open-editor。
+
+- **open-editor（进入编辑器页面时立刻调用，必须成功）**：
+  - 做什么：校验 app 归属/权限 → ensure-dir（确保 workspace 目录存在、必要时确保 workspace 容器运行）→ 返回目录信息/hasPackageJson/runStatus
+  - 不做什么：不做 git clone/pull（避免网络/鉴权问题把“打开编辑器”卡死）
+
+- **git/status（进入页面后并行调用，可选但推荐）**：
+  - 做什么：判断当前目录是否为 git repo、是否 dirty、当前分支/commit、是否已绑定 remote
+  - 作用：前端据此决定是否展示“从 Git 初始化/拉取更新/推送提交”等按钮，以及是否允许自动 pull
+
+- **git/ensure（在 open-editor 成功后触发，推荐“后台自动 + 安全条件”）**：
+  - **自动触发（建议）**：open-editor 成功返回后，前端立即调用一次 git/ensure（异步展示进度/可重试），但只在满足安全条件时才真正执行：
+    - 目录为空 → 执行 clone
+    - 目录是 git repo 且工作区干净（not dirty）→ 执行 pull（或 fetch + fast-forward）
+    - 目录非空且非 git repo / dirty → 返回“需要用户确认”的状态（前端弹窗引导）
+  - **手动触发（兜底）**：如果你担心自动同步带来的体验不确定，第一版可以只做按钮：用户点击“从 Git 初始化/拉取更新”才调用 git/ensure
+
+> 推荐前端落地顺序（进入编辑器页）：
+> 1) `POST /api/fun-ai/app/open-editor?userId&appId`（必须成功，拿到目录/状态）
+> 2) 并行：`GET /workspace/git/status`（可选） + `POST /workspace/git/ensure`（可选自动）
+> 3) 若 git/ensure 失败：不影响编辑器打开，只影响“代码同步”；前端提示重试/检查 SSH/权限即可
+
+#### 4.2.1 Clone 的落地细节（建议按 appId 目录）
+
+你们现有目录结构是按 appId 固定的，因此建议：
+
+- clone 目标目录（容器内）：`/workspace/apps/{appId}`
+- 或宿主机：`{hostRoot}/{userId}/apps/{appId}`
+
+两者等价（bind mount 映射）。关键是：**clone 到 appId 目录**，不要创建额外层级。
+
+兼容已有目录的情况（例如目录已存在但空、或曾经导入过 zip）：
+
+- 若目录为空：
+  - 推荐做法：删除空目录再 clone（最稳）
+  - 或直接 `git clone <url> <dir>`（不同 git 版本对“空目录”兼容性略有差异）
+- 若目录非空但不是 git repo：
+  - 推荐提示用户“目录已有内容，是否初始化为 git 并绑定远端”
+  - 可选自动化路径（谨慎）：`git init` → `git remote add origin <url>` → `git fetch` → `git checkout -t origin/main`
+
 ### 4.3 用户点击部署（Deploy）
 
 部署不依赖 Workspace：
@@ -113,12 +170,46 @@ Workspace 需要 push，建议两种模式二选一：
   - 缺点：审计粒度差（只能看到平台账号在 push）
   - 建议：commit message 里带上 userId/appId，并在 API 层做额外审计记录
 
+#### 5.1.1 你问的“前端 git 操作（commit/push/pull/clone）是否需要 bot？”
+
+结论：**如果你希望前端一键 commit/push（不让用户手工管理 key），第一阶段建议引入一个 `workspace-bot`**：
+
+- `workspace-bot`：用于 Workspace 写入（push）
+- `runner-bot`：用于 Runner 只读（clone/pull）
+
+两者必须分离、权限不同：
+
+- `workspace-bot`：对单个用户仓库需要 **Write**
+- `runner-bot`：对所有仓库仅 **Read**
+
+后续再演进到“用户账号 + 用户自己的 SSH key”（模式 A），届时 `workspace-bot` 可逐步退场或仅用于模板导入等平台动作。
+
+#### 5.1.2 `workspace-bot` 密钥落盘路径约定（与 runner-bot 对齐）
+
+为了便于运维与排障，建议与 101（runner-bot）保持一致的目录结构：
+
+- Workspace 节点（87）：`/opt/fun-ai-studio/keys/gitea/`
+  - 私钥：`workspace_bot_ed25519`
+  - 公钥：`workspace_bot_ed25519.pub`
+  - known_hosts：`known_hosts`（建议与 key 同目录管理）
+
+#### 5.1.3（推荐更标准）使用组织 Team 管理写权限
+
+建议在 Gitea 组织 `funai` 下创建：
+
+- Team：`workspace-write`（权限：Write）
+- 成员：`workspace-bot`
+
+这样 API 只需要把新建仓库纳入该 Team，就能统一管理写权限（比逐仓库 collaborator 更标准）。
+
 ### 5.2 Runner（只读：clone/pull）
 
 Runner 不需要 push，建议：
 
-- **每个 repo 一个只读 Deploy Key**（Gitea Repo Settings → Deploy Keys → Read-only）
-- Runner 在 clone 时显式指定 key + known_hosts
+- **runner-bot 单账号 + 单 SSH Key（推荐）**
+  - Gitea：给 `runner-bot` 用户添加一把 SSH 公钥，并通过 team（推荐：`runner-readonly`）授只读
+  - Runner(101)：持有对应私钥，用 `GIT_SSH_COMMAND` 或 ssh config 指向该 key + known_hosts
+- 说明：这样避免为每个仓库手工/自动写 Deploy Key，扩容更简单
 
 ---
 
@@ -131,7 +222,117 @@ Runner 不需要 push，建议：
 - `git/status`：展示是否有未提交改动
 - `git/commit-push`：提交并推送（可选，第一阶段可先让用户在终端手动执行）
 
-> 说明：如果你们当前 Workspace 已支持 WebSocket 终端，第一阶段也可以先用“终端手动 git”跑通体验，再逐步把常用操作做成按钮。
+> 说明：
+> - 若你们当前 Workspace 已支持 WebSocket 终端，第一阶段也可以先用“终端手动 git”跑通体验，再逐步把常用操作做成按钮。
+> - 若采用 `workspace-bot`，则上述按钮会以平台身份 push；若采用“用户账号+SSH key”，则需要用户级身份与密钥管理（复杂度更高但审计更清晰）。
+
+---
+
+## 6.1 前端 Git 功能的可扩展路线（建议分阶段）
+
+目标：前端逐步提供 **pull / commit+push / 查看提交历史 / 回退到某一次提交** 等能力，但不牺牲安全性与可排障性。
+
+### 阶段 A（建议先做，风险最低）
+
+- **`status`**：展示工作区状态（是否 git repo、是否 dirty、当前分支/commit、remote 是否可达）
+- **`ensure`/`pull`**：在“工作区干净”前提下，安全拉取（只允许 fast-forward 或普通 merge；第一版可禁用 rebase）
+- **`log`**：查看最近 N 次提交（用于审计、定位问题、回退前确认）
+
+### 阶段 B（增加写入：commit/push）
+
+- **`commit-push`**：由前端填写 message，一键提交并 push
+  - 推荐额外写入审计：userId/appId、操作者、commitSha、message、时间、IP 等（可先落 API 日志，后续再落库）
+  - 默认禁止 force push（只允许快进 push）
+
+### 阶段 C（回退/切换版本：checkout/revert）
+
+- **`checkout`**：切到某个 commit/tag（用于“回到某次提交”，适合本地预览/对比）
+  - 注意：checkout 会进入 detached HEAD，前端要提示“当前不在分支上”
+- **`revert`（推荐的“回退”语义）**：基于某个 commit 生成一条“回退提交”，然后 push（审计友好、历史可追溯）
+- **`reset-hard`（谨慎开放）**：仅管理员/内部使用；默认不要给普通用户 UI 暴露
+
+> 推荐口径：给用户的“回退”最好是 **revert（生成新 commit）**，而不是改写历史。
+
+---
+
+## 6.2 建议的 Workspace Git API（示例）
+
+> 命名仅示意，你们可以挂在 workspace-node 自己的 basePath 下；关键是语义与安全边界。
+
+### 6.2.1 `GET /workspace/git/status?userId&appId`
+
+返回字段建议：
+
+- **isRepo**：目录是否为 git repo
+- **dirty**：是否有未提交改动（包含 staged/unstaged）
+- **branch**：当前分支（可能为空：detached HEAD）
+- **headCommit**：当前 HEAD commitSha
+- **remoteUrl**：origin URL（若存在）
+- **ahead/behind**：与 origin 的差异（可选，可能需要 fetch）
+
+### 6.2.2 `POST /workspace/git/ensure`
+
+请求字段建议：
+
+- **userId/appId**
+- **repoSshUrl**：例如 `ssh://git@172.21.138.103:2222/funai/u{userId}-app{appId}.git`
+- **ref**：默认 `main`
+- **mode**（可选）：`AUTO | CLONE_ONLY | PULL_ONLY`
+- **allowOnDirty**（默认 false）：是否允许在 dirty 时继续（一般不允许；除非用户选择 stash 方案）
+
+返回建议：
+
+- **action**：`CLONED | PULLED | NOOP | NEED_CONFIRM`
+- **reason**：例如 `DIRTY_WORKTREE`、`NOT_A_REPO`、`DIR_NOT_EMPTY`
+- **headCommit**
+
+### 6.2.3 `POST /workspace/git/pull`
+
+约束建议：
+
+- **dirty=false** 才允许执行
+- 默认只允许 fast-forward（或普通 merge），第一阶段可以不支持 rebase
+
+### 6.2.4 `GET /workspace/git/log?userId&appId&limit=20`
+
+返回：
+
+- `[{commitSha, author, email, message, time}]`
+
+### 6.2.5 `POST /workspace/git/commit-push`
+
+请求字段建议：
+
+- **userId/appId**
+- **message**
+- **addAll**（默认 true）：相当于 `git add -A`
+
+约束建议：
+
+- 仅在启用 `workspace-bot`（或用户级身份）时开放
+- 默认禁止 force push
+- 若 push 失败（远端有更新）：提示用户先 pull/解决冲突
+
+### 6.2.6 `POST /workspace/git/revert`
+
+请求字段建议：
+
+- **userId/appId**
+- **targetCommitSha**：要回退的 commit
+- **message**（可选）：默认 `revert <sha>`
+
+行为：
+
+- 生成 revert commit 并 push（审计友好）
+
+---
+
+## 6.3 实现方式建议（便于排障）
+
+建议第一阶段直接调用系统 `git`（shell）而不是引入 JGit：
+
+- **优点**：行为与开发者本地一致；遇到问题可直接在终端复现；对 LFS/子模块等兼容更好
+- **要点**：所有 git 命令都必须指定工作目录为 `.../apps/{appId}`，并且做好超时/日志脱敏（不要把私钥内容打到日志）
 
 ---
 

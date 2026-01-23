@@ -91,6 +91,8 @@ API 侧新增 `gitea.*` 配置（示例）：
 - `gitea.default-branch=main`
 - `gitea.runner-team=runner-readonly`（优先：组织 team（Read））
 - `gitea.runner-bot=runner-bot`（兜底：协作者 read）
+- `gitea.workspace-team=workspace-write`（优先：组织 team（Write））
+- `gitea.workspace-bot=workspace-bot`（可选：Workspace 写入 bot（Write），用于前端一键 commit/push）
 
 ### 4.2 在“创建应用（app）”时自动建仓库
 
@@ -133,6 +135,19 @@ API 在 `POST /api/fun-ai/deploy/job/create` 时补齐：
 1) 创建用户：`runner-bot`
 2) 将 `runner-bot` 加入组织 `funai` 的 `runner-readonly` team
 3) 在 `runner-bot` 的 User Settings → SSH Keys 添加公钥（来自 101）
+
+### 5.3（模式 B）创建 workspace-bot 并配置 SSH Key（写入）
+
+1) 创建用户：`workspace-bot`
+2) 在 `workspace-bot` 的 User Settings → SSH Keys 添加公钥（来自 Workspace 节点 87 的统一私钥）
+3) （推荐更标准）在组织 `funai` 下创建 Team：`workspace-write`（Write 权限），并把 `workspace-bot` 加入该 Team
+4) API 配置 `gitea.workspace-team=workspace-write`（优先）与 `gitea.workspace-bot=workspace-bot`（兜底）
+5) 验证：创建 app 后，该 repo 会被自动纳入 `workspace-write`（Write）；若 team 不存在则回退为授 `workspace-bot` 的 Write（collaborator）
+
+> 注意：
+> - `workspace-bot` 是写权限账号，必须与 `runner-bot`（只读）分离
+> - key 文件权限建议 `600`，并限制只存在于 Workspace 节点
+> - **建议与 101 的 runner-bot 保持一致的落盘路径**：`/opt/fun-ai-studio/keys/gitea/`
 
 ---
 

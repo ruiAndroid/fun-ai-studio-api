@@ -98,9 +98,18 @@ public class GiteaClient {
     }
 
     public boolean addCollaboratorReadOnly(String owner, String repo, String username) {
+        return addCollaborator(owner, repo, username, "read");
+    }
+
+    public boolean addCollaboratorWrite(String owner, String repo, String username) {
+        return addCollaborator(owner, repo, username, "write");
+    }
+
+    private boolean addCollaborator(String owner, String repo, String username, String permission) {
         if (!isEnabled()) return false;
         if (!StringUtils.hasText(owner) || !StringUtils.hasText(repo) || !StringUtils.hasText(username)) return false;
-        Map<String, Object> body = Map.of("permission", "read");
+        String p = (permission == null ? "read" : permission.trim());
+        Map<String, Object> body = Map.of("permission", p);
         int code = requestStatus("PUT", "/api/v1/repos/" + urlPath(owner) + "/" + urlPath(repo) + "/collaborators/" + urlPath(username), body);
         return code == 204 || code == 201 || code == 200;
     }

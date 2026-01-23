@@ -16,6 +16,8 @@ import org.springframework.stereotype.Component;
  * gitea.default-branch=main
  * gitea.runner-team=runner-readonly # 优先：组织 team（Read 权限）
  * gitea.runner-bot=runner-bot      # 兜底：作为协作者加 read 权限
+ * gitea.workspace-team=workspace-write # 优先：组织 team（Write 权限）
+ * gitea.workspace-bot=workspace-bot # 可选：Workspace 写入 bot（Write 权限，用于前端一键 commit/push）
  * </pre>
  */
 @Component
@@ -38,6 +40,18 @@ public class GiteaProperties {
      * 兜底授权：bot username（Read）。
      */
     private String runnerBot = "runner-bot";
+
+    /**
+     * 优先授权：组织 team name（Write）。
+     */
+    private String workspaceTeam = "workspace-write";
+
+    /**
+     * Workspace 写入 bot（Write）。
+     * - 第一阶段前端如需一键 commit/push，可由 Workspace 节点使用该 bot 身份 push
+     * - 注意：该 bot 具备写权限，必须与 runner-bot（只读）分离
+     */
+    private String workspaceBot = "workspace-bot";
 
     public boolean isEnabled() {
         return enabled;
@@ -109,6 +123,22 @@ public class GiteaProperties {
 
     public void setRunnerBot(String runnerBot) {
         this.runnerBot = runnerBot;
+    }
+
+    public String getWorkspaceTeam() {
+        return workspaceTeam;
+    }
+
+    public void setWorkspaceTeam(String workspaceTeam) {
+        this.workspaceTeam = workspaceTeam;
+    }
+
+    public String getWorkspaceBot() {
+        return workspaceBot;
+    }
+
+    public void setWorkspaceBot(String workspaceBot) {
+        this.workspaceBot = workspaceBot;
     }
 }
 
