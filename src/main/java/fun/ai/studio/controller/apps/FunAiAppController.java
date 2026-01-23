@@ -9,6 +9,7 @@ import fun.ai.studio.entity.response.FunAiOpenEditorResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceProjectDirResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceRunStatusResponse;
 import fun.ai.studio.enums.FunAiAppStatus;
+import fun.ai.studio.gitea.GiteaRepoAutomationService;
 import fun.ai.studio.service.FunAiAppService;
 import fun.ai.studio.service.FunAiWorkspaceService;
 import fun.ai.studio.service.FunAiWorkspaceRunService;
@@ -58,6 +59,9 @@ public class FunAiAppController {
 
     @Autowired(required = false)
     private WorkspaceNodeClient workspaceNodeClient;
+
+    @Autowired(required = false)
+    private GiteaRepoAutomationService giteaRepoAutomationService;
 
     private boolean detectPackageJson(Path appDir) {
         if (appDir == null || !Files.isDirectory(appDir)) return false;
@@ -292,6 +296,7 @@ public class FunAiAppController {
             // workspace 清理（宿主机 /data/funai/workspaces/{userId}/apps/{appId}）
             // 注意：deleteApp 已做归属校验，这里不再重复校验，且清理失败不影响删除结果
             String cleanupWarn = null;
+            String giteaWarn = null;
             try {
                 if (workspaceNodeClient != null && workspaceNodeClient.isEnabled()) {
                     // 双机模式：通知 Workspace 开发服务器（大机）清理 workspace app 目录（与 API 服务器（小机）funai.workspace.enabled 无关）
@@ -303,8 +308,28 @@ public class FunAiAppController {
                 cleanupWarn = e.getMessage();
                 logger.warn("cleanup workspace after delete app failed: userId={}, appId={}, err={}", userId, appId, e.getMessage(), e);
             }
+
+            // gitea 仓库清理（best-effort：失败不影响删除结果）
+            try {
+                if (giteaRepoAutomationService != null) {
+                    boolean ok = giteaRepoAutomationService.deleteRepoOnAppDeleted(userId, appId);
+                    if (!ok) {
+                        giteaWarn = "gitea 仓库删除失败（请检查 gitea 配置/token/网络）";
+                    }
+                }
+            } catch (Exception e) {
+                giteaWarn = e.getMessage();
+                logger.warn("cleanup gitea repo after delete app failed: userId={}, appId={}, err={}", userId, appId, e.getMessage(), e);
+            }
+
             if (cleanupWarn != null && !cleanupWarn.isBlank()) {
+                if (giteaWarn != null && !giteaWarn.isBlank()) {
+                    return Result.success("删除应用成功（磁盘目录清理失败：" + cleanupWarn + "；Gitea 清理失败：" + giteaWarn + "）");
+                }
                 return Result.success("删除应用成功（磁盘目录清理失败：" + cleanupWarn + "）");
+            }
+            if (giteaWarn != null && !giteaWarn.isBlank()) {
+                return Result.success("删除应用成功（Gitea 清理失败：" + giteaWarn + "）");
             }
             return Result.success("删除应用成功");
         } catch (IllegalArgumentException e) {

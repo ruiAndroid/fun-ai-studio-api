@@ -92,6 +92,26 @@ public class GiteaRepoAutomationService {
         }
     }
 
+    /**
+     * 在“删除应用”时 best-effort 删除对应 Gitea 仓库（失败不阻塞主流程）。
+     */
+    public boolean deleteRepoOnAppDeleted(Long userId, Long appId) {
+        if (userId == null || appId == null) return false;
+        if (props == null || client == null || !client.isEnabled()) return false;
+
+        String owner = props.getOwner();
+        String repo = renderRepoName(props.getRepoNameTemplate(), userId, appId);
+        if (!StringUtils.hasText(owner) || !StringUtils.hasText(repo)) return false;
+
+        boolean ok = client.deleteRepo(owner, repo);
+        if (!ok) {
+            log.warn("gitea delete repo failed: owner={}, repo={}, userId={}, appId={}", owner, repo, userId, appId);
+        } else {
+            log.info("gitea repo deleted: {}/{} (userId={}, appId={})", owner, repo, userId, appId);
+        }
+        return ok;
+    }
+
     private String renderRepoName(String template, Long userId, Long appId) {
         String t = template == null ? "" : template;
         return t.replace("{userId}", String.valueOf(userId)).replace("{appId}", String.valueOf(appId));

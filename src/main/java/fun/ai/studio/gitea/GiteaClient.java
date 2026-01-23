@@ -105,6 +105,17 @@ public class GiteaClient {
         return addCollaborator(owner, repo, username, "write");
     }
 
+    /**
+     * 删除仓库（幂等）：成功返回 true；仓库不存在（404）也返回 true。
+     */
+    public boolean deleteRepo(String owner, String repo) {
+        if (!isEnabled()) return false;
+        if (!StringUtils.hasText(owner) || !StringUtils.hasText(repo)) return false;
+        int code = requestStatus("DELETE", "/api/v1/repos/" + urlPath(owner) + "/" + urlPath(repo), null);
+        // 204 no content (deleted) / 404 not found (already gone)
+        return code == 204 || code == 404;
+    }
+
     private boolean addCollaborator(String owner, String repo, String username, String permission) {
         if (!isEnabled()) return false;
         if (!StringUtils.hasText(owner) || !StringUtils.hasText(repo) || !StringUtils.hasText(username)) return false;
