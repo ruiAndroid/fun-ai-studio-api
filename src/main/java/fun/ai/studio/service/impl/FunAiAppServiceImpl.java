@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import fun.ai.studio.entity.FunAiApp;
 import fun.ai.studio.entity.FunAiUser;
 import fun.ai.studio.enums.FunAiAppStatus;
+import fun.ai.studio.gitea.GiteaRepoAutomationService;
 import fun.ai.studio.mapper.FunAiAppMapper;
 import fun.ai.studio.service.FunAiAppService;
 import fun.ai.studio.service.FunAiUserService;
@@ -27,6 +28,9 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
 
     @Autowired
     private FunAiUserService funAiUserService;
+
+    @Autowired(required = false)
+    private GiteaRepoAutomationService giteaRepoAutomationService;
 
     @Override
     public List<FunAiApp> getAppsByUserId(Long userId) {
@@ -231,6 +235,15 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
 
         // 4. 保存到数据库（会自动生成id）
         FunAiApp createdApp = createApp(app);
+
+        // 4.1 best-effort：创建 Git 仓库并授权 runner 只读（不阻塞 app 创建）
+        try {
+            if (giteaRepoAutomationService != null) {
+                giteaRepoAutomationService.ensureRepoAndGrantRunner(userId, createdApp.getId());
+            }
+        } catch (Exception e) {
+            logger.warn("gitea automation failed: userId={}, appId={}, err={}", userId, createdApp.getId(), e.getMessage());
+        }
         
         // 5. 更新用户的 app_count
         try {

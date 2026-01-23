@@ -84,10 +84,13 @@ API 侧新增 `gitea.*` 配置（示例）：
 
 - `gitea.enabled=true`
 - `gitea.base-url=http://172.21.138.103:3000`
-- `gitea.admin-token=...`（管理员 token，用于调用 Gitea API）
+- `gitea.admin-token=...`（管理员 token，用于调用 Gitea API；Header：`Authorization: token <token>`）
 - `gitea.owner=funai`
 - `gitea.repo-name-template=u{userId}-app{appId}`
-- `gitea.runner-team=runner-readonly`（或 runner-bot 用户名）
+- `gitea.auto-init=true`（建议 true：确保存在 main 分支）
+- `gitea.default-branch=main`
+- `gitea.runner-team=runner-readonly`（优先：组织 team（Read））
+- `gitea.runner-bot=runner-bot`（兜底：协作者 read）
 
 ### 4.2 在“创建应用（app）”时自动建仓库
 
