@@ -118,9 +118,13 @@ payload 至少包含：
 
 第一阶段建议“够用即可”：
 
-- 每个 app 保留最近 `N=10` 个 tag（由 Runner 或定时任务清理旧 tag）
+- 每个 app 保留最近 `N=3` 个 tag（由 Runner 或定时任务清理旧 tag）
 - 保留一个稳定指针（可选）：
   - `:latest` 或 `:stable`
+
+更完整的运维规范（免交互登录 + N=3 清理策略）见：
+
+- `doc/domains/deploy/acr-auth-and-retention.md`
 
 ---
 

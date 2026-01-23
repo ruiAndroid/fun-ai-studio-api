@@ -192,6 +192,16 @@ curl -sS -X POST "http://<api-host>:8080/api/fun-ai/deploy/job/create?userId=100
   -d '{"image":"<acrRegistry>/<namespace>/demo-nginx:alpine","containerPort":80}'
 ```
 
+**步骤 B.1：确保 Runtime(102) 已登录 ACR（私有仓库必做）**
+
+因为 **拉镜像发生在 Runtime(102)**（runtime-agent 会 `podman/docker pull`），所以 102 必须先登录 ACR：
+
+```bash
+podman login <acrRegistry> -u <username>
+```
+
+> 注意：请在“运行 runtime-agent 的同一个系统用户”下登录，否则凭证可能不生效（rootless/root 差异）。
+
 **步骤 C：观察 Runner/Deploy/Runtime**
 
 - Runner(101) 日志应看到：claim 到 job → 调用 `agent/apps/deploy` → report `SUCCEEDED`
@@ -199,6 +209,12 @@ curl -sS -X POST "http://<api-host>:8080/api/fun-ai/deploy/job/create?userId=100
 - Runtime(102)：调用
   - `GET /agent/apps/status?appId=20002`（Header: `X-Runtime-Token`）应为 running
   - 访问：`http(s)://<runtime-gateway>/apps/20002/`（nginx 示例会返回默认页）
+
+若访问 `http://<runtime-node>/apps/{appId}/` 出现 `Connection refused`：
+
+- 说明 **Runtime 网关（Traefik/Nginx）没有在宿主机监听 80/443**
+- 需要在 Runtime 节点上启动网关容器，并接入与用户容器相同的 `RUNTIME_DOCKER_NETWORK`
+- Traefik（Podman）启动参考：`fun-ai-studio-runtime/README.md` 的 “网关（Traefik）快速启动”
 
 ### 5.2 阶段 2：引入 Git（内网）拉源码 + build + push（推荐）
 

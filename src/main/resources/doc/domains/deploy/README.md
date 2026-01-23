@@ -8,6 +8,8 @@
 - [真实部署闭环落地计划（现网 6 台）](./real-deploy-rollout.md)
 - [标准流水线：Git 作为源码真相源 + ACR 作为唯一制品](./git-acr-pipeline.md)
 - [必做自动化：Gitea 仓库创建 + 授权 + Runner 拉代码](./gitea-automation.md)
+- [运行态数据库（Mongo）方案 A：独立 Mongo（推荐）](./runtime-mongo.md)
+- [ACR 运维规范：免交互登录（方案 A）+ 制品保留策略（N=3）](./acr-auth-and-retention.md)
 - [Dockerfile 规范（统一构建/部署契约）](./dockerfile-standards.md)
 - [方案 C：自建 Git（内网）——在 103 部署 Gitea（SSH 拉代码）](./git-server-gitea.md)
 
