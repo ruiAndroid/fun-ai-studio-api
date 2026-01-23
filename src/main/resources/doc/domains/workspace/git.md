@@ -230,7 +230,7 @@ Runner 不需要 push，建议：
 
 ## 6.1 前端 Git 功能的可扩展路线（建议分阶段）
 
-目标：前端逐步提供 **pull / commit+push / 查看提交历史 / 回退到某一次提交** 等能力，但不牺牲安全性与可排障性。
+目标：前端逐步提供 **pull / commit+push / 查看提交历史 / 恢复到某一个版本** 等能力，但不牺牲安全性与可排障性。
 
 ### 阶段 A（建议先做，风险最低）
 
@@ -244,14 +244,14 @@ Runner 不需要 push，建议：
   - 推荐额外写入审计：userId/appId、操作者、commitSha、message、时间、IP 等（可先落 API 日志，后续再落库）
   - 默认禁止 force push（只允许快进 push）
 
-### 阶段 C（回退/切换版本：checkout/revert）
+### 阶段 C（回退/恢复版本：restore）
 
-- **`checkout`**：切到某个 commit/tag（用于“回到某次提交”，适合本地预览/对比）
-  - 注意：checkout 会进入 detached HEAD，前端要提示“当前不在分支上”
-- **`revert`（推荐的“回退”语义）**：基于某个 commit 生成一条“回退提交”，然后 push（审计友好、历史可追溯）
+- **`restore`（推荐的"恢复"语义）**：将代码恢复到指定 commit 的状态，生成新 commit 并 push
+  - ⚠️ **警告：此操作会直接覆盖当前所有文件，恢复到目标版本的状态。目标版本之后的所有改动将丢失！**
+  - 前端调用时需二次确认，避免误操作
 - **`reset-hard`（谨慎开放）**：仅管理员/内部使用；默认不要给普通用户 UI 暴露
 
-> 推荐口径：给用户的“回退”最好是 **revert（生成新 commit）**，而不是改写历史。
+> 注意：restore 会覆盖文件并生成新 commit，历史仍可追溯，但目标版本之后的改动将丢失。
 
 ---
 
@@ -313,17 +313,28 @@ Runner 不需要 push，建议：
 - 默认禁止 force push
 - 若 push 失败（远端有更新）：提示用户先 pull/解决冲突
 
-### 6.2.6 `POST /workspace/git/revert`
+### 6.2.6 `POST /workspace/git/restore`（⚠️ 谨慎操作）
 
 请求字段建议：
 
 - **userId/appId**
-- **targetCommitSha**：要回退的 commit
-- **message**（可选）：默认 `revert <sha>`
+- **commitSha**：要恢复到的目标 commit
+
+⚠️ **警告：此操作会直接覆盖当前所有文件，恢复到目标版本的状态。目标版本之后的所有改动将丢失！**
 
 行为：
 
-- 生成 revert commit 并 push（审计友好）
+- `git checkout <commitSha> -- .`（恢复所有文件到目标版本）
+- `git add -A && git commit`（生成新 commit）
+- `git push`（推送到远端）
+
+返回：
+
+- **result**：SUCCESS / PUSH_FAILED / FAILED
+- **commitShort**：恢复后的新 commit SHA
+- **targetCommit**：恢复到的目标 commit SHA
+- **branch**：当前分支
+- **message**：提示信息
 
 ---
 

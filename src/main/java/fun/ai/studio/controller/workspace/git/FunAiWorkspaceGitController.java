@@ -6,7 +6,7 @@ import fun.ai.studio.entity.response.WorkspaceGitEnsureResponse;
 import fun.ai.studio.entity.response.WorkspaceGitStatusResponse;
 import fun.ai.studio.entity.response.WorkspaceGitLogResponse;
 import fun.ai.studio.entity.response.WorkspaceGitCommitPushResponse;
-import fun.ai.studio.entity.response.WorkspaceGitRevertResponse;
+import fun.ai.studio.entity.response.WorkspaceGitRestoreResponse;
 import fun.ai.studio.workspace.WorkspaceNodeClient;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -146,21 +146,21 @@ public class FunAiWorkspaceGitController {
         }
     }
 
-    @PostMapping("/revert")
+    @PostMapping("/restore")
     @Operation(
-            summary = "回退到某次提交",
-            description = "使用 git revert 生成一个新的 commit 来撤销指定提交的改动（不改写历史），并自动 push。\n\n" +
-                    "注意：这不是 reset，而是生成一个新的 revert commit。\n\n" +
+            summary = "恢复到某个版本（⚠️ 谨慎操作）",
+            description = "将代码恢复到指定 commit 的状态，并自动 commit + push。\n\n" +
+                    "⚠️ **警告：此操作会直接覆盖当前所有文件，恢复到目标版本的状态。目标版本之后的所有改动将丢失！请谨慎操作！**\n\n" +
+                    "适用场景：需要将代码回退到某个历史版本时使用。\n\n" +
                     "返回 result 字段：\n" +
-                    "- SUCCESS：revert + push 成功\n" +
-                    "- CONFLICT：revert 时有冲突\n" +
-                    "- PUSH_FAILED：revert 成功但 push 失败\n" +
+                    "- SUCCESS：恢复 + push 成功\n" +
+                    "- PUSH_FAILED：恢复成功但 push 失败\n" +
                     "- FAILED：操作失败"
     )
-    public Result<WorkspaceGitRevertResponse> revert(
+    public Result<WorkspaceGitRestoreResponse> restore(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
-            @Parameter(description = "要撤销的 commit SHA（完整或短 SHA）", required = true) @RequestParam String commitSha
+            @Parameter(description = "要恢复到的 commit SHA（完整或短 SHA）", required = true) @RequestParam String commitSha
     ) {
         if (workspaceNodeClient == null || !workspaceNodeClient.isEnabled()) {
             return Result.error("workspace-node 未启用");
@@ -172,13 +172,13 @@ public class FunAiWorkspaceGitController {
             return Result.error("commitSha 不能为空");
         }
         try {
-            WorkspaceGitRevertResponse resp = workspaceNodeClient.gitRevert(userId, appId, commitSha);
+            WorkspaceGitRestoreResponse resp = workspaceNodeClient.gitRestore(userId, appId, commitSha);
             return Result.success(resp);
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
         } catch (Exception e) {
-            log.error("git revert failed: userId={}, appId={}, commitSha={}, error={}", userId, appId, commitSha, e.getMessage(), e);
-            return Result.error("git revert failed: " + e.getMessage());
+            log.error("git restore failed: userId={}, appId={}, commitSha={}, error={}", userId, appId, commitSha, e.getMessage(), e);
+            return Result.error("git restore failed: " + e.getMessage());
         }
     }
 }

@@ -23,6 +23,7 @@ import fun.ai.studio.entity.response.WorkspaceGitEnsureResponse;
 import fun.ai.studio.entity.response.WorkspaceGitLogResponse;
 import fun.ai.studio.entity.response.WorkspaceGitCommitPushResponse;
 import fun.ai.studio.entity.response.WorkspaceGitRevertResponse;
+import fun.ai.studio.entity.response.WorkspaceGitRestoreResponse;
 import fun.ai.studio.entity.request.WorkspaceGitCommitPushRequest;
 import fun.ai.studio.entity.response.WorkspaceMongoCreateCollectionResponse;
 import fun.ai.studio.entity.response.WorkspaceMongoInsertOneResponse;
@@ -257,6 +258,15 @@ public class WorkspaceNodeClient {
         String path = "/api/fun-ai/workspace/git/revert";
         String query = query(Map.of("userId", String.valueOf(userId), "appId", String.valueOf(appId), "commitSha", commitSha == null ? "" : commitSha));
         return requestJson("POST", path, query, new byte[0], new TypeReference<Result<WorkspaceGitRevertResponse>>() {});
+    }
+
+    /**
+     * 恢复到某个版本状态（git checkout + commit + push）
+     */
+    public WorkspaceGitRestoreResponse gitRestore(Long userId, Long appId, String commitSha) {
+        String path = "/api/fun-ai/workspace/git/restore";
+        String query = query(Map.of("userId", String.valueOf(userId), "appId", String.valueOf(appId), "commitSha", commitSha == null ? "" : commitSha));
+        return requestJson("POST", path, query, new byte[0], new TypeReference<Result<WorkspaceGitRestoreResponse>>() {});
     }
 
     private boolean containsPackageJson(List<FunAiWorkspaceFileNode> nodes) {
