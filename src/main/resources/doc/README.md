@@ -1,26 +1,38 @@
-# 文档目录（总索引）
+# Fun AI Studio 文档总索引
 
-## 部署与运维
+## 从这里开始
 
-- [现网 6 台模式：安全组/防火墙放行矩阵](./domains/server/security-groups.md)
-- [现网 6 台模式：最小可落地监控方案](./domains/server/monitoring-minimal.md)
-- [Deploy/Runner/Runtime：整体架构与互联矩阵](./domains/deploy/architecture.md)
-- [真实部署闭环落地计划（现网 6 台）](./domains/deploy/real-deploy-rollout.md)
-- [标准流水线：Git 作为源码真相源 + ACR 作为唯一制品](./domains/deploy/git-acr-pipeline.md)
-- [必做自动化：Gitea 仓库创建 + 授权 + Runner 拉代码](./domains/deploy/gitea-automation.md)
-- [运行态数据库（Mongo）方案 A：独立 Mongo（推荐）](./domains/deploy/runtime-mongo.md)
-- [ACR 运维规范：免交互登录（方案 A）+ 制品保留策略（N=3）](./domains/deploy/acr-auth-and-retention.md)
-- [方案 C：自建 Git（内网）——103 上从零部署 Gitea（SSH 拉代码）](./domains/deploy/git-server-gitea.md)
-- [多机扩容方案（面向 Deploy / Runner / Runtime）](./domains/server/scaling-deploy-runtime.md)
-- [Workspace 节点（workspace-dev / workspace-node）联调说明](./domains/server/workspace-node.md)
-- [阿里云部署文档（单机版，历史/最小版）](./阿里云部署文档.md)
+- **[系统架构说明（推荐先读）](./domains/architecture/README.md)** — 从 7 台服务器整体视角理解系统
 
-## 子系统文档（面向 AI）
+## 服务器与部署
 
-- [子系统文档索引](./domains/README.md)
+| 文档 | 说明 |
+|------|------|
+| [安全组/防火墙放行矩阵](./domains/server/security-groups.md) | 7 台服务器端口与 IP 规则 |
+| [最小可落地监控方案](./domains/server/monitoring-minimal.md) | Prometheus + Grafana |
+| [Workspace 节点联调说明](./domains/server/workspace-node.md) | 开发节点部署与调试 |
+| [Workspace 4 节点扩容](./domains/server/workspace-4nodes-rollout.md) | Workspace 横向扩展 |
+| [Deploy/Runner/Runtime 扩容](./domains/server/scaling-deploy-runtime.md) | 发布能力横向扩展 |
 
-## 目录结构建议
+## 发布能力（Deploy / Runner / Runtime）
 
-- [structure](./structure.md)
+| 文档 | 说明 |
+|------|------|
+| [Deploy 架构与互联矩阵](./domains/deploy/architecture.md) | 控制面/执行面/运行态详解 |
+| [真实部署闭环落地计划](./domains/deploy/real-deploy-rollout.md) | 分阶段落地步骤 |
+| [运行态 Mongo 方案](./domains/deploy/runtime-mongo.md) | 第 7 台服务器：独立 Mongo |
+| [标准流水线](./domains/deploy/git-acr-pipeline.md) | Git → ACR → Runtime |
+| [Gitea 自动化](./domains/deploy/gitea-automation.md) | 仓库创建 + 授权 + SSH |
+| [ACR 运维规范](./domains/deploy/acr-auth-and-retention.md) | 登录与制品保留 |
+| [Gitea 部署（103）](./domains/deploy/git-server-gitea.md) | Git 服务器从零搭建 |
+
+## 子系统文档
+
+- [子系统文档索引](./domains/README.md) — Workspace / Deploy / App 各域详细说明
+
+## 其他
+
+- [目录结构建议](./structure.md)
+- [阿里云部署文档（单机/最小版）](./阿里云部署文档.md)
 
 

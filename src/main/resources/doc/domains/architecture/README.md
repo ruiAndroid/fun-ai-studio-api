@@ -1,308 +1,357 @@
-# 系统架构说明（Fun AI Studio API）
+# Fun AI Studio 系统架构
 
-本文档提供“系统级”架构视角：**总架构图** + **各子域子架构图** + 关键链路时序图，帮助快速理解各模块组成与交互方式。
+## 一句话理解这个系统
 
-> 文档偏“架构与设计思路”，具体接口/字段细节以各域文档为准（`doc/domains/*`）。
-
----
-
-## 1. 系统目标与核心体验
-
-- **目标**：给用户提供“应用管理 + 在线开发环境（Workspace）”的一体化能力：打开编辑器、同步文件、运行预览、查看日志、在线终端、可选的容器内 Mongo。
-- **体验关键**：前端尽量通过少量 API 即可进入编辑/预览；后端通过受控脚本与状态文件，保证“平台拥有最终控制权”（避免进程/端口/状态错乱）。
-- **发布能力（新增）**：用户完成开发后，平台将“用户前后端一体应用”部署到 Runtime 节点（容器）并对公网统一域名下路径暴露（`/apps/{appId}/...`）。
+Fun AI Studio 让用户 **在浏览器里写代码、实时预览、一键发布到公网**。
 
 ---
 
-## 2. 总架构图（现网 6 台为主，兼容单机/最小环境）
+## 用户的两条路径
 
-> 说明：你们现网已演进为 **6 台模式（API / workspace-dev / Deploy / Runner / Runtime / Git）**。  
-> 本章会先给出现网总架构图，再保留“单机版”用于本地/最小环境。
+理解整个系统只需要记住用户会做的两件事：
 
-### 2.1 现网 6 台模式（推荐/当前）
-
-```mermaid
-flowchart TD
-  subgraph Public["公网/统一入口"]
-    Browser["用户浏览器/控制台"]
-    Gateway["统一入口网关(Nginx/Traefik 80/443)"]
-  end
-
-  subgraph APIPlane["API（入口 / Control Plane）"]
-    Api["fun-ai-studio-api (8080)"]
-    Mysql[("MySQL(按实际可同机/独立)")]
-  end
-
-  subgraph WorkspacePlane["workspace-dev（开发态）"]
-    WsNginx["workspace-dev Nginx (80)"]
-    WsNode["workspace-node (fun-ai-studio-workspace 7001)"]
-    WsUser["workspace 用户容器(ws-u-{userId})"]
-    Verdaccio["Verdaccio npm proxy (4873, in-net)"]
-    HostFS["宿主机目录(/data/funai/workspaces/{userId})"]
-  end
-
-  subgraph GitPlane["源码真相源(Git Plane)"]
-    Git["Gitea (103:3000/2222)"]
-  end
-
-  subgraph DeployPlane["发布能力（Deploy / Runner / Runtime）"]
-    Deploy["fun-ai-studio-deploy (7002)"]
-    Runner["fun-ai-studio-runner (Python)"]
-    RTGW["Runtime 网关(80/443)"]
-    Agent["runtime-agent (7005)"]
-    AppCtn["用户应用容器(appId)"]
-  end
-
-  Browser --> Gateway
-  Gateway -->|"业务 API (/api/fun-ai/**)"| Api
-  Gateway -->|"预览入口 (/ws/{userId}/...)"| WsNginx
-  Gateway -->|"应用访问 (/apps/{appId}/...)"| RTGW
-
-  Api --> Mysql
-
-  %% workspace-dev
-  Api -->|"workspace 接口转发(workspace-node-proxy)"| WsNode
-  WsNginx -->|"auth_request 查端口"| WsNode
-  WsNginx -->|"反代到 hostPort"| WsUser
-  WsUser --> HostFS
-  WsUser --> Verdaccio
-
-  %% deploy pipeline
-  Api -->|"内部调用(创建/查询 Job)"| Deploy
-  Runner -->|"claim/heartbeat/report"| Deploy
-  Runner -->|"ssh clone/pull 源码"| Git
-  Agent -->|"runtime 节点心跳"| Deploy
-  Runner -->|"deploy/stop/status"| Agent
-  RTGW --> AppCtn
+```
+路径 A：开发                          路径 B：发布
+                                      
+  打开编辑器                            点击"部署"
+       ↓                                    ↓
+  写代码、装依赖                        构建镜像、推送
+       ↓                                    ↓
+  实时预览效果                          启动线上容器
+       ↓                                    ↓
+  满意后提交 Git                        公网可访问
 ```
 
-### 关键点（现网）
-
-- **API 是用户唯一入口**：前端只访问 API；预览 `/ws/**` 与运行态 `/apps/**` 都由网关按路径分流。
-- **workspace-dev 专注“开发态容器”**：容器/端口池/verdaccio/npm/运行日志等重负载集中在 87。
-- **发布能力三件套**：Deploy（控制面）+ Runner（执行面）+ Runtime（运行态）。
-- **源码真相源（Git）**：Runner 从 Git(103) 拉取源码进行构建；Workspace(87) 负责开发态编辑与 push。
+**所有架构设计都是为了让这两条路径顺畅运行。**
 
 ---
 
-### 2.2 单机版（本地/最小环境）
+## 系统全景（一张图）
 
-```mermaid
-flowchart TD
-  Browser["浏览器(BrowserUI)"] --> Nginx["网关(Nginx_Gateway_80_443)"]
-  Browser --> Api["后端API(SpringBoot_FunAiStudioAPI_8080)"]
-  Api --> Mysql[("数据库(MySQL)")]
-
-  subgraph host ["单机(SingleHost)"]
-    Docker["容器运行时(DockerEngine_or_PodmanDocker)"]
-    UserCtn["用户容器(WorkspaceContainers_ws_u_userId)"]
-    Verdaccio["npm代理(Verdaccio_NpmProxy_4873_in_net)"]
-    HostFS["宿主机目录(HostFS_hostRoot_userId)"]
-  end
-
-  Api --> Docker
-  UserCtn --> HostFS
-  UserCtn --> Verdaccio
-
-  Browser -->|"预览入口(/ws/{userId})"| Nginx
-  Nginx -->|"端口查询(auth_request_port)"| Api
-  Nginx -->|"转发(proxy_to_127_0_0_1_hostPort)"| UserCtn
 ```
-
-### 关键点
-
-- **对外入口**通常由 Nginx 统一承接（只开 80/443），API 与预览 `/ws/{userId}/` 都通过反代完成。
-- **Workspace 容器**由后端通过 `docker` CLI 管理（`run/exec/inspect/stop`）。
-- **npm-cache** 使用 Verdaccio（同机容器网络访问）减少出网、提升 install 稳定性与速度。
+                                    ┌─────────────────────┐
+                                    │      用户浏览器      │
+                                    └──────────┬──────────┘
+                                               │
+                              ┌────────────────┼────────────────┐
+                              │                │                │
+                              ▼                ▼                ▼
+                        ┌──────────┐    ┌──────────┐    ┌──────────┐
+                        │ /api/**  │    │ /ws/**   │    │ /apps/** │
+                        │ 业务接口 │    │ 开发预览 │    │ 线上应用 │
+                        └────┬─────┘    └────┬─────┘    └────┬─────┘
+                             │               │               │
+    ┌────────────────────────┼───────────────┼───────────────┼────────────────────────┐
+    │                        │               │               │                        │
+    │                        ▼               │               ▼                        │
+    │                  ┌──────────┐          │         ┌──────────┐                   │
+    │                  │   API    │          │         │ Runtime  │                   │
+    │                  │   入口   │          │         │  网关    │                   │
+    │                  │  (91)    │          │         │  (102)   │                   │
+    │                  └────┬─────┘          │         └────┬─────┘                   │
+    │                       │               │               │                        │
+    │         ┌─────────────┼───────────────┼───────────────┤                        │
+    │         │             │               │               │                        │
+    │         ▼             ▼               ▼               ▼                        │
+    │   ┌──────────┐  ┌──────────┐    ┌──────────┐   ┌──────────┐                    │
+    │   │  MySQL   │  │  Deploy  │    │Workspace │   │ 应用容器 │                    │
+    │   │  数据库  │  │  控制面  │    │ 开发节点 │   │  + Mongo │                    │
+    │   │  (91)    │  │  (100)   │    │  (87)    │   │ (102+)   │                    │
+    │   └──────────┘  └────┬─────┘    └────┬─────┘   └──────────┘                    │
+    │                      │               │                                         │
+    │                      ▼               ▼                                         │
+    │                ┌──────────┐    ┌──────────┐                                    │
+    │                │  Runner  │    │   Git    │                                    │
+    │                │  执行机  │◄───│  源码库  │                                    │
+    │                │  (101)   │    │  (103)   │                                    │
+    │                └──────────┘    └──────────┘                                    │
+    │                                                                                │
+    │                                内网                                            │
+    └────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 3. 各子域子架构图（按域拆分）
+## 开发路径详解（路径 A）
 
-### 3.1 App 域子架构图（应用管理 + open-editor 聚合编排）
-
-```mermaid
-flowchart TD
-  FE["前端(Frontend)"] --> AppCtl["应用控制器(AppController)"]
-  AppCtl --> AppSvc["应用服务(AppService)"]
-  AppSvc --> Mysql[("数据库表(MySQL_app_tables)")]
-
-  AppCtl --> WsSvc["工作区服务(WorkspaceService)"]
-  WsSvc --> Docker["容器命令(DockerCLI)"]
-  WsSvc --> RunState[("运行态记录(WorkspaceRun_last_known)")]
-  RunState --> Mysql
-```
-
-说明（配合图看）：
-
-- App 域负责 **应用 CRUD** 与 **open-editor 聚合编排**，Workspace 域负责容器/文件/运行态等底层能力。
-
-### 3.2 Workspace 域子架构图（容器/文件/运行态/实时/internal/npm-cache/Mongo）
-
-```mermaid
-flowchart TD
-  FE["前端(Frontend)"] --> WsContainerCtl["容器接口(WorkspaceContainerAPI)"]
-  FE --> WsFilesCtl["文件接口(WorkspaceFilesAPI)"]
-  FE --> WsRunCtl["运行态接口(WorkspaceRunAPI)"]
-  FE --> WsRealtimeCtl["实时通道(SSE)(WorkspaceRealtimeSSE)"]
-  FE --> WsTerminal["在线终端(WS)(WorkspaceTerminalWS)"]
-
-  Nginx["网关(Nginx_Gateway)"] --> WsInternalCtl["内部端口查询(WorkspaceInternalAPI_port)"]
-
-  WsContainerCtl --> WsSvc["核心服务(WorkspaceServiceImpl)"]
-  WsFilesCtl --> WsSvc
-  WsRunCtl --> WsSvc
-  WsRealtimeCtl --> WsSvc
-  WsTerminal --> WsSvc
-  WsInternalCtl --> WsSvc
-
-  WsSvc --> Docker["容器命令(DockerCLI)"]
-  Docker --> Ctn["用户容器(Container_ws_u_userId)"]
-
-  Ctn --> HostFS["宿主机目录(HostRoot_userId_apps_run)"]
-  Ctn --> Verdaccio["npm代理(Verdaccio_NpmProxy)"]
-  Ctn --> Mongod["数据库(mongod_optional_127_0_0_1)"]
-
-  WsMongoCtl["Mongo浏览器接口(MongoExplorerAPI)"] --> Docker
-  WsMongoCtl --> Ctn
-```
-
-说明（配合图看）：
-
-- **container 子系统**：ensure/status/heartbeat（保证容器与挂载就绪）
-- **files 子系统**：宿主机落盘，容器通过 bind mount 可见
-- **run 子系统**：受控任务（dev/preview/build/install）+ `current.json`/日志
-- **realtime 子系统**：SSE（状态/日志增量）+ WS 终端（docker exec）
-- **internal 子系统**：Nginx `auth_request` 查 `userId -> hostPort`（无副作用）
-- **npm-cache**：通过 `funai-net` 访问 Verdaccio
-- **Mongo（可选）**：容器内 `mongod`；Mongo Explorer 通过后端 `docker exec mongosh` 只读查询
-
-### 3.3 Server 域子架构图（多机扩容：ControlPlane + WorkspaceNode）
-
-```mermaid
-flowchart TD
-  Browser["浏览器(BrowserUI)"] --> Gateway["网关(Nginx_or_Gateway)"]
-  Gateway --> Api["API(入口_fun-ai-studio-api)"]
-
-  Api --> Mysql[("数据库(MySQL)")]
-  Api --> Redis[("缓存/锁(Redis)")]
-
-  Gateway --> WsNginxA["workspace-dev Nginx_A (/ws)"]
-  Gateway --> WsNginxB["workspace-dev Nginx_B (/ws)"]
-
-  WsNginxA --> NodeA["workspace-node_A (7001)"]
-  WsNginxB --> NodeB["workspace-node_B (7001)"]
-
-  NodeA --> DockerA["容器运行时(DockerEngine_A)"]
-  NodeB --> DockerB["容器运行时(DockerEngine_B)"]
-
-  DockerA --> CtnA["用户容器(ws-u-{userId})"]
-  DockerB --> CtnB["用户容器(ws-u-{userId})"]
-
-  Api --> Placement[("用户落点表(userId_to_node_hostPort)")]
-  Placement --> Mysql
-  Placement --> Redis
-```
-
-说明（配合图看）：
-
-- 扩容关键是把 **userId 落点（nodeId/hostPort）** 存起来，并让 Gateway 能按 userId 路由到正确的 WorkspaceNode。
-
-### 3.4 Deploy 域子架构图（控制面 / Runner / Runtime）
-
-```mermaid
-flowchart TD
-  FE["前端/用户(User/Console)"] --> API["API(统一入口_fun-ai-studio-api)"]
-  API --> Deploy["Deploy 控制面(fun-ai-studio-deploy)"]
-  Runner["Runner(执行面_fun-ai-studio-runner)"] --> Deploy
-  Agent["Runtime-Agent(fun-ai-studio-runtime)"] --> Deploy
-  Runner --> Agent
-
-  GW["Runtime 网关(Traefik/Nginx)"] --> App["用户应用容器(AppContainer)"]
-  FE -->|"访问 /apps/{appId}/..."| GW
-```
-
-说明（配合图看）：
-
-- **用户只访问 API**：API 负责鉴权与入口编排，内部调用 Deploy 创建/查询 Job。
-- **Deploy 不执行用户代码**：Deploy 只负责任务编排与记录（控制面），执行动作由 Runner 完成（执行面）。
-- **Runtime 对外暴露统一入口**：用户应用最终跑在 Runtime 节点的容器里，通过网关统一域名下按路径访问。
-
-深入阅读：
-
-- `doc/domains/deploy/README.md`（API 入口与调用链）
-- `doc/domains/deploy/architecture.md`（整体架构与互联矩阵/运维视角）
-
----
-
-## 4. 关键链路（时序图）
-
-### 4.1 open-editor（前端进入编辑器的一次性编排）
+### 发生了什么
 
 ```mermaid
 sequenceDiagram
-participant FE as "前端(Frontend)"
-participant App as "应用接口(AppAPI)"
-participant WS as "工作区服务(WorkspaceService)"
+    participant U as 用户
+    participant API as API (91)
+    participant WS as Workspace (87)
+    participant Git as Git (103)
 
-FE->>App: open-editor(打开编辑器)(userId,appId)
-App->>WS: ensureAppDir(userId,appId)
-App->>WS: startDev(userId,appId) (非阻塞)(non-blocking)
-App-->>FE: 运行态+目录(runStatus+projectDir)
+    U->>API: 打开编辑器
+    API->>WS: 确保容器就绪
+    WS-->>U: 返回预览地址 /ws/{userId}/
+
+    U->>WS: 编辑代码、npm install
+    WS->>WS: 容器内执行、实时日志
+
+    U->>U: 预览满意
+
+    U->>WS: git push
+    WS->>Git: SSH 推送代码
 ```
 
-### 4.2 /ws/{userId}/ 预览反代（Nginx auth_request + 端口映射）
+### 关键设计
+
+1. **每个用户一个容器** (`ws-u-{userId}`)
+   - 隔离环境：你装的依赖不影响别人
+   - 持久化：代码保存在宿主机，容器重建不丢失
+
+2. **预览地址是用户级的** (`/ws/{userId}/`)
+   - 不是项目级，因为同一时间只运行一个项目
+   - Nginx 通过 `auth_request` 动态查端口
+
+3. **开发态 Mongo 可选**
+   - 容器内运行，仅 `127.0.0.1` 可访问
+   - 纯粹为了开发方便，与线上无关
+
+---
+
+## 发布路径详解（路径 B）
+
+### 发生了什么
 
 ```mermaid
 sequenceDiagram
-participant Browser as "浏览器(Browser)"
-participant Nginx as "网关(Nginx)"
-participant Api as "内部端口查询(InternalPortAPI)"
-participant Ctn as "用户容器(WorkspaceContainer)"
+    participant U as 用户
+    participant API as API (91)
+    participant D as Deploy (100)
+    participant R as Runner (101)
+    participant Git as Git (103)
+    participant RT as Runtime (102)
+    participant M as Mongo (独立)
 
-Browser->>Nginx: GET /ws/{userId}/...
-Nginx->>Api: auth_request(鉴权/查端口) /workspace/internal/nginx/port?userId
-Api-->>Nginx: Header X-WS-Port:{hostPort}(端口)
-Nginx->>Ctn: proxy_pass(转发) 127.0.0.1:{hostPort}
-Ctn-->>Browser: HTML/JS/CSS/Assets
+    U->>API: 点击"部署"
+    API->>D: 创建 Job
+
+    R->>D: 领取 Job
+    R->>Git: 拉取源码
+    R->>R: 构建镜像、推送 ACR
+    R->>RT: 部署容器
+    RT->>RT: 启动应用
+    R->>D: 报告成功
+
+    U->>RT: 访问 /apps/{appId}/
+    RT->>M: 应用读写数据
 ```
 
-### 4.3 npm-cache（Verdaccio 代理仓库）
+### 关键设计
 
-```mermaid
-flowchart TD
-  WsContainer["用户容器(WorkspaceContainer)"] -->|"安装依赖(npm_install)"| Verdaccio["代理仓库(Verdaccio_RegistryProxy)"]
-  Verdaccio -->|"未命中(cache_miss)"| Upstream["上游源(UpstreamRegistry_npmmirror)"]
-  Verdaccio -->|"命中(cache_hit)"| WsContainer
+1. **控制面与执行面分离**
+   - Deploy (100) 只负责"安排任务"
+   - Runner (101) 负责"干活"
+   - 好处：可以有多个 Runner 并行执行
+
+2. **镜像是唯一交付物**
+   - 不复制文件、不 rsync
+   - Runner 构建 → 推送 ACR → Runtime 拉取运行
+   - 好处：可追溯、可回滚、跨机器一致
+
+3. **运行态 Mongo 必须独立**
+   - 应用容器会被删除重建（每次部署）
+   - 数据必须存在容器外
+   - 一个 mongod，多库隔离：`db_{appId}`
+
+4. **粘性落点**
+   - `appId` 固定部署到某台 Runtime 节点
+   - 避免每次部署换机器导致的网络/存储问题
+
+---
+
+## 物理架构（7 台服务器）
+
+### 服务器清单
+
+| 机器 | IP | 运行什么 | 核心职责 |
+|------|----|----------|----------|
+| **API 入口** | 91 | Nginx + API + MySQL + Prometheus | 用户唯一入口，协调所有内部服务 |
+| **Workspace** | 87 | workspace-node + Nginx + Docker + Verdaccio | 承载用户开发容器 |
+| **Deploy** | 100 | deploy 服务 | 发布任务调度 |
+| **Runner** | 101 | runner 进程 | 构建镜像、执行部署 |
+| **Runtime** | 102 | runtime-agent + Traefik + Docker | 承载用户线上应用 |
+| **Git** | 103 | Gitea | 源码版本管理 |
+| **Mongo** | 待定 | MongoDB | 线上应用数据库 |
+
+### 为什么这样分
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        公网暴露                              │
+│                    只有 91 和 102                            │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   91 (API)        内网调度和存储                             │
+│       │                                                      │
+│       ├──► 100 (Deploy)  ◄── 101 (Runner)                   │
+│       │         ▲                  │                         │
+│       │         │                  ▼                         │
+│       │         └────────── 102 (Runtime) ──► Mongo         │
+│       │                            ▲                         │
+│       │                            │                         │
+│       └──► 87 (Workspace) ──► 103 (Git) ◄────┘              │
+│                                                              │
+│                        内网隔离                              │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### 4.4 Mongo Explorer（不暴露端口的只读代理）
+- **91 是大脑**：所有用户请求进来，所有内部调度从这里发起
+- **87 是开发环境**：CPU/内存消耗大，单独机器
+- **100/101 是发布能力**：可以各自扩容
+- **102 是线上环境**：承载真实用户流量，可以扩容
+- **103 是代码仓库**：需要稳定，单独机器
+- **Mongo 是数据**：必须独立于应用容器，保证数据安全
 
-```mermaid
-sequenceDiagram
-participant Browser as "浏览器(BrowserUI)"
-participant Api as "后端API(FunAiStudioAPI)"
-participant Docker as "容器运行时(DockerEngine)"
-participant Ws as "用户容器(WorkspaceContainer)"
-participant Mongo as "数据库(mongod)"
+---
 
-Browser->>Api: /workspace/mongo/collections?userId&appId
-Api->>Docker: docker exec ws-u-{userId} mongosh --eval
-Docker->>Ws: exec mongosh
-Ws->>Mongo: query(查询)(127.0.0.1:27017/db_appId)
-Mongo-->>Ws: result
-Ws-->>Docker: JSON
-Docker-->>Api: JSON
-Api-->>Browser: Result{data}(结果)
+## 端口与通信
+
+### 谁调用谁
+
+```
+用户 ──► 91:80 ──┬──► /api/**    ──► 91:8080 (API)
+                 ├──► /ws/**     ──► 87:80 (Workspace)
+                 └──► /apps/**   ──► 102:80 (Runtime)
+
+API (91) ──► 87:7001   workspace 操作
+API (91) ──► 100:7002  创建/查询发布任务
+
+Runner (101) ──► 100:7002  领取任务、汇报结果
+Runner (101) ──► 102:7005  执行部署
+Runner (101) ──► 103:2222  拉取代码
+
+Runtime (102) ──► 100:7002   节点心跳
+Runtime (102) ──► Mongo:27017 应用数据
+
+Workspace (87) ──► 91:8080   节点心跳
+Workspace (87) ──► 103:2222  推送代码
+```
+
+### 端口速查
+
+| 端口 | 服务 | 暴露范围 |
+|------|------|----------|
+| 80/443 | Nginx 入口 | 公网（91 和 102） |
+| 8080 | API | 内网 |
+| 7001 | workspace-node | 只允许 91 |
+| 7002 | Deploy | 只允许 91/101/102 |
+| 7005 | runtime-agent | 只允许 101 |
+| 2222 | Git SSH | 只允许 87/101 |
+| 27017 | MongoDB | 只允许 102 |
+
+---
+
+## 关键设计决策
+
+### 为什么开发态和运行态要完全分开？
+
+**问题**：开发时的预览 (`/ws/`) 和线上访问 (`/apps/`) 能不能合并？
+
+**不能，因为**：
+- 开发态容器随时可能重启、npm install、代码报错
+- 线上需要稳定，不能因为用户改代码而挂掉
+- 开发态数据是测试数据，线上数据是真实数据
+
+### 为什么 Runner 和 Runtime 分开？
+
+**问题**：能不能让 Runtime 节点自己拉代码、构建、运行？
+
+**可以，但不好**：
+- 构建时 CPU/内存消耗大，会影响正在运行的应用
+- 构建依赖（docker buildx、npm）和运行依赖不同
+- 分开后 Runner 可以水平扩容，不影响线上
+
+### 为什么需要独立的 Git 服务器？
+
+**问题**：能不能直接从 Workspace 的文件系统复制代码？
+
+**不好，因为**：
+- 文件复制不可靠（权限、路径、跨机器）
+- 没有版本历史，无法回滚
+- Git 是标准，所有工具链都支持
+
+### 为什么 Mongo 要独立？
+
+**问题**：能不能每个应用容器里跑一个 Mongo？
+
+**不能，因为**：
+- 每次部署会 `docker rm` 旧容器
+- 容器内数据会丢失
+- 独立 Mongo + volume 才能保证数据安全
+
+---
+
+## 扩容指南
+
+### Workspace 扩容（更多用户同时开发）
+
+```
+现在：用户 ──► 91 ──► 87 (单节点)
+
+扩容后：用户 ──► 91 ──┬──► 87-1
+                      ├──► 87-2
+                      └──► 87-3
+```
+
+- 新增 workspace-node 节点
+- API 维护 `userId → nodeId` 映射
+- 入口 Nginx 按 userId 路由
+
+### Runtime 扩容（更多应用同时运行）
+
+```
+现在：用户 ──► 102 (单节点)
+
+扩容后：用户 ──┬──► 102-1
+              ├──► 102-2
+              └──► 102-3
+```
+
+- 新增 runtime-agent 节点
+- Deploy 维护 `appId → nodeId` 映射
+- 统一网关负载均衡
+
+### Runner 扩容（更快的构建）
+
+- 新增 Runner 进程/机器
+- 多个 Runner 竞争领取 Job
+- 无需改配置，自动负载均衡
+
+---
+
+## 排障地图
+
+遇到问题时，先定位是哪个环节：
+
+```
+用户看到的问题                 排查方向
+─────────────────────────────────────────────
+打不开编辑器                   91 (API) → 87 (Workspace)
+预览白屏/报错                  87 容器状态、日志
+部署一直 pending               100 (Deploy) → 101 (Runner)
+部署失败                       101 Runner 日志、Git 连通性
+线上打不开                     102 (Runtime) 容器状态、网关
+线上数据丢失                   Mongo 连接、volume 挂载
 ```
 
 ---
 
-## 5. 文档索引（按域深入）
+## 文档索引
 
-- `doc/domains/app/README.md`
-- `doc/domains/workspace/README.md`
-- `doc/domains/deploy/README.md`
-- `doc/domains/server/scaling-workspace.md`
+**子系统详解**：
+- [Workspace 总览](../workspace/README.md)
+- [Deploy 架构](../deploy/architecture.md)
+- [Deploy 落地计划](../deploy/real-deploy-rollout.md)
 
+**运维相关**：
+- [安全组矩阵](../server/security-groups.md)
+- [监控方案](../server/monitoring-minimal.md)
+- [运行态 Mongo](../deploy/runtime-mongo.md)
 
+**扩容相关**：
+- [Workspace 扩容](../server/workspace-4nodes-rollout.md)
+- [Runtime 扩容](../server/scaling-deploy-runtime.md)
