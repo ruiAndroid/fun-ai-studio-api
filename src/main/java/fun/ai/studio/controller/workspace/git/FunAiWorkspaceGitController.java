@@ -1,8 +1,12 @@
 package fun.ai.studio.controller.workspace.git;
 
 import fun.ai.studio.common.Result;
+import fun.ai.studio.entity.request.WorkspaceGitCommitPushRequest;
 import fun.ai.studio.entity.response.WorkspaceGitEnsureResponse;
 import fun.ai.studio.entity.response.WorkspaceGitStatusResponse;
+import fun.ai.studio.entity.response.WorkspaceGitLogResponse;
+import fun.ai.studio.entity.response.WorkspaceGitCommitPushResponse;
+import fun.ai.studio.entity.response.WorkspaceGitRevertResponse;
 import fun.ai.studio.workspace.WorkspaceNodeClient;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -80,6 +84,101 @@ public class FunAiWorkspaceGitController {
         } catch (Exception e) {
             log.error("git ensure failed: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
             return Result.error("git ensure failed: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/log")
+    @Operation(
+            summary = "查看提交历史",
+            description = "返回最近 N 次提交记录（默认 10 条，最多 50 条），包含 SHA、作者、时间、提交信息"
+    )
+    public Result<WorkspaceGitLogResponse> log(
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
+            @Parameter(description = "返回条数（默认 10，最多 50）") @RequestParam(defaultValue = "10") Integer limit
+    ) {
+        if (workspaceNodeClient == null || !workspaceNodeClient.isEnabled()) {
+            return Result.error("workspace-node 未启用");
+        }
+        if (userId == null || appId == null) {
+            return Result.error("userId/appId 不能为空");
+        }
+        try {
+            WorkspaceGitLogResponse resp = workspaceNodeClient.gitLog(userId, appId, limit == null ? 10 : limit);
+            return Result.success(resp);
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            log.error("git log failed: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
+            return Result.error("git log failed: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/commit-push")
+    @Operation(
+            summary = "一键提交并推送",
+            description = "将所有改动 add + commit + push 到远端（使用 workspace-bot 身份提交）。\n\n" +
+                    "返回 result 字段：\n" +
+                    "- SUCCESS：commit + push 成功\n" +
+                    "- NO_CHANGES：没有需要提交的改动\n" +
+                    "- PUSH_FAILED：commit 成功但 push 失败（可能有冲突，需先 pull）\n" +
+                    "- FAILED：操作失败"
+    )
+    public Result<WorkspaceGitCommitPushResponse> commitPush(
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
+            @RequestBody(required = false) WorkspaceGitCommitPushRequest request
+    ) {
+        if (workspaceNodeClient == null || !workspaceNodeClient.isEnabled()) {
+            return Result.error("workspace-node 未启用");
+        }
+        if (userId == null || appId == null) {
+            return Result.error("userId/appId 不能为空");
+        }
+        try {
+            WorkspaceGitCommitPushResponse resp = workspaceNodeClient.gitCommitPush(userId, appId, request);
+            return Result.success(resp);
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            log.error("git commit-push failed: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
+            return Result.error("git commit-push failed: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/revert")
+    @Operation(
+            summary = "回退到某次提交",
+            description = "使用 git revert 生成一个新的 commit 来撤销指定提交的改动（不改写历史），并自动 push。\n\n" +
+                    "注意：这不是 reset，而是生成一个新的 revert commit。\n\n" +
+                    "返回 result 字段：\n" +
+                    "- SUCCESS：revert + push 成功\n" +
+                    "- CONFLICT：revert 时有冲突\n" +
+                    "- PUSH_FAILED：revert 成功但 push 失败\n" +
+                    "- FAILED：操作失败"
+    )
+    public Result<WorkspaceGitRevertResponse> revert(
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
+            @Parameter(description = "要撤销的 commit SHA（完整或短 SHA）", required = true) @RequestParam String commitSha
+    ) {
+        if (workspaceNodeClient == null || !workspaceNodeClient.isEnabled()) {
+            return Result.error("workspace-node 未启用");
+        }
+        if (userId == null || appId == null) {
+            return Result.error("userId/appId 不能为空");
+        }
+        if (commitSha == null || commitSha.isBlank()) {
+            return Result.error("commitSha 不能为空");
+        }
+        try {
+            WorkspaceGitRevertResponse resp = workspaceNodeClient.gitRevert(userId, appId, commitSha);
+            return Result.success(resp);
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            log.error("git revert failed: userId={}, appId={}, commitSha={}, error={}", userId, appId, commitSha, e.getMessage(), e);
+            return Result.error("git revert failed: " + e.getMessage());
         }
     }
 }

@@ -20,6 +20,10 @@ import fun.ai.studio.entity.response.WorkspaceMongoDocResponse;
 import fun.ai.studio.entity.response.WorkspaceMongoFindResponse;
 import fun.ai.studio.entity.response.WorkspaceGitStatusResponse;
 import fun.ai.studio.entity.response.WorkspaceGitEnsureResponse;
+import fun.ai.studio.entity.response.WorkspaceGitLogResponse;
+import fun.ai.studio.entity.response.WorkspaceGitCommitPushResponse;
+import fun.ai.studio.entity.response.WorkspaceGitRevertResponse;
+import fun.ai.studio.entity.request.WorkspaceGitCommitPushRequest;
 import fun.ai.studio.entity.response.WorkspaceMongoCreateCollectionResponse;
 import fun.ai.studio.entity.response.WorkspaceMongoInsertOneResponse;
 import fun.ai.studio.entity.response.WorkspaceMongoUpdateOneResponse;
@@ -218,6 +222,41 @@ public class WorkspaceNodeClient {
         String path = "/api/fun-ai/workspace/git/ensure";
         String query = query(Map.of("userId", String.valueOf(userId), "appId", String.valueOf(appId)));
         return requestJson("POST", path, query, new byte[0], new TypeReference<Result<WorkspaceGitEnsureResponse>>() {});
+    }
+
+    /**
+     * 查看最近 N 次提交
+     */
+    public WorkspaceGitLogResponse gitLog(Long userId, Long appId, int limit) {
+        String path = "/api/fun-ai/workspace/git/log";
+        String query = query(Map.of("userId", String.valueOf(userId), "appId", String.valueOf(appId), "limit", String.valueOf(limit)));
+        return requestJson("GET", path, query, null, new TypeReference<Result<WorkspaceGitLogResponse>>() {});
+    }
+
+    /**
+     * 一键 commit + push
+     */
+    public WorkspaceGitCommitPushResponse gitCommitPush(Long userId, Long appId, WorkspaceGitCommitPushRequest request) {
+        String path = "/api/fun-ai/workspace/git/commit-push";
+        String query = query(Map.of("userId", String.valueOf(userId), "appId", String.valueOf(appId)));
+        byte[] body = new byte[0];
+        if (request != null) {
+            try {
+                body = objectMapper.writeValueAsBytes(request);
+            } catch (Exception e) {
+                throw new RuntimeException("git commit-push request encode failed: " + e.getMessage(), e);
+            }
+        }
+        return requestJson("POST", path, query, body, new TypeReference<Result<WorkspaceGitCommitPushResponse>>() {});
+    }
+
+    /**
+     * 回退到某一次提交（git revert）
+     */
+    public WorkspaceGitRevertResponse gitRevert(Long userId, Long appId, String commitSha) {
+        String path = "/api/fun-ai/workspace/git/revert";
+        String query = query(Map.of("userId", String.valueOf(userId), "appId", String.valueOf(appId), "commitSha", commitSha == null ? "" : commitSha));
+        return requestJson("POST", path, query, new byte[0], new TypeReference<Result<WorkspaceGitRevertResponse>>() {});
     }
 
     private boolean containsPackageJson(List<FunAiWorkspaceFileNode> nodes) {
