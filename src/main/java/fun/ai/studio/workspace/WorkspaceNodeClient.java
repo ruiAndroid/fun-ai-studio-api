@@ -18,6 +18,8 @@ import fun.ai.studio.entity.request.WorkspaceMongoOpRequest;
 import fun.ai.studio.entity.response.WorkspaceMongoCollectionsResponse;
 import fun.ai.studio.entity.response.WorkspaceMongoDocResponse;
 import fun.ai.studio.entity.response.WorkspaceMongoFindResponse;
+import fun.ai.studio.entity.response.WorkspaceGitStatusResponse;
+import fun.ai.studio.entity.response.WorkspaceGitEnsureResponse;
 import fun.ai.studio.entity.response.WorkspaceMongoCreateCollectionResponse;
 import fun.ai.studio.entity.response.WorkspaceMongoInsertOneResponse;
 import fun.ai.studio.entity.response.WorkspaceMongoUpdateOneResponse;
@@ -198,6 +200,24 @@ public class WorkspaceNodeClient {
             throw new RuntimeException("mongo op request encode failed: " + e.getMessage(), e);
         }
         return requestJson("POST", path, query, body, new TypeReference<Result<Object>>() {});
+    }
+
+    /**
+     * 获取 Git 状态（是否 git repo、是否 dirty、分支、commit 等）
+     */
+    public WorkspaceGitStatusResponse gitStatus(Long userId, Long appId) {
+        String path = "/api/fun-ai/workspace/git/status";
+        String query = query(Map.of("userId", String.valueOf(userId), "appId", String.valueOf(appId)));
+        return requestJson("GET", path, query, null, new TypeReference<Result<WorkspaceGitStatusResponse>>() {});
+    }
+
+    /**
+     * 确保 Git 同步（clone / pull / 返回 NEED_COMMIT 等）
+     */
+    public WorkspaceGitEnsureResponse gitEnsure(Long userId, Long appId) {
+        String path = "/api/fun-ai/workspace/git/ensure";
+        String query = query(Map.of("userId", String.valueOf(userId), "appId", String.valueOf(appId)));
+        return requestJson("POST", path, query, new byte[0], new TypeReference<Result<WorkspaceGitEnsureResponse>>() {});
     }
 
     private boolean containsPackageJson(List<FunAiWorkspaceFileNode> nodes) {
