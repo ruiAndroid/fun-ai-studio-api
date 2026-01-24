@@ -161,14 +161,14 @@ public class FunAiAppController {
     private void fillDeployAccessUrl(Long userId, List<FunAiApp> apps) {
         if (apps == null || apps.isEmpty()) return;
 
-        // deploy preview（只填 deployAccessUrl；同时兼容填充 accessUrl=deployAccessUrl）
+        // deploy url（只填 deployAccessUrl；同时兼容填充 accessUrl=deployAccessUrl）
         try {
             if (deployClient == null || !deployClient.isEnabled()) return;
             // 你们当前每用户 app 上限 20，这里拿 200 条足够覆盖活跃 job
             List<Map<String, Object>> jobs = deployClient.listJobs(200);
             if (jobs == null || jobs.isEmpty()) return;
 
-            // appId -> previewUrl（取最后出现的一个，通常 list 已按更新时间倒序）
+            // appId -> deployUrl（取最后出现的一个，通常 list 已按更新时间倒序）
             Map<Long, String> appPreview = new HashMap<>();
             for (Map<String, Object> j : jobs) {
                 if (j == null) continue;
@@ -185,10 +185,10 @@ public class FunAiAppController {
                 } catch (Exception ignore) {
                     continue;
                 }
-                Object previewObj = j.get("previewUrl");
-                String preview = previewObj == null ? null : String.valueOf(previewObj);
-                if (preview == null || preview.isBlank()) continue;
-                appPreview.put(appId, preview);
+                Object deployObj = j.get("deployUrl");
+                String deployUrl = deployObj == null ? null : String.valueOf(deployObj);
+                if (deployUrl == null || deployUrl.isBlank()) continue;
+                appPreview.put(appId, deployUrl);
             }
 
             if (appPreview.isEmpty()) return;
