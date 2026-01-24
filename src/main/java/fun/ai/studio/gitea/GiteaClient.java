@@ -14,6 +14,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -114,6 +115,43 @@ public class GiteaClient {
         int code = requestStatus("DELETE", "/api/v1/repos/" + urlPath(owner) + "/" + urlPath(repo), null);
         // 204 no content (deleted) / 404 not found (already gone)
         return code == 204 || code == 404;
+    }
+
+    /**
+     * 初始化仓库的模板文件（best-effort）：若文件不存在则创建；若已存在则跳过。
+     *
+     * @param owner 组织/owner
+     * @param repo  仓库名
+     * @param branch 分支（默认 main）
+     * @param path  文件路径（例如 Dockerfile）
+     * @param content 文件内容（UTF-8）
+     * @param message commit message
+     */
+    public boolean ensureFile(String owner, String repo, String branch, String path, String content, String message) {
+        if (!isEnabled()) return false;
+        if (!StringUtils.hasText(owner) || !StringUtils.hasText(repo) || !StringUtils.hasText(path)) return false;
+        String b = (branch == null || branch.isBlank()) ? "main" : branch.trim();
+        String p = path.trim();
+
+        // exists check: GET /contents/{path}?ref=branch
+        int exists = requestStatus("GET",
+                "/api/v1/repos/" + urlPath(owner) + "/" + urlPath(repo) + "/contents/" + urlPath(p) + "?ref=" + urlPath(b),
+                null);
+        if (exists == 200) return true;
+
+        // create: POST /contents/{path}  (Gitea also supports PUT; POST is documented for create)
+        String msg = (message == null || message.isBlank()) ? ("init " + p) : message;
+        String c = content == null ? "" : content;
+        String b64 = Base64.getEncoder().encodeToString(c.getBytes(StandardCharsets.UTF_8));
+        Map<String, Object> body = Map.of(
+                "branch", b,
+                "content", b64,
+                "message", msg
+        );
+        int created = requestStatus("POST",
+                "/api/v1/repos/" + urlPath(owner) + "/" + urlPath(repo) + "/contents/" + urlPath(p),
+                body);
+        return created == 201 || created == 200 || created == 204;
     }
 
     private boolean addCollaborator(String owner, String repo, String username, String permission) {

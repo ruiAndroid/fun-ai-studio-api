@@ -90,6 +90,38 @@ public class GiteaRepoAutomationService {
         } else {
             log.info("gitea repo ready: {}/{} (workspace write granted)", owner, repo);
         }
+
+        // 初始化模板文件（避免 Runner build 因缺 Dockerfile 失败）
+        try {
+            String branch = props.getDefaultBranch();
+            String dockerfile = """
+                    FROM node:20-alpine
+                    
+                    WORKDIR /app
+                    
+                    COPY package*.json ./
+                    RUN npm ci
+                    
+                    COPY . .
+                    RUN npm run build
+                    
+                    ENV PORT=3000
+                    EXPOSE 3000
+                    
+                    CMD [\"npm\",\"run\",\"start\"]
+                    """;
+            String dockerignore = """
+                    node_modules
+                    dist
+                    .git
+                    .idea
+                    *.log
+                    """;
+            client.ensureFile(owner, repo, branch, "Dockerfile", dockerfile, "init Dockerfile");
+            client.ensureFile(owner, repo, branch, ".dockerignore", dockerignore, "init .dockerignore");
+        } catch (Exception e) {
+            log.warn("gitea ensure template files failed: owner={}, repo={}, err={}", owner, repo, e.getMessage());
+        }
     }
 
     /**
