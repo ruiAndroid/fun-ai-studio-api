@@ -40,13 +40,13 @@ flowchart TB
         R3["/apps/** 线上应用"]
     end
 
-    subgraph Infra["内网 (7台服务器)"]
+    subgraph Infra["内网 (7+ 台服务器)"]
         subgraph S91["API 入口 (91)"]
             API["API 8080"]
             MySQL[("MySQL")]
         end
 
-        subgraph S87["Workspace (87)"]
+        subgraph S87["Workspace (87, 87-2, ...) 🔄可扩容"]
             WsNode["workspace-node 7001"]
             WsCtn["开发容器"]
         end
@@ -55,7 +55,7 @@ flowchart TB
             Deploy["Deploy 7002"]
         end
 
-        subgraph S101["Runner (101)"]
+        subgraph S101["Runner (101, 101-2, ...) 🔄可扩容"]
             Runner["Runner"]
         end
 
@@ -63,7 +63,7 @@ flowchart TB
             Gitea["Gitea 2222"]
         end
 
-        subgraph S102["Runtime (102)"]
+        subgraph S102["Runtime (102, 102-2, ...) 🔄可扩容"]
             Agent["runtime-agent 7005"]
             Traefik["Traefik 80"]
             AppCtn["应用容器"]
@@ -191,15 +191,17 @@ sequenceDiagram
 
 ### 服务器清单
 
-| 机器 | IP | 运行什么 | 核心职责 |
-|------|----|----------|----------|
-| **API 入口** | 91 | Nginx + API + MySQL + Prometheus | 用户唯一入口，协调所有内部服务 |
-| **Workspace** | 87 | workspace-node + Nginx + Docker + Verdaccio | 承载用户开发容器 |
-| **Deploy** | 100 | deploy 服务 | 发布任务调度 |
-| **Runner** | 101 | runner 进程 | 构建镜像、执行部署 |
-| **Runtime** | 102 | runtime-agent + Traefik + Docker | 承载用户线上应用 |
-| **Git** | 103 | Gitea | 源码版本管理 |
-| **Mongo** | 待定 | MongoDB | 线上应用数据库 |
+| 机器 | IP | 运行什么 | 核心职责 | 扩容 |
+|------|----|----------|----------|------|
+| **API 入口** | 91 | Nginx + API + MySQL + Prometheus | 用户唯一入口，协调所有内部服务 | - |
+| **Workspace** | 87 | workspace-node + Nginx + Docker + Verdaccio | 承载用户开发容器 | ✅ 可水平扩容 |
+| **Deploy** | 100 | deploy 服务 | 发布任务调度 | - |
+| **Runner** | 101 | runner 进程 | 构建镜像、执行部署 | ✅ 可水平扩容 |
+| **Runtime** | 102 | runtime-agent + Traefik + Docker | 承载用户线上应用 | ✅ 可水平扩容 |
+| **Git** | 103 | Gitea | 源码版本管理 | - |
+| **Mongo** | 待定 | MongoDB | 线上应用数据库 | - |
+
+> 🔄 **可扩容节点**：Workspace、Runner、Runtime 都支持水平扩容，通过粘性落点（userId/appId → nodeId）保证请求路由到正确节点。
 
 ### 为什么这样分
 
@@ -207,13 +209,13 @@ sequenceDiagram
 flowchart LR
     subgraph Public["公网暴露"]
         P91["91 API入口"]
-        P102["102 Runtime"]
+        P102["102+ Runtime 🔄"]
     end
 
     subgraph Private["内网隔离"]
-        S87["87 Workspace"]
+        S87["87+ Workspace 🔄"]
         S100["100 Deploy"]
-        S101["101 Runner"]
+        S101["101+ Runner 🔄"]
         S103["103 Git"]
         SMongo["Mongo"]
     end
@@ -228,15 +230,15 @@ flowchart LR
 ```
 
 **各机器职责**：
-| 机器 | 为什么单独一台 |
-|------|---------------|
-| 91 (API) | 大脑：所有用户请求进来，所有内部调度从这里发起 |
-| 87 (Workspace) | 开发环境 CPU/内存消耗大，需要隔离 |
-| 100 (Deploy) | 控制面，可独立扩容 |
-| 101 (Runner) | 构建消耗资源大，可独立扩容 |
-| 102 (Runtime) | 承载线上流量，可独立扩容 |
-| 103 (Git) | 代码仓库需要稳定 |
-| Mongo | 数据必须独立于应用容器 |
+| 机器 | 为什么单独一台 | 扩容策略 |
+|------|---------------|----------|
+| 91 (API) | 大脑：所有用户请求进来，所有内部调度从这里发起 | 单点 |
+| 87 (Workspace) | 开发环境 CPU/内存消耗大，需要隔离 | **🔄 水平扩容**：按 userId 粘性落点 |
+| 100 (Deploy) | 控制面，任务调度中心 | 单点 |
+| 101 (Runner) | 构建消耗资源大，需要隔离 | **🔄 水平扩容**：多 Runner 竞争领取 Job |
+| 102 (Runtime) | 承载线上流量，需要弹性 | **🔄 水平扩容**：按 appId 粘性落点 |
+| 103 (Git) | 代码仓库需要稳定 | 单点 |
+| Mongo | 数据必须独立于应用容器 | 单点（后期可分片） |
 
 ---
 

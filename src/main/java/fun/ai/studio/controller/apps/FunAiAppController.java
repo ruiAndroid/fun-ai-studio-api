@@ -8,6 +8,7 @@ import fun.ai.studio.entity.request.UpdateFunAiAppBasicInfoRequest;
 import fun.ai.studio.entity.response.FunAiOpenEditorResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceProjectDirResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceRunStatusResponse;
+import fun.ai.studio.deploy.DeployClient;
 import fun.ai.studio.enums.FunAiAppStatus;
 import fun.ai.studio.gitea.GiteaRepoAutomationService;
 import fun.ai.studio.service.FunAiAppService;
@@ -26,6 +27,8 @@ import org.springframework.web.bind.annotation.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.stream.Stream;
 import java.util.List;
 
@@ -62,6 +65,9 @@ public class FunAiAppController {
 
     @Autowired(required = false)
     private GiteaRepoAutomationService giteaRepoAutomationService;
+
+    @Autowired(required = false)
+    private DeployClient deployClient;
 
     private boolean detectPackageJson(Path appDir) {
         if (appDir == null || !Files.isDirectory(appDir)) return false;
@@ -148,6 +154,59 @@ public class FunAiAppController {
     }
 
     /**
+     * 部署态访问地址（best-effort，不落库）：取 Deploy Job（SUCCEEDED）的 previewUrl。
+     * - 开发态预览：workspacePreviewUrl
+     * - 部署态访问：deployAccessUrl（并兼容填充 accessUrl）
+     */
+    private void fillDeployAccessUrl(Long userId, List<FunAiApp> apps) {
+        if (apps == null || apps.isEmpty()) return;
+
+        // deploy preview（只填 deployAccessUrl；同时兼容填充 accessUrl=deployAccessUrl）
+        try {
+            if (deployClient == null || !deployClient.isEnabled()) return;
+            // 你们当前每用户 app 上限 20，这里拿 200 条足够覆盖活跃 job
+            List<Map<String, Object>> jobs = deployClient.listJobs(200);
+            if (jobs == null || jobs.isEmpty()) return;
+
+            // appId -> previewUrl（取最后出现的一个，通常 list 已按更新时间倒序）
+            Map<Long, String> appPreview = new HashMap<>();
+            for (Map<String, Object> j : jobs) {
+                if (j == null) continue;
+                Object status = j.get("status");
+                if (status == null || !"SUCCEEDED".equals(String.valueOf(status))) continue;
+                Object payloadObj = j.get("payload");
+                if (!(payloadObj instanceof Map)) continue;
+                Map<?, ?> payload = (Map<?, ?>) payloadObj;
+                Object appIdObj = payload.get("appId");
+                if (appIdObj == null) continue;
+                Long appId;
+                try {
+                    appId = Long.valueOf(String.valueOf(appIdObj));
+                } catch (Exception ignore) {
+                    continue;
+                }
+                Object previewObj = j.get("previewUrl");
+                String preview = previewObj == null ? null : String.valueOf(previewObj);
+                if (preview == null || preview.isBlank()) continue;
+                appPreview.put(appId, preview);
+            }
+
+            if (appPreview.isEmpty()) return;
+            for (FunAiApp a : apps) {
+                if (a == null) continue;
+                String preview = appPreview.get(a.getId());
+                if (preview != null && !preview.isBlank()) {
+                    a.setDeployAccessUrl(preview);
+                    // 兼容：老前端仍读 accessUrl
+                    a.setAccessUrl(preview);
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("fill deploy deployAccessUrl failed: userId={}, err={}", userId, e.getMessage());
+        }
+    }
+
+    /**
      * 创建应用
      * @param userId 用户ID
      * @return 创建后的应用信息
@@ -174,6 +233,8 @@ public class FunAiAppController {
         List<FunAiApp> apps = funAiAppService.getAppsByUserId(userId);
         // 与容器运行态结合：补充 last-known runtime 字段（不改变 appStatus 的业务含义）
         fillRuntimeFields(userId, apps);
+        // 统一补齐部署态访问地址（与开发态 workspacePreviewUrl 分开）
+        fillDeployAccessUrl(userId, apps);
         return Result.success(apps);
     }
 
@@ -192,13 +253,8 @@ public class FunAiAppController {
         }
         // 与容器运行态结合：补充 last-known runtime 字段
         fillRuntimeFields(userId, List.of(app));
-
-        // 旧链路的 /fun-ai-app 静态站点已废弃；workspace 运行时将 accessUrl 指向 previewUrl（/ws/{userId}/）
-        if (app.getWorkspacePreviewUrl() != null && !app.getWorkspacePreviewUrl().isBlank()) {
-            app.setAccessUrl(app.getWorkspacePreviewUrl());
-        } else {
-            app.setAccessUrl(null);
-        }
+        // 补齐部署态访问地址（与开发态 workspacePreviewUrl 分开）
+        fillDeployAccessUrl(userId, List.of(app));
         return Result.success(app);
     }
 

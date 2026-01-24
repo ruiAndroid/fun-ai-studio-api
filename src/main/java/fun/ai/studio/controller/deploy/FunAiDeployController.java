@@ -1,9 +1,11 @@
 package fun.ai.studio.controller.deploy;
 
 import fun.ai.studio.common.Result;
+import fun.ai.studio.config.DeployAcrProperties;
 import fun.ai.studio.config.DeployGitProperties;
 import fun.ai.studio.deploy.DeployClient;
 import fun.ai.studio.entity.FunAiApp;
+import fun.ai.studio.entity.request.DeployJobCreateRequest;
 import fun.ai.studio.service.FunAiAppService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -22,22 +24,29 @@ public class FunAiDeployController {
     private final DeployClient deployClient;
     private final FunAiAppService funAiAppService;
     private final DeployGitProperties deployGitProperties;
+    private final DeployAcrProperties deployAcrProperties;
     private static final int MAX_RUNNING_APPS_PER_USER = 3;
 
     public FunAiDeployController(DeployClient deployClient,
                                  FunAiAppService funAiAppService,
-                                 DeployGitProperties deployGitProperties) {
+                                 DeployGitProperties deployGitProperties,
+                                 DeployAcrProperties deployAcrProperties) {
         this.deployClient = deployClient;
         this.funAiAppService = funAiAppService;
         this.deployGitProperties = deployGitProperties;
+        this.deployAcrProperties = deployAcrProperties;
     }
 
     @PostMapping("/job/create")
-    @Operation(summary = "创建部署 Job（通过 API 入口）", description = "校验应用归属后，调用 deploy 控制面创建 BUILD_AND_DEPLOY Job。")
+    @Operation(
+            summary = "创建部署 Job（通过 API 入口）",
+            description = "前端推荐：只传 userId/appId；请求体可不传或传 {}。\n\n" +
+                    "后端会自动补齐：repoSshUrl/gitRef/basePath/containerPort/imageTag 等默认值，并调用 deploy 控制面创建 BUILD_AND_DEPLOY Job。"
+    )
     public Result<Map<String, Object>> createDeployJob(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
-            @RequestBody(required = false) Map<String, Object> extraPayload
+            @RequestBody(required = false) DeployJobCreateRequest req
     ) {
         FunAiApp app = funAiAppService.getAppByIdAndUserId(appId, userId);
         if (app == null) {
@@ -59,13 +68,34 @@ public class FunAiDeployController {
         payload.put("userId", userId);
         payload.put("appId", appId);
         payload.put("appName", app.getAppName());
-        if (extraPayload != null && !extraPayload.isEmpty()) {
-            payload.putAll(extraPayload);
+        if (req != null) {
+            if (req.getContainerPort() != null) payload.put("containerPort", req.getContainerPort());
+            if (req.getGitRef() != null && !req.getGitRef().isBlank()) payload.put("gitRef", req.getGitRef().trim());
+            if (req.getBasePath() != null && !req.getBasePath().isBlank()) payload.put("basePath", req.getBasePath().trim());
+            if (req.getImageTag() != null && !req.getImageTag().isBlank()) payload.put("imageTag", req.getImageTag().trim());
+            if (req.getImage() != null && !req.getImage().isBlank()) payload.put("image", req.getImage().trim());
         }
 
         // 方案 C（自建 Git 服务器）：由 API 统一补齐 repoSshUrl/gitRef，避免前端拼接
         try {
             maybeFillGitPayload(payload, userId, appId);
+        } catch (Exception ignore) {
+        }
+        // basePath 默认 /apps/{appId}
+        if (!payload.containsKey("basePath") || payload.get("basePath") == null) {
+            payload.put("basePath", "/apps/" + appId);
+        }
+        // containerPort 默认 3000
+        if (!payload.containsKey("containerPort") || payload.get("containerPort") == null) {
+            payload.put("containerPort", 3000);
+        }
+        // imageTag 默认 latest（Runner build 时用）
+        if (!payload.containsKey("imageTag") || payload.get("imageTag") == null) {
+            payload.put("imageTag", "latest");
+        }
+        // ACR：由 API 统一补齐（Runner 优先使用 payload，避免 101 机器缺环境变量导致失败）
+        try {
+            maybeFillAcrPayload(payload);
         } catch (Exception ignore) {
         }
 
@@ -113,6 +143,19 @@ public class FunAiDeployController {
 
     private boolean isBlank(String s) {
         return s == null || s.trim().isEmpty();
+    }
+
+    private void maybeFillAcrPayload(Map<String, Object> payload) {
+        if (payload == null) return;
+        if (deployAcrProperties == null || !deployAcrProperties.isEnabled()) return;
+        if (!payload.containsKey("acrRegistry") || payload.get("acrRegistry") == null) {
+            String reg = deployAcrProperties.getRegistry();
+            if (!isBlank(reg)) payload.put("acrRegistry", reg.trim());
+        }
+        if (!payload.containsKey("acrNamespace") || payload.get("acrNamespace") == null) {
+            String ns = deployAcrProperties.getNamespace();
+            if (!isBlank(ns)) payload.put("acrNamespace", ns.trim());
+        }
     }
 
     @GetMapping("/job/info")
