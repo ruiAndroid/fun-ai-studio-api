@@ -171,12 +171,16 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
             throw new RuntimeException("应用不存在或无权限操作");
         }
         
-        // DEPLOYING 或 DISABLED 不允许删除
+        // DISABLED 不允许删除（管理员禁用的应用需要先解禁）
+        // 注意：DEPLOYING 状态现在允许删除，因为：
+        // 1. Controller 层会先调用 deployClient.stopApp() 下线容器
+        // 2. 再调用 deployClient.purgeApp() 清理 Deploy 侧数据
+        // 3. 如果真的在部署中，stop 会中断容器；如果是"部署失败但状态没更新"的情况，也能正常删除
         Integer st = existingApp.getAppStatus();
-        if (st != null && (st == FunAiAppStatus.DEPLOYING.code() || st == FunAiAppStatus.DISABLED.code())) {
-            logger.warn("尝试删除不可删除状态的应用: appId={}, userId={}, appStatus={}",
+        if (st != null && st == FunAiAppStatus.DISABLED.code()) {
+            logger.warn("尝试删除禁用状态的应用: appId={}, userId={}, appStatus={}",
                     appId, userId, st);
-            throw new IllegalArgumentException("应用部署中或已禁用，暂不允许删除");
+            throw new IllegalArgumentException("应用已禁用，暂不允许删除（请联系管理员）");
         }
         
         // 删除数据库记录
