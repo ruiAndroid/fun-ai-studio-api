@@ -169,6 +169,15 @@ public class FunAiDeployController {
     public Result<List<Map<String, Object>>> list(@RequestParam(defaultValue = "50") int limit) {
         return Result.success(deployClient.listJobs(limit));
     }
+
+    @PostMapping("/job/cancel")
+    @Operation(summary = "取消部署 Job（通过 API 入口）", description = "取消指定 jobId（用于解除 appId 部署互斥导致的卡住问题）。")
+    public Result<Map<String, Object>> cancel(@RequestParam String jobId) {
+        if (jobId == null || jobId.trim().isEmpty()) {
+            return Result.error("jobId 不能为空");
+        }
+        return Result.success(deployClient.cancelJob(jobId.trim()));
+    }
 }
 
 
