@@ -378,6 +378,26 @@ public class FunAiAppController {
                 logger.warn("cleanup gitea repo after delete app failed: userId={}, appId={}, err={}", userId, appId, e.getMessage(), e);
             }
 
+            // deploy 侧清理（best-effort：下线容器 + 清理 job/placement/last-known 数据）
+            String deployWarn = null;
+            try {
+                if (deployClient != null && deployClient.isEnabled()) {
+                    Map<String, Object> stopBody = new HashMap<>();
+                    stopBody.put("userId", userId);
+                    stopBody.put("appId", String.valueOf(appId));
+                    // 1) stop container（best-effort，失败不阻塞 purge）
+                    try {
+                        deployClient.stopApp(stopBody);
+                    } catch (Exception ignore) {
+                    }
+                    // 2) purge deploy data
+                    deployClient.purgeApp(stopBody);
+                }
+            } catch (Exception e) {
+                deployWarn = e.getMessage();
+                logger.warn("cleanup deploy data after delete app failed: userId={}, appId={}, err={}", userId, appId, e.getMessage(), e);
+            }
+
             if (cleanupWarn != null && !cleanupWarn.isBlank()) {
                 if (giteaWarn != null && !giteaWarn.isBlank()) {
                     return Result.success("删除应用成功（磁盘目录清理失败：" + cleanupWarn + "；Gitea 清理失败：" + giteaWarn + "）");
@@ -385,7 +405,13 @@ public class FunAiAppController {
                 return Result.success("删除应用成功（磁盘目录清理失败：" + cleanupWarn + "）");
             }
             if (giteaWarn != null && !giteaWarn.isBlank()) {
+                if (deployWarn != null && !deployWarn.isBlank()) {
+                    return Result.success("删除应用成功（Gitea 清理失败：" + giteaWarn + "；Deploy 清理失败：" + deployWarn + "）");
+                }
                 return Result.success("删除应用成功（Gitea 清理失败：" + giteaWarn + "）");
+            }
+            if (deployWarn != null && !deployWarn.isBlank()) {
+                return Result.success("删除应用成功（Deploy 清理失败：" + deployWarn + "）");
             }
             return Result.success("删除应用成功");
         } catch (IllegalArgumentException e) {
