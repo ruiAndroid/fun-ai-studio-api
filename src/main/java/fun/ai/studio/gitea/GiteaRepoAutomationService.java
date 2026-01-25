@@ -1,6 +1,7 @@
 package fun.ai.studio.gitea;
 
 import fun.ai.studio.config.GiteaProperties;
+import fun.ai.studio.config.DeployAcrProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -21,10 +22,12 @@ public class GiteaRepoAutomationService {
 
     private final GiteaProperties props;
     private final GiteaClient client;
+    private final DeployAcrProperties acrProps;
 
-    public GiteaRepoAutomationService(GiteaProperties props, GiteaClient client) {
+    public GiteaRepoAutomationService(GiteaProperties props, GiteaClient client, DeployAcrProperties acrProps) {
         this.props = props;
         this.client = client;
+        this.acrProps = acrProps;
     }
 
     public void ensureRepoAndGrantRunner(Long userId, Long appId) {
@@ -94,8 +97,19 @@ public class GiteaRepoAutomationService {
         // 初始化模板文件（避免 Runner build 因缺 Dockerfile 失败）
         try {
             String branch = props.getDefaultBranch();
+            // 关键：Runner(101) 可能无法访问 DockerHub，因此 Dockerfile 的基础镜像建议使用 ACR 镜像
+            // 约定：将 node:20-alpine 推送到 ACR：<acrRegistry>/<acrNamespace>/base-node:20-alpine
+            String baseImage = "node:20-alpine";
+            try {
+                if (acrProps != null && acrProps.isEnabled()
+                        && StringUtils.hasText(acrProps.getRegistry())
+                        && StringUtils.hasText(acrProps.getNamespace())) {
+                    baseImage = acrProps.getRegistry().trim() + "/" + acrProps.getNamespace().trim() + "/base-node:20-alpine";
+                }
+            } catch (Exception ignore) {
+            }
             String dockerfile = """
-                    FROM node:20-alpine
+                    FROM %s
                     
                     WORKDIR /app
                     
@@ -109,7 +123,7 @@ public class GiteaRepoAutomationService {
                     EXPOSE 3000
                     
                     CMD [\"npm\",\"run\",\"start\"]
-                    """;
+                    """.formatted(baseImage);
             String dockerignore = """
                     node_modules
                     dist
