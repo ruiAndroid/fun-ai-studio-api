@@ -59,6 +59,10 @@ public class DeployClient {
         return requestJson("POST", "/deploy/jobs/" + urlPath(jobId) + "/cancel", Map.of(), new TypeReference<Result<Map<String, Object>>>() {});
     }
 
+    public Map<String, Object> stopApp(Map<String, Object> body) {
+        return requestJson("POST", "/deploy/apps/stop", body, new TypeReference<Result<Map<String, Object>>>() {});
+    }
+
     private <T> T requestJson(String method, String pathAndQuery, Object bodyObj, TypeReference<Result<T>> typeRef) {
         if (!isEnabled()) {
             throw new DeployProxyException("deploy-proxy 未启用或 base-url 未配置");

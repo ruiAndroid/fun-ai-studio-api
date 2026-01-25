@@ -147,6 +147,18 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
                 .update();
     }
 
+    @Override
+    public boolean markStopped(Long userId, Long appId) {
+        if (userId == null || appId == null) return false;
+        // 说明：当前状态机里没有单独的 STOPPED/OFFLINE，先回退到 UPLOADED（可再次部署；也能释放“运行中槽位”）。
+        return this.lambdaUpdate()
+                .eq(FunAiApp::getId, appId)
+                .eq(FunAiApp::getUserId, userId)
+                .set(FunAiApp::getAppStatus, FunAiAppStatus.UPLOADED.code())
+                .set(FunAiApp::getLastDeployError, null)
+                .update();
+    }
+
     // 旧链路（zip 上传 + 解压 + npm build + /fun-ai-app 静态站点部署）已移除：
     // - uploadAppFile / getLatestUploadedZipPath / deployApp
     // deploy 相关工具方法也一并移除（避免误用与依赖旧目录结构）

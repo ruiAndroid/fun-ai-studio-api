@@ -81,4 +81,10 @@ public interface FunAiAppService extends IService<FunAiApp> {
      * 仅允许操作自己名下的应用。
      */
     boolean markDeploying(Long userId, Long appId);
+
+    /**
+     * 下线应用：将应用从“运行中槽位”释放（通常 READY/DEPLOYING -> UPLOADED），并清空 last_deploy_error。
+     * 仅允许操作自己名下的应用。
+     */
+    boolean markStopped(Long userId, Long appId);
 }

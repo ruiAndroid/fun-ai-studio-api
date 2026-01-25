@@ -178,6 +178,29 @@ public class FunAiDeployController {
         }
         return Result.success(deployClient.cancelJob(jobId.trim()));
     }
+
+    @PostMapping("/app/stop")
+    @Operation(summary = "下线已部署应用（通过 API 入口）", description = "API 转发到 Deploy 控制面 /deploy/apps/stop，再由控制面定位 runtime 节点并调用 runtime-agent stop。")
+    public Result<Map<String, Object>> stopDeployedApp(
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "应用ID", required = true) @RequestParam Long appId
+    ) {
+        FunAiApp app = funAiAppService.getAppByIdAndUserId(appId, userId);
+        if (app == null) {
+            return Result.error("应用不存在或无权限操作");
+        }
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("userId", userId);
+        body.put("appId", String.valueOf(appId));
+        Map<String, Object> resp = deployClient.stopApp(body);
+
+        try {
+            funAiAppService.markStopped(userId, appId);
+        } catch (Exception ignore) {
+        }
+        return Result.success(resp);
+    }
 }
 
 
