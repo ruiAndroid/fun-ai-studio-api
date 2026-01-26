@@ -61,8 +61,37 @@ docker version
 
 ```bash
 mkdir -p /data/funai/harbor && cd /data/funai/harbor
-# 从 Harbor GitHub Releases 下载 offline-installer（版本自行选择）
-# 文件名示例：harbor-offline-installer-v2.10.0.tgz
+```
+
+#### 3.2.1 获取下载地址（推荐）
+
+- Harbor Releases：`https://github.com/goharbor/harbor/releases`
+- 找到你要的版本（例如 `v2.10.0`），下载文件：
+  - `harbor-offline-installer-v2.10.0.tgz`
+
+#### 3.2.2 直接在 103 下载（示例）
+
+```bash
+ver="2.10.0"
+curl -fL -o "harbor-offline-installer-v${ver}.tgz" \
+  "https://github.com/goharbor/harbor/releases/download/v${ver}/harbor-offline-installer-v${ver}.tgz"
+ls -al "harbor-offline-installer-v${ver}.tgz"
+```
+
+如果你的系统没有 `curl`，用 `wget` 也行：
+
+```bash
+ver="2.10.0"
+wget -O "harbor-offline-installer-v${ver}.tgz" \
+  "https://github.com/goharbor/harbor/releases/download/v${ver}/harbor-offline-installer-v${ver}.tgz"
+```
+
+#### 3.2.3 103 无法联网时的兜底
+
+在一台能联网的机器下载好 `harbor-offline-installer-vX.Y.Z.tgz`，再传到 103：
+
+```bash
+scp harbor-offline-installer-v2.10.0.tgz root@172.21.138.103:/data/funai/harbor/
 ```
 
 解压：
