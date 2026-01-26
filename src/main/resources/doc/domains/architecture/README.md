@@ -74,6 +74,10 @@ flowchart TB
         end
     end
 
+    subgraph Cloud["外部服务（制品库）"]
+        ACR[("ACR 镜像仓库 443")]
+    end
+
     Browser --> R1 & R2 & R3
     R1 --> API
     R2 --> WsNode --> WsCtn
@@ -85,7 +89,9 @@ flowchart TB
 
     Deploy --> Runner
     Runner --> Gitea
+    Runner -->|push 镜像| ACR
     Runner --> Agent
+    Agent -->|pull 镜像| ACR
     Agent --> AppCtn
     AppCtn --> MongoDB
 
@@ -147,6 +153,7 @@ sequenceDiagram
     participant D as Deploy (100)
     participant R as Runner (101)
     participant Git as Git (103)
+    participant ACR as ACR(镜像仓库)
     participant RT as Runtime (102)
     participant M as Mongo (独立)
 
@@ -155,8 +162,10 @@ sequenceDiagram
 
     R->>D: 领取 Job
     R->>Git: 拉取源码
-    R->>R: 构建镜像、推送 ACR
+    R->>R: 构建镜像
+    R->>ACR: push 镜像
     R->>RT: 部署容器
+    RT->>ACR: pull 镜像
     RT->>RT: 启动应用
     R->>D: 报告成功
 
@@ -220,11 +229,15 @@ flowchart LR
         SMongo["Mongo"]
     end
 
+    ACR["ACR 镜像仓库"]
+
     P91 --> S87
     P91 --> S100
     S100 <--> S101
     S101 --> S103
+    S101 -->|push 镜像| ACR
     S101 --> P102
+    P102 -->|pull 镜像| ACR
     P102 --> SMongo
     S87 --> S103
 ```
@@ -261,8 +274,10 @@ flowchart LR
 | Runner (101) | 100:7002 | 领取任务、汇报结果 |
 | Runner (101) | 102:7005 | 执行部署 |
 | Runner (101) | 103:2222 | 拉取代码 |
+| Runner (101) | ACR:443 | push 镜像 |
 | Runtime (102) | 100:7002 | 节点心跳 |
 | Runtime (102) | Mongo:27017 | 应用数据 |
+| Runtime (102) | ACR:443 | pull 镜像 |
 | Workspace (87) | 91:8080 | 节点心跳 |
 | Workspace (87) | 103:2222 | 推送代码 |
 
@@ -277,6 +292,7 @@ flowchart LR
 | 7005 | runtime-agent | 只允许 101 |
 | 2222 | Git SSH | 只允许 87/101 |
 | 27017 | MongoDB | 只允许 102 |
+| 443 | ACR（镜像仓库） | 公网出站（101 push / 102 pull） |
 
 ---
 
