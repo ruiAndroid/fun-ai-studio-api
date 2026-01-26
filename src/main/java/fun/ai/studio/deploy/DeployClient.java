@@ -55,6 +55,14 @@ public class DeployClient {
         return requestJson("GET", path, null, new TypeReference<Result<List<Map<String, Object>>>>() {});
     }
 
+    /**
+     * 按 appId 查询部署历史。
+     */
+    public List<Map<String, Object>> listJobsByApp(String appId, int limit) {
+        String path = "/deploy/jobs/by-app?appId=" + urlPath(appId) + "&limit=" + limit;
+        return requestJson("GET", path, null, new TypeReference<Result<List<Map<String, Object>>>>() {});
+    }
+
     public Map<String, Object> cancelJob(String jobId) {
         return requestJson("POST", "/deploy/jobs/" + urlPath(jobId) + "/cancel", Map.of(), new TypeReference<Result<Map<String, Object>>>() {});
     }

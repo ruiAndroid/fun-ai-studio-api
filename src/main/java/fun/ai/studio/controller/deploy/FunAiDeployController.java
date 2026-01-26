@@ -201,6 +201,25 @@ public class FunAiDeployController {
         }
         return Result.success(resp);
     }
+
+    @GetMapping("/job/history")
+    @Operation(
+            summary = "查询应用部署历史（通过 API 入口）",
+            description = "按 appId 查询部署 Job 历史（时间倒序），便于用户排查历史部署状态/错误。"
+    )
+    public Result<List<Map<String, Object>>> listDeployHistory(
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
+            @Parameter(description = "返回数量（默认20，最大200）") @RequestParam(defaultValue = "20") int limit
+    ) {
+        FunAiApp app = funAiAppService.getAppByIdAndUserId(appId, userId);
+        if (app == null) {
+            return Result.error("应用不存在或无权限操作");
+        }
+        int safeLimit = Math.min(Math.max(limit, 1), 200);
+        List<Map<String, Object>> history = deployClient.listJobsByApp(String.valueOf(appId), safeLimit);
+        return Result.success(history);
+    }
 }
 
 
