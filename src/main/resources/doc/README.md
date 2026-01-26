@@ -25,6 +25,7 @@
 | [Gitea 自动化](./domains/deploy/gitea-automation.md) | 仓库创建 + 授权 + SSH |
 | [ACR 运维规范](./domains/deploy/acr-auth-and-retention.md) | 登录与制品保留 |
 | [Gitea 部署（103）](./domains/deploy/git-server-gitea.md) | Git 服务器从零搭建 |
+| [Harbor 自建镜像站（103）](./domains/deploy/harbor-103.md) | 自建镜像仓库（替代 ACR） |
 
 ## 子系统文档
 

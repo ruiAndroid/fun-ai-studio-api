@@ -12,6 +12,7 @@
 - [ACR 运维规范：免交互登录（方案 A）+ 制品保留策略（N=3）](./acr-auth-and-retention.md)
 - [Dockerfile 规范（统一构建/部署契约）](./dockerfile-standards.md)
 - [方案 C：自建 Git（内网）——在 103 部署 Gitea（SSH 拉代码）](./git-server-gitea.md)
+- [Harbor 自建镜像站（103）](./harbor-103.md)
 
 运维落地（服务器/安全组/联调）：
 
