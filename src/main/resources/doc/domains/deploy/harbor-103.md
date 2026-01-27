@@ -45,15 +45,154 @@ Harbor 默认：
 
 ### 3.1 安装 Docker（103）
 
-按你们系统选择安装方式（Alibaba Cloud Linux 3 / CentOS / RHEL 系为例）：
+Harbor 官方安装脚本要求 **Docker Engine >= 20.10.10**。你现在的提示：
+
+- `Emulate Docker CLI using podman...`
+- `docker version: 4.x`
+
+说明你机器上的 `docker` 其实是 **podman-docker 仿真层**，Harbor 会直接拒绝安装。
+
+#### 3.1.1 先确认当前 docker 是否是 podman 仿真
 
 ```bash
-sudo dnf install -y docker || sudo yum install -y docker
+docker version
+docker info | head
+which docker
+```
+
+如果看到 `Emulate Docker CLI using podman`，按下面步骤安装**真实 Docker**。
+
+#### 3.1.2 移除 podman-docker（避免冲突）
+
+```bash
+sudo dnf remove -y podman-docker || sudo yum remove -y podman-docker
+```
+
+#### 3.1.3 安装 Docker CE（推荐）
+
+Alibaba Cloud Linux 3（`platform:al8`）可直接复用 `centos/8` 的 Docker CE 源。阿里云机器若访问 `download.docker.com` 不稳定，推荐先用 mirrors：
+
+```bash
+sudo dnf install -y dnf-plugins-core || sudo yum install -y yum-utils
+
+# Docker CE repo（阿里云镜像）
+sudo tee /etc/yum.repos.d/docker-ce.repo >/dev/null <<'EOF'
+[docker-ce-stable]
+name=Docker CE Stable - x86_64
+baseurl=https://mirrors.aliyun.com/docker-ce/linux/centos/8/x86_64/stable
+enabled=1
+gpgcheck=0
+EOF
+
+sudo dnf makecache -y
+sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
 sudo systemctl enable --now docker
 docker version
 ```
 
-> 若你们 103 已经是 Podman，并且不想装 Docker：可以尝试 podman-compose，但 Harbor 官方对 Docker Compose 支持最好；建议这里直接用 Docker。
+> 如果你们 103 不能访问 `download.docker.com`，就需要用阿里云镜像源/离线 rpm（你告诉我 103 的 OS 版本，我可以给你一套“内网可用”的安装命令）。
+
+#### 3.1.4 装完必须满足的检查点
+
+- `docker version` 里 **Server** 版本 >= 20.10.10
+- `docker ps` 能正常返回（daemon 运行中）
+
+> 若你不想在 103 装真实 Docker：建议改用 `registry:2`（podman 原生支持），见 `self-hosted-registry-103.md`。
+
+#### 3.1.5 常见安装失败：`containerd.io` 与 `podman/runc` 冲突
+
+你可能会遇到类似报错：
+
+- `containerd.io conflicts with runc`
+- `podman requires runc >= ...`
+
+原因：Docker CE 的 `containerd.io` 包会 **替换/冲突** 系统的 `runc`，而你机器上已装的 `podman` 依赖系统 `runc`，于是 DNF 无法同时满足。
+
+**解决方式 A（推荐，Harbor 专用机思路）**：把 103 当成 “Harbor + Gitea” 的 Docker 机器，直接移除 podman 相关包，然后用 `--allowerasing` 安装 Docker CE。
+
+> ⚠️ 这会影响你在 103 上通过 podman 跑的容器（如果 Gitea 当前是 podman 容器，需先停服/迁移）。
+
+```bash
+# 先看看 103 当前是否有 podman 容器在跑（例如 gitea）
+sudo podman ps
+
+# 如果确认可以迁移/停服，再执行移除（按需增删）
+sudo dnf remove -y podman podman-catatonit buildah skopeo
+
+# 安装 docker-ce（允许替换冲突包）
+sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin --allowerasing
+
+sudo systemctl enable --now docker
+docker version
+docker ps
+```
+
+**解决方式 B（不动 podman）**：放弃 Harbor，先用 `registry:2`（podman 原生支持）跑通私有镜像站，后续再单独加一台 Docker 机器跑 Harbor。
+
+#### 3.1.6 你当前这台 103：选择“彻底切到 Docker”的最短执行顺序（含 Gitea 迁移提示）
+
+> 目标：解决你现在遇到的 `containerd.io` 与 `podman/runc` 冲突，让 Docker CE 安装成功，并且 Gitea 数据不丢。
+
+1) **确认 Gitea 当前是否由 podman 托管**
+
+```bash
+sudo systemctl status gitea.service --no-pager -l || true
+sudo podman ps -a
+```
+
+2) **如果 Gitea 在 podman 上跑：先停服（避免数据写入）并备份目录**
+
+```bash
+sudo systemctl stop gitea.service || true
+sudo podman stop gitea 2>/dev/null || true
+sudo podman rm gitea 2>/dev/null || true
+
+# 备份（建议）
+ts=$(date +%Y%m%d_%H%M%S)
+sudo tar -zcvf "/data/funai/gitea/backups/gitea_${ts}.tar.gz" -C /data/funai gitea
+ls -al "/data/funai/gitea/backups/gitea_${ts}.tar.gz"
+```
+
+3) **移除 podman 相关包（解除 runc 依赖链）**
+
+```bash
+sudo dnf remove -y podman podman-catatonit buildah skopeo
+```
+
+4) **安装 Docker CE（关键：`--allowerasing`）**
+
+```bash
+sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin --allowerasing
+sudo systemctl enable --now docker
+docker version
+docker ps
+```
+
+5) **用 Docker 把 Gitea 拉起（复用原数据目录挂载）**
+
+> 如果 103 拉 Docker Hub 超时，可按 `git-server-gitea.md` 的 “ACR 中转” 或离线导入方式拿到镜像。
+
+```bash
+docker rm -f gitea 2>/dev/null || true
+docker run -d --name gitea --restart unless-stopped \
+  -p 3000:3000 \
+  -p 2222:22 \
+  -v /data/funai/gitea/data:/data \
+  -v /data/funai/gitea/config:/etc/gitea \
+  gitea/gitea:1.22.4
+
+docker ps | grep gitea
+curl -sS http://127.0.0.1:3000/ >/dev/null && echo "gitea web ok" || echo "gitea web FAIL"
+```
+
+6) **回到 Harbor 安装**
+
+```bash
+cd /data/funai/harbor/harbor
+./install.sh
+docker ps | egrep 'harbor|registry' || true
+```
 
 ### 3.2 下载 Harbor 离线安装包
 
