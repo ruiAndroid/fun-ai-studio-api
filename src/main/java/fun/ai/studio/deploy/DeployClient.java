@@ -75,6 +75,14 @@ public class DeployClient {
         return requestJson("POST", "/deploy/apps/purge", body, new TypeReference<Result<Map<String, Object>>>() {});
     }
 
+    /**
+     * 完整清理：runtime 容器/镜像 + 控制面数据。
+     * 用于删除应用时一次性清理所有关联资源。
+     */
+    public Map<String, Object> cleanupApp(Map<String, Object> body) {
+        return requestJson("POST", "/deploy/apps/cleanup", body, new TypeReference<Result<Map<String, Object>>>() {});
+    }
+
     private <T> T requestJson(String method, String pathAndQuery, Object bodyObj, TypeReference<Result<T>> typeRef) {
         if (!isEnabled()) {
             throw new DeployProxyException("deploy-proxy 未启用或 base-url 未配置");

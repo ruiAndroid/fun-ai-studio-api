@@ -378,20 +378,15 @@ public class FunAiAppController {
                 logger.warn("cleanup gitea repo after delete app failed: userId={}, appId={}, err={}", userId, appId, e.getMessage(), e);
             }
 
-            // deploy 侧清理（best-effort：下线容器 + 清理 job/placement/last-known 数据）
+            // deploy 侧完整清理（best-effort：下线容器 + 清理本地镜像 + 清理 job/placement/last-known 数据）
             String deployWarn = null;
             try {
                 if (deployClient != null && deployClient.isEnabled()) {
-                    Map<String, Object> stopBody = new HashMap<>();
-                    stopBody.put("userId", userId);
-                    stopBody.put("appId", String.valueOf(appId));
-                    // 1) stop container（best-effort，失败不阻塞 purge）
-                    try {
-                        deployClient.stopApp(stopBody);
-                    } catch (Exception ignore) {
-                    }
-                    // 2) purge deploy data
-                    deployClient.purgeApp(stopBody);
+                    Map<String, Object> cleanupBody = new HashMap<>();
+                    cleanupBody.put("userId", userId);
+                    cleanupBody.put("appId", String.valueOf(appId));
+                    // 调用 cleanup 接口一次性完成：stop container + rmi images + purge data
+                    deployClient.cleanupApp(cleanupBody);
                 }
             } catch (Exception e) {
                 deployWarn = e.getMessage();
