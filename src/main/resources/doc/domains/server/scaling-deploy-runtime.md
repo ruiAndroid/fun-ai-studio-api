@@ -255,4 +255,120 @@ Deploy 服务配置（`fun-ai-studio-deploy`）：
 如果 Runner 与 Deploy 同机，且 Runner 需要构建镜像/执行容器相关命令，那么 **Deploy 服务器需要 Docker/Podman**。  
 （未来 Runner 可拆到独立执行节点池，但起步阶段同机最省成本。）
 
+---
+
+## 6. Runtime 节点磁盘水位调度与扩容到 3 台（推荐生产策略）
+
+### 6.1 背景：为什么需要磁盘水位调度
+
+Runtime 节点的磁盘占用主要来自：
+
+- **镜像缓存**：每次部署会 pull 用户应用镜像（按 `u{userId}-app{appId}` 命名）
+- **容器可写层**：运行中的容器会产生临时数据（日志/缓存等）
+
+你们当前策略：
+
+- **下线（stop）**：删除容器 + 清理镜像（`RUNTIME_CLEANUP_IMAGES_ON_STOP=true`）
+- **删除应用**：删除容器 + 清理镜像 + 清理 Deploy 控制面数据
+
+因此：**磁盘压力主要来自"活跃应用的镜像缓存"**，单机磁盘 <100GB 时，需要智能调度避免单节点打满。
+
+### 6.2 磁盘水位调度策略（disk-aware）
+
+Deploy 控制面现已支持 **磁盘水位优先调度**（`placement-strategy=disk-aware`），工作原理：
+
+1. **runtime-agent 心跳上报**：每 60 秒上报 `diskFreePct`（磁盘可用百分比）、`diskFreeBytes`、`containerCount`
+2. **Deploy 选址逻辑**：
+   - **硬阈值过滤**：`diskFreePct >= 15%`（低于此值的节点不可选）
+   - **选 diskFreePct 最大的节点**（优先把新部署放到磁盘充裕的机器）
+   - **粘性落点**：已有 `appId -> runtimeNode` 的 placement 不变（避免频繁迁移）
+3. **软阈值（DRAINING）**：`diskFreePct < 25%` 但 `>= 15%` 的节点标记为 `DRAINING`（不接新部署，但已有应用继续运行）
+
+### 6.3 配置项（`fun-ai-studio-deploy/application-prod.properties`）
+
+```properties
+# 调度策略（disk-aware: 磁盘水位优先 / hash: 一致性哈希）
+deploy.runtime-node-registry.placement-strategy=disk-aware
+
+# 硬阈值：磁盘可用百分比低于此值的节点不可选（disk-aware 策略生效）
+deploy.runtime-node-registry.disk-free-min-pct=15.0
+
+# 软阈值：磁盘可用百分比低于此值的节点标记为 DRAINING（不接新部署，但已有 placement 不迁移）
+deploy.runtime-node-registry.disk-free-drain-pct=25.0
+```
+
+### 6.4 扩容到 3 台 Runtime 节点（运维口径）
+
+假设你们现在 1 台 Runtime（102），要扩到 3 台（102/104/105）：
+
+#### Step 1：新增 2 台 Runtime 节点（104/105）
+
+每台节点需要：
+
+- **Docker/Podman**（运行用户应用容器）
+- **Python 3.10+**（runtime-agent）
+- **Traefik/Nginx**（统一域名路径路由 `/apps/{appId}`）
+- **runtime-agent 配置**（`/opt/funai/runtime/config/runtime.env`）：
+  - `RUNTIME_NODE_NAME=rt-node-02`（104）/ `rt-node-03`（105）
+  - `RUNTIME_NODE_AGENT_BASE_URL=http://172.21.138.104:7005`（或 105）
+  - `RUNTIME_NODE_GATEWAY_BASE_URL=http://172.21.138.104`（或 105）
+  - `DEPLOY_BASE_URL=http://172.21.138.100:7002`
+  - `DEPLOY_NODE_TOKEN=<与 Deploy 一致>`
+  - `RUNTIME_CLEANUP_IMAGES_ON_STOP=true`（磁盘稳定优先）
+
+#### Step 2：安全组放行
+
+- **104/105 入站**：
+  - `80/443`（对公网：统一域名下 `/apps/{appId}`）
+  - `7005`（内网：仅允许 Runner 101 访问）
+- **104/105 出站**：
+  - 到 Deploy（100）：`7002`（心跳注册）
+  - 到镜像仓库（103）：`443`
+
+#### Step 3：启动 runtime-agent 并验证心跳
+
+```bash
+# 在 104/105 上启动 runtime-agent（systemd 或 docker）
+sudo systemctl start fun-ai-studio-runtime
+sudo systemctl status fun-ai-studio-runtime --no-pager
+```
+
+验证心跳：
+
+```bash
+# 在 Deploy 100 上查看节点列表
+curl -sS -H "X-Admin-Token: <你的ADMIN_TOKEN>" \
+  http://127.0.0.1:7002/admin/runtime-nodes/list | jq
+```
+
+应该能看到 3 个节点，`health` 为 `HEALTHY`，`diskFreePct` 有值。
+
+#### Step 4：网关路由（统一域名）
+
+你们需要在统一入口网关（91 或独立网关）配置：
+
+```nginx
+# 示例：按 appId placement 查表后动态转发（或用 Traefik 动态路由）
+location /apps/ {
+    # 方案 A：API 侧查 placement，返回 X-Runtime-Upstream header，网关转发
+    # 方案 B：Traefik 动态服务发现（推荐）
+}
+```
+
+> 详细路由方案见 `doc/domains/deploy/architecture.md`。
+
+### 6.5 观察与运维
+
+- **查看节点状态**：`GET /admin/runtime-nodes/list`（diskFreePct / containerCount / health）
+- **查看某节点的 placement**：`GET /admin/runtime-nodes/placements?nodeId=<nodeId>`
+- **手动迁移应用**：`POST /admin/runtime-nodes/reassign`（body: `{appId, targetNodeId}`）
+- **批量迁移（drain）**：`POST /admin/runtime-nodes/drain`（body: `{sourceNodeId, targetNodeId, limit}`）
+
+### 6.6 磁盘告警建议
+
+- **diskFreePct < 25%**：触发告警，准备扩容或清理
+- **diskFreePct < 15%**：严重告警，该节点已不可选，需要立即处理
+
+---
+
 
