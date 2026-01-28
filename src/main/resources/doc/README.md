@@ -20,6 +20,7 @@
 |------|------|
 | [Deploy 架构与互联矩阵](./domains/deploy/architecture.md) | 控制面/执行面/运行态详解 |
 | [真实部署闭环落地计划](./domains/deploy/real-deploy-rollout.md) | 分阶段落地步骤 |
+| [Runtime 节点磁盘水位调度](./domains/server/scaling-deploy-runtime.md#6-runtime-节点磁盘水位调度与扩容到-3-台推荐生产策略) | **新特性**：智能选址避免磁盘打满 |
 | [运行态 Mongo 方案](./domains/deploy/runtime-mongo.md) | 第 7 台服务器：独立 Mongo |
 | [标准流水线](./domains/deploy/git-acr-pipeline.md) | Git → Harbor(103) → Runtime |
 | [Gitea 自动化](./domains/deploy/gitea-automation.md) | 仓库创建 + 授权 + SSH |

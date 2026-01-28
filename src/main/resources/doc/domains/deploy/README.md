@@ -17,6 +17,7 @@
 运维落地（服务器/安全组/联调）：
 
 - [多机扩容方案（面向 Deploy / Runner / Runtime）](../server/scaling-deploy-runtime.md)
+  - **含重要新特性**：[Runtime 节点磁盘水位调度与扩容到 3 台](../server/scaling-deploy-runtime.md#6-runtime-节点磁盘水位调度与扩容到-3-台推荐生产策略)
 
 ## 1. 三者关系（控制面 / Runner / 用户应用 Runtime）
 

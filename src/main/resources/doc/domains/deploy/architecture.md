@@ -91,8 +91,13 @@ flowchart TD
 
 - Job 队列：`PENDING -> RUNNING -> SUCCEEDED/FAILED/CANCELLED`
 - Runner 协议：`claim / heartbeat / report`（HTTP polling）
-- Runtime Node Registry：runtime-agent 定时 heartbeat，上报 `agentBaseUrl` 与 `gatewayBaseUrl`
-- Placement（选址）：`appId -> runtimeNode` 粘性落点（支持 InMemory/DB 落库切换；生产建议落库避免 Deploy 重启丢数据）
+- Runtime Node Registry：runtime-agent 定时 heartbeat，上报 `agentBaseUrl`、`gatewayBaseUrl`、**磁盘水位**（`diskFreePct/diskFreeBytes`）、**容器数**（`containerCount`）
+- Placement（选址）：`appId -> runtimeNode` **粘性落点** + **磁盘水位优先调度**（`disk-aware` 策略）
+  - 硬阈值过滤：`diskFreePct >= 15%`（低于此值节点不可选）
+  - 选 `diskFreePct` 最大的节点（避免单节点磁盘打满）
+  - 已有 placement 不变（避免频繁迁移）
+  - 支持 InMemory/DB 落库切换；生产建议落库避免 Deploy 重启丢数据
+  - 详见：[Runtime 节点磁盘水位调度与扩容](../server/scaling-deploy-runtime.md#6-runtime-节点磁盘水位调度与扩容到-3-台推荐生产策略)
 
 ### 2.3 `fun-ai-studio-workspace`（Workspace 节点服务）
 
@@ -146,8 +151,9 @@ participant Agent as runtime-agent
 participant Deploy as fun-ai-studio-deploy
 
 Agent->>Deploy: POST /internal/runtime-nodes/heartbeat
-Note over Agent,Deploy: Header: X-RT-Node-Token<br/>body: nodeName/agentBaseUrl/gatewayBaseUrl
+Note over Agent,Deploy: Header: X-RT-Node-Token<br/>body: nodeName/agentBaseUrl/gatewayBaseUrl<br/>diskFreePct/diskFreeBytes/containerCount
 Deploy-->>Agent: 200 OK
+Note over Deploy: 选址时优先选磁盘充裕节点
 ```
 
 ---
