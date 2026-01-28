@@ -25,7 +25,7 @@
 
 ### 1.2 制品（交付物：镜像）
 
-- **推荐唯一制品**：ACR 镜像（Runner build → push；Runtime pull → run）
+- **推荐唯一制品**：Harbor 镜像（Runner build → push；Runtime pull → run）
 - 好处：跨机器交付稳定；避免“复制目录/rsync/zip 传输”带来的不确定性
 
 ### 1.3 控制面状态（Deploy 落库到 API 的 MySQL）
@@ -149,7 +149,7 @@ Deploy 控制面的主数据落库（MySQL 在 91）：
 
 **目标**：证明 Deploy→Runner→Runtime 的控制面/执行面/运行态闭环可用。
 
-- **输入**：一个已存在于 ACR 的镜像（例如 hello-world/你们自定义 demo）
+- **输入**：一个已存在于 Harbor 的镜像（例如 hello-world/你们自定义 demo）
 - **Runner 行为**：
   - claim job
   - 调 runtime-agent `/agent/apps/deploy`（携带 appId + image）
@@ -163,19 +163,19 @@ Deploy 控制面的主数据落库（MySQL 在 91）：
 
 即使 103 的 Git 还没通，你也可以先用“镜像直部署”验证链路。
 
-**步骤 A：准备一个可用镜像（推到 ACR）**
+**步骤 A：准备一个可用镜像（推到 Harbor）**
 
-在你本地 Windows（能联网）把一个小镜像推到 ACR（示例用 nginx，端口为 80）：
+在你本地 Windows（能访问 103 内网或已打通隧道）把一个小镜像推到 Harbor（示例用 nginx，端口为 80）：
 
 ```bash
-# 例：把 nginx:alpine 推到你们 ACR（namespace 以你们现网为准，比如 funshion）
+# 例：把 nginx:alpine 推到你们 Harbor（project 以你们现网为准，比如 funaistudio）
 docker pull nginx:alpine
-docker tag nginx:alpine <acrRegistry>/<namespace>/demo-nginx:alpine
-docker login <acrRegistry>
-docker push <acrRegistry>/<namespace>/demo-nginx:alpine
+docker tag nginx:alpine 172.21.138.103/funaistudio/demo-nginx:alpine
+docker login 172.21.138.103
+docker push 172.21.138.103/funaistudio/demo-nginx:alpine
 ```
 
-> 建议为“用户应用制品”单独使用一个 namespace（你现网已新建：`funaistudio`），避免与基础镜像/运维镜像混放。
+> 建议为“用户应用制品”单独使用一个 project（你现网已新建：`funaistudio`），避免与基础镜像/运维镜像混放。
 > 如果你们后续要统一端口 3000/8080，请选择对应镜像或自行构建 demo 镜像。
 
 **步骤 B：调用 API 创建部署 Job（用户点击“部署”的等价操作）**
@@ -189,15 +189,15 @@ body（关键字段：`image` + `containerPort`）：
 ```bash
 curl -sS -X POST "http://<api-host>:8080/api/fun-ai/deploy/job/create?userId=10001&appId=20002" \
   -H "Content-Type: application/json" \
-  -d '{"image":"<acrRegistry>/<namespace>/demo-nginx:alpine","containerPort":80}'
+  -d '{"image":"172.21.138.103/funaistudio/demo-nginx:alpine","containerPort":80}'
 ```
 
-**步骤 B.1：确保 Runtime(102) 已登录 ACR（私有仓库必做）**
+**步骤 B.1：确保 Runtime(102) 已登录 Harbor（私有仓库必做）**
 
-因为 **拉镜像发生在 Runtime(102)**（runtime-agent 会 `podman/docker pull`），所以 102 必须先登录 ACR：
+因为 **拉镜像发生在 Runtime(102)**（runtime-agent 会 `podman/docker pull`），所以 102 必须先登录 Harbor：
 
 ```bash
-podman login <acrRegistry> -u <username>
+podman login 172.21.138.103 -u <username_or_robot>
 ```
 
 > 注意：请在“运行 runtime-agent 的同一个系统用户”下登录，否则凭证可能不生效（rootless/root 差异）。
@@ -218,7 +218,7 @@ podman login <acrRegistry> -u <username>
 
 ### 5.2 阶段 2：引入 Git（内网）拉源码 + build + push（推荐）
 
-**目标**：Runner 真正完成 “拉代码→构建镜像→推 ACR→部署”。
+**目标**：Runner 真正完成 “拉代码→构建镜像→推 Harbor→部署”。
 
 建议 Runner 统一支持（SSH）：
 

@@ -22,7 +22,7 @@
 - `POST /upload-zip`：上传 zip 解压到 `apps/{appId}`
 - `GET /tree`：获取文件树（默认忽略 `node_modules/.git/dist/build/.next/target`）
 - `GET /content`：读文件（2MB 文本限制）
-- `POST /content`：写文件（支持 `expectedLastModifiedMs` 乐观锁）
+- `POST /content`：写文件（支持 `expectedLastModifiedMs` 乐观锁；`forceWrite=true` 时强制写入，跳过乐观锁校验）
 - `POST /mkdir`：创建目录
 - `POST /delete`：删除文件/目录
 - `POST /move`：移动/重命名
@@ -34,6 +34,6 @@
 
 - **安全**：双机模式下建议在 API 服务器（小机）完成 `userId/appId` 归属校验后再转发到 Workspace 开发服务器（大机）；Workspace 开发服务器（大机）只做容器/文件操作并通过 allowlist + 共享密钥（可选签名）限制来源。
 - **性能**：文件树接口默认忽略大目录，避免把 `node_modules` 拉爆。
-- **一致性**：写文件支持“预期最后修改时间”乐观锁，避免多人/多端覆盖。
+- **一致性**：写文件支持"预期最后修改时间"乐观锁，避免多人/多端覆盖；特殊场景下可传 `forceWrite=true` 强制写入（跳过乐观锁校验）。
 
 

@@ -83,7 +83,7 @@ public class WorkspaceStubServiceConfig {
             public FunAiWorkspaceFileReadResponse readFileContent(Long userId, Long appId, String path) { throw disabled(); }
 
             @Override
-            public FunAiWorkspaceFileReadResponse writeFileContent(Long userId, Long appId, String path, String content, boolean createParents, Long expectedLastModifiedMs) { throw disabled(); }
+            public FunAiWorkspaceFileReadResponse writeFileContent(Long userId, Long appId, String path, String content, boolean createParents, Long expectedLastModifiedMs, boolean forceWrite) { throw disabled(); }
 
             @Override
             public void createDirectory(Long userId, Long appId, String path, boolean createParents) { throw disabled(); }

@@ -3,7 +3,7 @@
 目标：让 Runner 在“拿到一个 git 仓库”后，不需要猜测项目类型，也不需要手工干预，就能稳定完成：
 
 - `docker build` → 产出镜像
-- `docker push` → 推到 ACR
+- `docker push` → 推到 Harbor（103）
 - Runtime 拉取并运行 → `/apps/{appId}` 可访问
 
 ---

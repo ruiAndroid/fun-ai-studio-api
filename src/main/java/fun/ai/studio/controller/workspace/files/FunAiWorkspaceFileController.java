@@ -130,8 +130,9 @@ public class FunAiWorkspaceFileController {
             if (req == null) return Result.error("请求不能为空");
             activityTracker.touch(req.getUserId());
             boolean createParents = req.getCreateParents() == null || req.getCreateParents();
+            boolean forceWrite = req.getForceWrite() != null && req.getForceWrite();
             return Result.success(workspaceService.writeFileContent(
-                    req.getUserId(), req.getAppId(), req.getPath(), req.getContent(), createParents, req.getExpectedLastModifiedMs()
+                    req.getUserId(), req.getAppId(), req.getPath(), req.getContent(), createParents, forceWrite, req.getExpectedLastModifiedMs()
             ));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return Result.error(e.getMessage());

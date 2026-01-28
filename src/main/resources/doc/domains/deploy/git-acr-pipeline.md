@@ -1,17 +1,17 @@
-# 标准流水线：Git 作为源码真相源 + ACR 作为唯一制品
+# 标准流水线：Git 作为源码真相源 + Harbor（103）作为唯一制品
 
-本文档固化 FunAI Studio 的推荐发布链路：**Git（103/Gitea）只存源码**，**ACR 只存制品（镜像）**，Runner 作为执行面把二者串起来，Runtime 只负责拉镜像运行。
+本文档固化 FunAI Studio 的推荐发布链路：**Git（103/Gitea）只存源码**，**Harbor（103）只存制品（镜像）**，Runner 作为执行面把二者串起来，Runtime 只负责拉镜像运行。
 
-适用现网（6 台）：
+适用现网（6 台 + 同机 Harbor）：
 
 - API：`172.21.138.91`
 - Workspace-dev：`172.21.138.87`
 - Deploy：`172.21.138.100`
 - Runner：`172.21.138.101`
 - Runtime：`172.21.138.102`
-- Git（Gitea）：`172.21.138.103`
+- Git（Gitea）+ Harbor（Registry）：`172.21.138.103`
 
-制品仓库建议使用 ACR 的独立命名空间（你现网：`funaistudio`）。
+制品仓库建议使用 Harbor project（你现网：`funaistudio`）。
 
 ---
 
@@ -21,7 +21,7 @@
 - **Workspace（开发态）**：源码 working copy（编辑/运行/依赖缓存），通过 `git commit/push` 回写 Git
 - **API（入口）**：权限/归属校验 + 创建部署 Job（内部调用 Deploy 控制面）
 - **Deploy（控制面）**：Job 队列、Runtime 节点注册表、placement（选址）、状态落库与审计
-- **Runner（执行面）**：领取 Job，执行 “拉代码 → 构建镜像 → push ACR → 调 Runtime 部署 → 回传结果”
+- **Runner（执行面）**：领取 Job，执行 “拉代码 → 构建镜像 → push Harbor → 调 Runtime 部署 → 回传结果”
 - **Runtime（运行态）**：拉取镜像并运行容器，挂载网关路由 `/apps/{appId}`
 
 关键原则：
@@ -59,7 +59,7 @@
 2) Runner 取到 payload（典型字段见下）后执行：
    - Git clone/pull（按 `repoSshUrl` + `gitRef`）
    - `docker/podman build`（使用统一 Dockerfile 标准）
-   - push 镜像到 ACR（唯一制品）
+   - push 镜像到 Harbor（唯一制品）
 3) Runner 调 runtime-agent(102) 部署：
    - `POST /agent/apps/deploy`（传 image + appId + containerPort）
 4) Runner 回传结果给 Deploy：
@@ -80,12 +80,12 @@
 payload 至少包含：
 
 - `appId`（必填）
-- `image`（必填：ACR 镜像全名）
+- `image`（必填：Harbor 镜像全名）
 - `containerPort`（可选，默认 3000；按镜像实际端口设置）
 
 Runner 行为：直接调 runtime-agent 部署镜像，不做构建。
 
-### 3.2 阶段 2（Git 构建 + push ACR + 部署）
+### 3.2 阶段 2（Git 构建 + push Harbor + 部署）
 
 payload 至少包含：
 
@@ -94,23 +94,23 @@ payload 至少包含：
 - `gitRef`（可选：branch/tag/commitSha；默认 `main`）
 - `dockerfilePath`（可选，默认 `Dockerfile`）
 - `buildContext`（可选，默认 repo root）
-- `imageRepo`（可选：ACR 仓库名，如 `.../funaistudio/apps/app-{appId}`）
+- `imageRepo`（可选：Harbor repo，如 `172.21.138.103/funaistudio/apps/app-{appId}`）
 - `imageTag`（可选：建议用 `commitSha` 或 `buildNumber`）
 - `containerPort`（可选，默认 3000；由 Dockerfile 标准约定）
 
 ---
 
-## 4. ACR 镜像组织建议（你现网：namespace=funaistudio）
+## 4. Harbor 镜像组织建议（你现网：project=funaistudio）
 
 建议：
 
-- **namespace**：`funaistudio`（专门存用户应用制品）
+- **project**：`funaistudio`（专门存用户应用制品）
 - **repo**：`apps/app-{appId}`（每个 app 一个仓库，便于清理/审计）
 - **tag**：`{gitSha}`（推荐，可追溯/可回滚）
 
 示例：
 
-- `crpi-xxxxx.cn-hangzhou.personal.cr.aliyuncs.com/funaistudio/apps/app-20002:acde123`
+- `172.21.138.103/funaistudio/apps/app-20002:acde123`
 
 ---
 
@@ -134,10 +134,10 @@ payload 至少包含：
   - 103:2222 安全组/防火墙
   - Runner deploy key/known_hosts
   - `repoSshUrl` 拼接是否正确
-- **镜像 push/pull 失败（ACR）**：
-  - 101/102 是否已 `docker/podman login` 到 ACR
-  - 命名空间/仓库权限
-  - 102 无法直连公网时必须走 ACR（不要依赖 DockerHub）
+- **镜像 push/pull 失败（Harbor）**：
+  - 101/102 是否已 `docker/podman login 172.21.138.103`
+  - Harbor project/repo 权限（建议用 Robot Account：push/pull vs pull-only）
+  - Harbor 是 HTTPS 但自签证书：是否已把 CA 加入信任（或按规范配置 insecure registry）
 - **Runtime 部署失败**：
   - 102 是否能访问容器运行时（podman/docker）
   - 网关/网络（Traefik labels/网络名）

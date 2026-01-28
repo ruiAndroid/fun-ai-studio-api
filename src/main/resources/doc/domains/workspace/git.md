@@ -39,7 +39,7 @@
 - SSH clone URL：
   - `ssh://git@172.21.138.103:2222/funai/u10001-app20002.git`
 
-> 说明：ACR 的 namespace（例如 `funshion`）与 Gitea 的 owner（`funai`）是两套概念，不冲突。
+> 说明：镜像仓库（Harbor/ACR）的 project/namespace（例如 `funaistudio`）与 Gitea 的 owner（`funai`）是两套概念，不冲突。
 
 ---
 

@@ -33,10 +33,10 @@
 - [Deploy 总览（API 入口与调用链）](./deploy/README.md)
 - [Deploy：整体架构与互联矩阵（推荐先读）](./deploy/architecture.md)
 - [真实部署闭环落地计划（现网 6 台）](./deploy/real-deploy-rollout.md)
-- [标准流水线：Git 作为源码真相源 + ACR 作为唯一制品](./deploy/git-acr-pipeline.md)
+- [标准流水线：Git 作为源码真相源 + Harbor（103）作为唯一制品](./deploy/git-acr-pipeline.md)
 - [必做自动化：Gitea 仓库创建 + 授权 + Runner 拉代码](./deploy/gitea-automation.md)
 - [运行态数据库（Mongo）方案 A：独立 Mongo（推荐）](./deploy/runtime-mongo.md)
-- [ACR 运维规范：免交互登录（方案 A）+ 制品保留策略（N=3）](./deploy/acr-auth-and-retention.md)
+- [Harbor 运维规范：免交互登录 + 制品保留策略（N=3）](./deploy/acr-auth-and-retention.md)
 - [方案 C：自建 Git（内网）——103 上从零部署 Gitea（SSH 拉代码）](./deploy/git-server-gitea.md)
 - [Harbor 自建镜像站（103）](./deploy/harbor-103.md)
 

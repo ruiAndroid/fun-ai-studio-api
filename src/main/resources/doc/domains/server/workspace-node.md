@@ -254,6 +254,29 @@ Alibaba Cloud Linux 3 默认是 Podman，通常安装了 `podman-docker` 后可�
 systemctl enable --now podman.socket
 ```
 
+### 5.1.1 Harbor（HTTP）拉镜像必配 insecure registry（常见 443 refused）
+
+如果你把 workspace 基础镜像从 ACR 迁移到自建 Harbor（例如 `172.21.138.103/...`），且 Harbor 起步只启用 **HTTP(80)**，
+那么 podman 默认会尝试走 **HTTPS**，出现典型错误：
+
+```text
+pinging container registry 172.21.138.103: Get "https://172.21.138.103/v2/": dial tcp 172.21.138.103:443: connect: connection refused
+```
+
+解决：在 workspace-node 机器上配置 `/etc/containers/registries.conf` 为 insecure：
+
+```toml
+[[registry]]
+location = "172.21.138.103"
+insecure = true
+```
+
+验证：
+
+```bash
+podman pull 172.21.138.103/<project>/<image>:<tag>
+```
+
 ### 5.2 构建工具版本要求
 
 workspace-node 采用 Java 17 编译（`--release 17`），需要：

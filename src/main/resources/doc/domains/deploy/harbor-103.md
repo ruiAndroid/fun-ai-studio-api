@@ -290,6 +290,31 @@ location = "172.21.138.103"
 insecure = true
 ```
 
+### 4.3 Workspace-node(87) Podman-Docker（非常容易踩坑）
+
+你们的 workspace 节点（workspace-node，通常在 87 大机）很多时候跑的是 **podman + podman-docker**（`docker` 命令其实是 podman 仿真层）。
+
+此时如果 Harbor 只启用 **HTTP(80)**，podman 默认会用 **HTTPS** 访问 registry，典型报错：
+
+```text
+Trying to pull 172.21.138.103/<project>/<image>:<tag>...
+... pinging container registry 172.21.138.103: Get "https://172.21.138.103/v2/": dial tcp 172.21.138.103:443: connect: connection refused
+```
+
+解决：在 workspace-node 机器上配置 insecure registry（与 102 一样）：
+
+```toml
+[[registry]]
+location = "172.21.138.103"
+insecure = true
+```
+
+验证（在 workspace-node 上执行）：
+
+```bash
+podman pull 172.21.138.103/<project>/<image>:<tag>
+```
+
 ---
 
 ## 5. Harbor 内创建 Project 与机器人账号

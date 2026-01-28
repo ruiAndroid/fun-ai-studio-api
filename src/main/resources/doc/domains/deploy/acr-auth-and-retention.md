@@ -1,24 +1,26 @@
-# ACR 运维规范：免交互登录（方案 A）+ 制品保留策略（N=3）
+# Harbor 运维规范：免交互登录 + 制品保留策略（N=3）
+
+> 文件名历史原因保留 `acr-` 前缀；本文内容以 **Harbor（103）** 为准。
 
 本文档固化两件“必须工程化”的事情：
 
-1) **避免每次 push/pull 都手动输入密码**：采用方案 A（RAM 用户 + 机器侧一次登录 + 凭证落盘）
+1) **避免每次 push/pull 都手动输入密码**：机器侧一次 `login`，凭证落盘复用
 2) **避免镜像版本无限增长**：采用保留策略 **每 app 保留最近 N=3 个版本**，其余自动清理
 
-适用你们现网：
+适用你们现网（Harbor 在 103 与 Gitea 同机）：
 
-- ACR 实例：个人版（限制：命名空间 3、仓库 300）
-- 用户应用制品 namespace：`funaistudio`
+- Harbor 地址（推荐内网 canonical）：`172.21.138.103`（走 `443`；起步也可 `80`）
+- 用户应用制品 project：`funaistudio`
 
 > 备注：文档不存放任何密码/密钥，只说明流程与最小权限设计。
 
 ---
 
-## 1. 免交互登录（方案 A：RAM 用户 + 机器侧一次登录）
+## 1. 免交互登录（机器侧一次登录 + 最小权限账号）
 
 ### 1.1 原则：按最小权限拆账号
 
-建议拆两类 RAM 用户（或子账号）：
+建议在 Harbor 的 `funaistudio` project 下创建两类账号（推荐 **Robot Account**）：
 
 - **Runner Push 账号（101）**：`push + pull`（仅允许 `funaistudio/*`）
 - **Runtime Pull 账号（102）**：`pull`（仅允许 `funaistudio/*`）
@@ -30,7 +32,7 @@
 
 ### 1.2 机器侧一次登录即可（之后不需要再手输）
 
-在对应机器上执行一次 `login`：
+在对应机器上执行一次 `login`（**用运行服务的同一个系统用户**执行）：
 
 - Docker：凭证落盘到 `~/.docker/config.json`
 - Podman：凭证落盘到 `~/.config/containers/auth.json`
@@ -41,33 +43,22 @@
   - rootless/root 不同用户的凭证互不共享
 - 登录后即可在后续 `pull/push` 中复用（不会再次提示输入密码）
 
-### 1.3 你们现网 ACR endpoint（示例）
-
-从你截图可见你们有两类登录域名（按网络环境选择其一）：
-
-- **公网**：`crpi-39dn3ekytub82xl9.cn-hangzhou.personal.cr.aliyuncs.com`
-- **专有网络 VPC**：`crpi-39dn3ekytub82xl9-vpc.cn-hangzhou.personal.cr.aliyuncs.com`
-
-建议：
-
-- 服务器位于同一 VPC：优先用 `*-vpc`（更稳、更快）
-- 否则用公网域名
-
-### 1.4 标准登录命令（示例）
+### 1.3 标准登录命令（示例）
 
 Runner(101)（如果使用 docker）：
 
 ```bash
-docker login <acrRegistry> -u <runnerRamUser>
+docker login 172.21.138.103 -u <runnerHarborUserOrRobot>
 ```
 
 Runtime(102)（你们用 podman）：
 
 ```bash
-podman login <acrRegistry> -u <runtimeRamUser>
+podman login 172.21.138.103 -u <runtimeHarborUserOrRobot>
 ```
 
-> 密码建议使用 ACR 的“固定密码/访问凭证”，避免把主账号密码写入机器。
+> 如果 Harbor 是 **HTTPS 自签证书**：请把 CA 加到 101/102 的信任链；否则会出现 `x509: certificate signed by unknown authority`。
+> 如果 Harbor 起步用 **HTTP(80)**：podman/docker 默认按 HTTPS 访问，需要按文档配置 insecure registry（你们 `workspace-node.md` 已有排障说明）。
 
 ---
 
@@ -84,7 +75,7 @@ podman login <acrRegistry> -u <runtimeRamUser>
 
 ### 2.2 你们的推荐镜像组织方式（便于清理）
 
-- namespace：`funaistudio`（用户应用制品专用）
+- project：`funaistudio`（用户应用制品专用）
 - repo：`apps/app-{appId}`（每 app 一个仓库）
 - tag：`{gitSha}`（可追溯/可回滚）
 
@@ -101,20 +92,20 @@ podman login <acrRegistry> -u <runtimeRamUser>
 
 ### 2.4 自动清理怎么做（两种实现）
 
-#### 方案 1：ACR 生命周期策略（如果个人版支持）
+#### 方案 1：Harbor Retention Policy（推荐）
 
-在 ACR 控制台配置：
+在 Harbor UI 中对 project 配置 retention policy，例如：
 
-- 每个 repo 保留最近 3 个版本
-- 或按时间保留（如 7 天）+ 上限 3
+- repo 匹配：`apps/app-*`
+- 保留最近：`3` 个 tag（或按推送时间保留 + 上限 3）
 
-优点：零代码。
+优点：零代码、最贴近 Harbor 运维方式。
 
 #### 方案 2：平台定时任务清理（通用，推荐兜底）
 
 在 91/100 任一台跑一个定时任务（cron/systemd timer）：
 
-- 调用 ACR OpenAPI（或 `aliyun` CLI）：
+- 调用 Harbor API（或 `curl`）：
   - 列出 repo/tag
   - 按时间排序
   - 删除超出 N=3 的旧 tag
@@ -125,8 +116,8 @@ podman login <acrRegistry> -u <runtimeRamUser>
 
 ## 3. 下一步落地清单（你后续要做但现在不必立刻做）
 
-- 为 Runner 与 Runtime 创建 RAM 用户并最小授权（push/pull vs pull-only）
+- 为 Runner 与 Runtime 创建 Harbor Robot Account 并最小授权（push/pull vs pull-only）
 - 在 101/102 以 systemd 运行用户执行一次 `login`
-- 在 ACR 控制台或平台侧落地 N=3 清理策略（避免长期膨胀）
+- 在 Harbor retention policy 或平台侧落地 N=3 清理策略（避免长期膨胀）
 
 
