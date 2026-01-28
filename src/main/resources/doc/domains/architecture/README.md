@@ -34,16 +34,21 @@ flowchart TB
         Browser["浏览器"]
     end
 
-    subgraph Routes["三种访问路径"]
+    subgraph Routes["四种访问路径"]
         R1["/api/** 业务接口"]
         R2["/ws/** 开发预览"]
         R3["/apps/** 线上应用"]
+        R4["/fun-agent/** Agent服务"]
     end
 
-    subgraph Infra["内网 (7+ 台服务器)"]
+    subgraph Infra["内网 (8+ 台服务器)"]
         subgraph S91["API 入口 (91)"]
             API["API 8080"]
             MySQL[("MySQL")]
+        end
+
+        subgraph S88["Agent Node (88)"]
+            AgentService["Agent 服务"]
         end
 
         subgraph S87["Workspace (87, 87-2, ...) 🔄可扩容"]
@@ -75,10 +80,11 @@ flowchart TB
         end
     end
 
-    Browser --> R1 & R2 & R3
+    Browser --> R1 & R2 & R3 & R4
     R1 --> API
     R2 --> WsNode --> WsCtn
     R3 --> Traefik --> AppCtn
+    R4 --> AgentService
 
     API --> MySQL
     API --> WsNode
@@ -95,7 +101,7 @@ flowchart TB
     WsCtn --> Gitea
 ```
 
-**一句话理解**：用户通过三条路径访问系统 —— 业务 API 走 91、开发预览走 87、线上应用走 102。
+**一句话理解**：用户通过四条路径访问系统 —— 业务 API 走 91、开发预览走 87、线上应用走 102、Agent 服务走 88（统一由 91 入口转发）。
 
 ---
 
@@ -199,7 +205,8 @@ sequenceDiagram
 
 | 机器 | IP | 运行什么 | 核心职责 | 扩容 |
 |------|----|----------|----------|------|
-| **API 入口** | 91 | Nginx + API + MySQL + Prometheus | 用户唯一入口，协调所有内部服务 | - |
+| **API 入口** | 91 | Nginx + API + MySQL + Prometheus | 用户唯一入口，协调所有内部服务，统一转发 | - |
+| **Agent Node** | 88 | Agent 服务（Node.js） | 前端 Agent 相关服务，由 91 转发 | - |
 | **Workspace** | 87 | workspace-node + Nginx + Docker + Verdaccio | 承载用户开发容器 | ✅ 可水平扩容 |
 | **Deploy** | 100 | deploy 服务 | 发布任务调度 | - |
 | **Runner** | 101 | runner 进程 | 构建镜像、执行部署 | ✅ 可水平扩容 |
@@ -219,6 +226,7 @@ flowchart LR
     end
 
     subgraph Private["内网隔离"]
+        S88["88 Agent Node"]
         S87["87+ Workspace 🔄"]
         S100["100 Deploy"]
         S101["101+ Runner 🔄"]
@@ -228,6 +236,7 @@ flowchart LR
 
     Harbor["Harbor 镜像仓库（103:80 HTTP）"]
 
+    P91 --> S88
     P91 --> S87
     P91 --> S100
     S100 <--> S101
@@ -242,7 +251,8 @@ flowchart LR
 **各机器职责**：
 | 机器 | 为什么单独一台 | 扩容策略 |
 |------|---------------|----------|
-| 91 (API) | 大脑：所有用户请求进来，所有内部调度从这里发起 | 单点 |
+| 91 (API) | 大脑：所有用户请求进来，所有内部调度从这里发起；统一入口转发 | 单点 |
+| 88 (Agent) | 前端 Agent 相关服务，由 91 统一转发 | 单点 |
 | 87 (Workspace) | 开发环境 CPU/内存消耗大，需要隔离 | **🔄 水平扩容**：按 userId 粘性落点 |
 | 100 (Deploy) | 控制面，任务调度中心 | 单点 |
 | 101 (Runner) | 构建消耗资源大，需要隔离 | **🔄 水平扩容**：多 Runner 竞争领取 Job |
@@ -260,6 +270,7 @@ flowchart LR
 | 路径 | 目标 |
 |------|------|
 | `/api/**` | 91:8080 (API) |
+| `/fun-agent/**` | 91 → 88:80 (Agent Node，由 91 转发) |
 | `/ws/**` | 87:80 (Workspace) |
 | `/apps/**` | 102:80 (Runtime) |
 
@@ -283,6 +294,7 @@ flowchart LR
 | 端口 | 服务 | 暴露范围 |
 |------|------|----------|
 | 80/443 | Nginx 入口 | 公网（91 和 102） |
+| 80 | Agent 服务（88） | 内网（只允许 91 转发） |
 | 8080 | API | 内网 |
 | 7001 | workspace-node | 只允许 91 |
 | 7002 | Deploy | 只允许 91/101/102 |

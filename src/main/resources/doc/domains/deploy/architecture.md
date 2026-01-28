@@ -13,10 +13,10 @@
 
 ---
 
-## 1. 总体架构（现网 6 台：API / workspace-dev / Deploy / Runner / Runtime / Git）
+## 1. 总体架构（现网 7 台：API / Agent / workspace-dev / Deploy / Runner / Runtime / Git）
 
-> 说明：Deploy/Runner/Runtime 属于“发布能力”的 3 件套；workspace-dev 属于“开发态容器节点”。  
-> 本文聚焦发布能力互联矩阵，但会在总览图中把 workspace-dev 放出来，避免与现网口径冲突。
+> 说明：Deploy/Runner/Runtime 属于"发布能力"的 3 件套；workspace-dev 属于"开发态容器节点"；Agent Node 为前端 Agent 服务节点。  
+> 本文聚焦发布能力互联矩阵，但会在总览图中把 workspace-dev 和 Agent Node 放出来，避免与现网口径冲突。
 
 ```mermaid
 flowchart TD
@@ -29,6 +29,10 @@ flowchart TD
     API["fun-ai-studio-api (Spring Boot)"]
     Deploy["fun-ai-studio-deploy (Spring Boot)"]
     DB[("MySQL/Redis(可选)")]
+  end
+
+  subgraph AgentPlane["Agent 服务(Agent Plane)"]
+    AgentNode["Agent Node (88) - Node.js"]
   end
 
   subgraph GitPlane["源码真相源(Git Plane)"]
@@ -52,6 +56,7 @@ flowchart TD
 
   Browser --> Gateway
   Gateway -->|"业务 API"| API
+  Gateway -->|"Agent 服务 /fun-agent/**"| AgentNode
   Gateway -->|"预览 /ws/{userId}/..."| WSDev
   Gateway -->|"应用访问 /apps/{appId}/..."| RTGW
 
@@ -165,6 +170,7 @@ Note over Deploy: 选址时优先选磁盘充裕节点
 ### 4.1 端口（默认约定）
 
 - **API**：`8080`（对前端/网关；生产通常只让网关访问）
+- **Agent Node**：`80`（内网 88；仅允许 91 转发，承载 `/fun-agent/**`）
 - **Deploy**：`7002`（内网；API/Runner/Runtime-Agent 访问）
 - **workspace-node**：`7001`（内网；API/节点本机 Nginx 访问）
 - **runtime-agent**：`7005`（内网；Runner 访问）
