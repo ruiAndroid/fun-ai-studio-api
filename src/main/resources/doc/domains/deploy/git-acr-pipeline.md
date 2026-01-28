@@ -137,7 +137,7 @@ payload 至少包含：
 - **镜像 push/pull 失败（Harbor）**：
   - 101/102 是否已 `docker/podman login 172.21.138.103`
   - Harbor project/repo 权限（建议用 Robot Account：push/pull vs pull-only）
-  - Harbor 是 HTTPS 但自签证书：是否已把 CA 加入信任（或按规范配置 insecure registry）
+  - 你们 Harbor 只开 **HTTP(80)**：101/102 是否已配置 **insecure registry**（否则会默认走 https 并报 443 refused）
 - **Runtime 部署失败**：
   - 102 是否能访问容器运行时（podman/docker）
   - 网关/网络（Traefik labels/网络名）

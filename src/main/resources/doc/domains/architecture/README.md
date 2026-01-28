@@ -59,9 +59,9 @@ flowchart TB
             Runner["Runner"]
         end
 
-        subgraph S103["Git + Harbor (103)"]
+    subgraph S103["Git + Harbor (103, HTTP only)"]
             Gitea["Gitea 2222"]
-            Harbor[("Harbor Registry 443")]
+            Harbor[("Harbor Registry 80 (HTTP)")]
         end
 
         subgraph S102["Runtime (102, 102-2, ...) 🔄可扩容"]
@@ -226,7 +226,7 @@ flowchart LR
         SMongo["Mongo"]
     end
 
-    Harbor["Harbor 镜像仓库（103:443）"]
+    Harbor["Harbor 镜像仓库（103:80 HTTP）"]
 
     P91 --> S87
     P91 --> S100
@@ -271,10 +271,10 @@ flowchart LR
 | Runner (101) | 100:7002 | 领取任务、汇报结果 |
 | Runner (101) | 102:7005 | 执行部署 |
 | Runner (101) | 103:2222 | 拉取代码 |
-| Runner (101) | 103:443 | push 镜像（Harbor） |
+| Runner (101) | 103:80 | push 镜像（Harbor, HTTP） |
 | Runtime (102) | 100:7002 | 节点心跳 |
 | Runtime (102) | Mongo:27017 | 应用数据 |
-| Runtime (102) | 103:443 | pull 镜像（Harbor） |
+| Runtime (102) | 103:80 | pull 镜像（Harbor, HTTP） |
 | Workspace (87) | 91:8080 | 节点心跳 |
 | Workspace (87) | 103:2222 | 推送代码 |
 
@@ -289,7 +289,7 @@ flowchart LR
 | 7005 | runtime-agent | 只允许 101 |
 | 2222 | Git SSH | 只允许 87/101 |
 | 27017 | MongoDB | 只允许 102 |
-| 443 | Harbor Registry（103） | 内网（101 push / 102 pull） |
+| 80 | Harbor Registry（103, HTTP） | 内网（101 push / 102 pull） |
 
 ---
 

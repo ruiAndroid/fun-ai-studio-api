@@ -7,9 +7,9 @@
 1) **避免每次 push/pull 都手动输入密码**：机器侧一次 `login`，凭证落盘复用
 2) **避免镜像版本无限增长**：采用保留策略 **每 app 保留最近 N=3 个版本**，其余自动清理
 
-适用你们现网（Harbor 在 103 与 Gitea 同机）：
+适用你们现网（Harbor 在 103 与 Gitea 同机，仅内网 HTTP）：
 
-- Harbor 地址（推荐内网 canonical）：`172.21.138.103`（走 `443`；起步也可 `80`）
+- Harbor 地址（内网 canonical）：`172.21.138.103`（只开 `80`，HTTP）
 - 用户应用制品 project：`funaistudio`
 
 > 备注：文档不存放任何密码/密钥，只说明流程与最小权限设计。
@@ -57,8 +57,8 @@ Runtime(102)（你们用 podman）：
 podman login 172.21.138.103 -u <runtimeHarborUserOrRobot>
 ```
 
-> 如果 Harbor 是 **HTTPS 自签证书**：请把 CA 加到 101/102 的信任链；否则会出现 `x509: certificate signed by unknown authority`。
-> 如果 Harbor 起步用 **HTTP(80)**：podman/docker 默认按 HTTPS 访问，需要按文档配置 insecure registry（你们 `workspace-node.md` 已有排障说明）。
+> 重要：Harbor 只开 **HTTP(80)** 时，docker/podman 默认会按 HTTPS 访问，需要在 101/102 配置 **insecure registry**，否则会出现 `dial tcp ...:443: connect: connection refused`。
+> 参考：`doc/domains/server/workspace-node.md` 的 “Harbor（HTTP）拉镜像必配 insecure registry”。
 
 ---
 
