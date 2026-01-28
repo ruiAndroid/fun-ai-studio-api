@@ -35,8 +35,10 @@
 
 第一阶段推荐：**一个 mongod，多库隔离**：
 
-- 每个 app 一个 db：`db_{appId}`
-  - 例：`db_20000254`
+- 每个 用户-应用 一个 db（推荐）：`db_u{userId}_a{appId}`
+  - 例：`db_u10001_a20000254`
+
+> 备注：旧口径 `db_{appId}` 仍可用（通过 runtime-agent 的 `RUNTIME_MONGO_DB_TEMPLATE` 兼容），但为了避免不同用户 appId 冲突/以及便于运维定位，推荐按用户-应用维度。
 
 优点：
 
@@ -53,11 +55,15 @@
 
 运行态建议统一注入：
 
-- `MONGODB_URI=mongodb://<mongoHost>:27017/db_{appId}`
+- `MONGODB_URI=mongodb://<mongoHost>:27017/db_u{userId}_a{appId}`
 
 如果启用账号密码：
 
-- `MONGODB_URI=mongodb://<user>:<pass>@<mongoHost>:27017/db_{appId}?authSource=admin`
+- `MONGODB_URI=mongodb://<user>:<pass>@<mongoHost>:27017/db_u{userId}_a{appId}?authSource=admin`
+
+平台注入兼容变量：
+- `MONGO_URL`：同 `MONGODB_URI`（兼容常见框架/脚手架）
+- `FUNAI_MONGO_DB_NAME`：dbName（例如 `db_u10001_a20000254`）
 
 > 备注：你们 Workspace 的开发态 Mongo 可以继续存在，但它仅用于开发预览；线上运行态必须用独立 Mongo。
 

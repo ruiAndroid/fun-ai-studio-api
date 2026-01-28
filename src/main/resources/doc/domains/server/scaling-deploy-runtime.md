@@ -64,6 +64,7 @@
 - 出站：
   - 到 Deploy：`7002`（心跳注册）
   - 到镜像仓库（后续）：`443`
+  - 到运行态 Mongo（89）：`27017`（用户应用容器读写数据）
 
 ### 2.4 Git 服务器（Gitea）
 
@@ -315,6 +316,20 @@ deploy.runtime-node-registry.disk-free-drain-pct=25.0
   - `DEPLOY_BASE_URL=http://172.21.138.100:7002`
   - `DEPLOY_NODE_TOKEN=<与 Deploy 一致>`
   - `RUNTIME_CLEANUP_IMAGES_ON_STOP=true`（磁盘稳定优先）
+  - **运行态 Mongo（89）注入配置（新增）**：
+    - `RUNTIME_MONGO_HOST=<mongo-89 内网IP>`
+    - `RUNTIME_MONGO_PORT=27017`
+    - `RUNTIME_MONGO_USERNAME=<app 用户名>`
+    - `RUNTIME_MONGO_PASSWORD=<app 密码>`
+    - `RUNTIME_MONGO_AUTH_SOURCE=admin`
+    - `RUNTIME_MONGO_DB_TEMPLATE=db_u{userId}_a{appId}`（默认“用户-应用维度”多库隔离）
+    - `RUNTIME_MONGO_PRECREATE=true`（可选：部署时 best-effort 预创建 db，失败不影响部署）
+
+> 说明：runtime-agent 在收到 `/agent/apps/deploy` 时会执行 `podman run ...` 并自动注入：
+> - `MONGODB_URI`（以及兼容的 `MONGO_URL`）
+> - `FUNAI_MONGO_DB_NAME`
+>
+> 用户应用容器启动后由应用自己读取环境变量并连接 Mongo（不是 runtime-agent 代连）。
 
 #### Step 2：安全组放行
 
@@ -324,6 +339,7 @@ deploy.runtime-node-registry.disk-free-drain-pct=25.0
 - **104/105 出站**：
   - 到 Deploy（100）：`7002`（心跳注册）
   - 到镜像仓库（103）：`443`
+  - 到 Mongo（89）：`27017`
 
 #### Step 3：启动 runtime-agent 并验证心跳
 
