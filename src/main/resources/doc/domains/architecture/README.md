@@ -75,7 +75,7 @@ flowchart TB
             AppCtn["应用容器"]
         end
 
-        subgraph SMongo["Mongo (独立)"]
+        subgraph S89["Mongo (89)"]
             MongoDB[("MongoDB 27017")]
         end
     end
@@ -87,6 +87,7 @@ flowchart TB
     R4 --> AgentService
 
     API --> MySQL
+    API -->|转发| AgentService
     API --> WsNode
     API --> Deploy
 
@@ -212,7 +213,7 @@ sequenceDiagram
 | **Runner** | 101 | runner 进程 | 构建镜像、执行部署 | ✅ 可水平扩容 |
 | **Runtime** | 102 | runtime-agent + Traefik + Docker | 承载用户线上应用 | ✅ 可水平扩容 |
 | **Git** | 103 | Gitea | 源码版本管理 | - |
-| **Mongo** | 待定 | MongoDB | 线上应用数据库 | - |
+| **Mongo** | 89 | MongoDB | 线上应用数据库（独立服务器） | - |
 
 > 🔄 **可扩容节点**：Workspace、Runner、Runtime 都支持水平扩容，通过粘性落点（userId/appId → nodeId）保证请求路由到正确节点。
 
@@ -231,7 +232,7 @@ flowchart LR
         S100["100 Deploy"]
         S101["101+ Runner 🔄"]
         S103["103 Git"]
-        SMongo["Mongo"]
+        S89["89 Mongo"]
     end
 
     Harbor["Harbor 镜像仓库（103:80 HTTP）"]
@@ -244,7 +245,7 @@ flowchart LR
     S101 -->|push 镜像| Harbor
     S101 --> P102
     P102 -->|pull 镜像| Harbor
-    P102 --> SMongo
+    P102 --> S89
     S87 --> S103
 ```
 
@@ -284,7 +285,7 @@ flowchart LR
 | Runner (101) | 103:2222 | 拉取代码 |
 | Runner (101) | 103:80 | push 镜像（Harbor, HTTP） |
 | Runtime (102) | 100:7002 | 节点心跳 |
-| Runtime (102) | Mongo:27017 | 应用数据 |
+| Runtime (102) | 89:27017 (Mongo) | 应用数据 |
 | Runtime (102) | 103:80 | pull 镜像（Harbor, HTTP） |
 | Workspace (87) | 91:8080 | 节点心跳 |
 | Workspace (87) | 103:2222 | 推送代码 |
@@ -300,7 +301,7 @@ flowchart LR
 | 7002 | Deploy | 只允许 91/101/102 |
 | 7005 | runtime-agent | 只允许 101 |
 | 2222 | Git SSH | 只允许 87/101 |
-| 27017 | MongoDB | 只允许 102 |
+| 27017 | MongoDB (89) | 只允许 102+ (Runtime节点) |
 | 80 | Harbor Registry（103, HTTP） | 内网（101 push / 102 pull） |
 
 ---
