@@ -97,6 +97,35 @@ public class GiteaRepoAutomationService {
         // 初始化模板文件（避免 Runner build 因缺 Dockerfile 失败）
         try {
             String branch = props.getDefaultBranch();
+            String gitignore = """
+                    # Logs
+                    logs
+                    *.log
+                    npm-debug.log*
+                    yarn-debug.log*
+                    yarn-error.log*
+                    pnpm-debug.log*
+                    lerna-debug.log*
+                    
+                    node_modules
+                    dist
+                    dist-ssr
+                    *.local
+                    .npm-cache/
+                    # Editor directories and files
+                    .vscode/*
+                    !.vscode/extensions.json
+                    .idea
+                    .DS_Store
+                    *.suo
+                    *.ntvs*
+                    *.njsproj
+                    *.sln
+                    *.sw?
+                    
+                    # Database
+                    server/checkin.db
+                    """;
             // 关键：Runner(101) 可能无法访问 DockerHub，因此 Dockerfile 的基础镜像建议使用 ACR 镜像
             // 约定：将 node:20-alpine 推送到 ACR：<acrRegistry>/<acrNamespace>/base-node:20-alpine
             String baseImage = "base-node:latest";
@@ -127,10 +156,12 @@ public class GiteaRepoAutomationService {
             String dockerignore = """
                     node_modules
                     dist
+                    .npm-cache/
                     .git
                     .idea
                     *.log
                     """;
+            client.ensureFile(owner, repo, branch, ".gitignore", gitignore, "init .gitignore");
             client.ensureFile(owner, repo, branch, "Dockerfile", dockerfile, "init Dockerfile");
             client.ensureFile(owner, repo, branch, ".dockerignore", dockerignore, "init .dockerignore");
         } catch (Exception e) {
