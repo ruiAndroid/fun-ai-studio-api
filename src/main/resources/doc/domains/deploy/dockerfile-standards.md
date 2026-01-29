@@ -89,6 +89,21 @@ CMD ["npm","start"]
 
 应用侧要求：`npm start` 启动后监听 `process.env.PORT || 8080`。
 
+---
+
+## 补充约定：lockfile（package-lock.json）与构建环境的 registry 可达性
+
+你们的 Runner（101）在构建镜像时执行 `npm ci`，npm 会优先使用 lockfile 中的 `resolved` 下载依赖 tarball。
+
+因此请务必确保：
+
+- **仓库提交的 `package-lock.json` 不要出现 `http://verdaccio:4873/...` 这类“仅容器网络可达”的地址**
+- 推荐统一使用外网镜像源生成 lockfile：
+  - `https://registry.npmmirror.com/`（推荐）
+  - 或 `https://registry.npmjs.org/`
+
+否则会出现典型故障：Runner 构建阶段 `npm ci` 失败（常伴随 `Exit handler never called!`）。
+
 ### 3.3 .dockerignore（强烈建议）
 
 ```text

@@ -96,6 +96,23 @@ docker exec ws-u-10000021 bash -lc "curl -I http://verdaccio:4873 || wget -S --s
 
 Verdaccio 上游（uplink）建议指向 `https://registry.npmmirror.com`，由 Verdaccio 负责缓存。
 
+---
+
+## 重要提醒：不要把仓库 lockfile 的 `resolved` 写成 `http://verdaccio:4873/...`
+
+你们当前体系里，**Runner（101）构建镜像**通常不在 Workspace 的 `funai-net` 容器网络内，因此：
+
+- `verdaccio` 这个 hostname 在 Runner 的构建容器里大概率 **无法解析**（会报 `ENOTFOUND`）
+- 即使 `npm config set registry http://verdaccio:4873` 在 workspace 容器内可用，也不代表 Runner 构建时可用
+
+因此：
+
+- **建议新生成/新提交的 `package-lock.json` / `npm-shrinkwrap.json` 的 `resolved` 统一使用外网镜像源**
+  - 推荐：`https://registry.npmmirror.com/`
+  - 或：`https://registry.npmjs.org/`
+
+否则会出现典型故障：Runner 构建阶段 `npm ci` 直接失败，并伴随 `Exit handler never called!`（底层是 resolved 指向的 registry 不可达）。
+
 ### Verdaccio 基本原理（proxy + cache）
 
 - **角色**：Verdaccio 是一个 npm registry 代理（proxy registry）。
@@ -299,7 +316,18 @@ docker run -d --name verdaccio --restart=always \
 
 现象：`npm ci` 只看到 audit 请求，Verdaccio 日志没有 `.tgz` GET，请求不进入 `storage`。
 
-解决：把 `package-lock.json` 里的 `resolved` 批量改成走 Verdaccio，然后 `npm ci`：
+解决思路（两种路线）：
+
+#### 路线 1（推荐：兼容 Runner 构建）：保持 lockfile 使用外网镜像源
+
+- 让 `resolved` 保持为 `https://registry.npmmirror.com/`（或 npmjs）
+- workspace 侧仍可通过 Verdaccio 做“开发期加速”，但**不要把 lockfile 提交成 `http://verdaccio:4873`**
+
+#### 路线 2（仅用于 workspace 容器网络内预热，不要提交到仓库）：把 resolved 临时替换成 Verdaccio
+
+> 适用场景：你只想在 workspace 节点上做一次“缓存预热”，不打算把这个 lockfile 推到 Git 仓库。
+
+把 `package-lock.json` 里的 `resolved` 批量改成走 Verdaccio，然后在容器网络内执行 `npm ci`：
 
 ```bash
 sed -i 's#https://registry.npmmirror.com/#http://verdaccio:4873/#g' /tmp/npm-warmup/package-lock.json

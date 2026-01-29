@@ -143,6 +143,7 @@ public class GiteaRepoAutomationService {
                     WORKDIR /app
                     
                     COPY package*.json ./
+                    RUN sed -i 's#http://verdaccio:4873/#https://registry.npmmirror.com/#g' package-lock.json
                     RUN npm ci
                     
                     COPY . .
