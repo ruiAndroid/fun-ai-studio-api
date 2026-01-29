@@ -143,7 +143,8 @@ public class GiteaRepoAutomationService {
                     WORKDIR /app
                     
                     COPY package*.json ./
-                    RUN sed -i 's#http://verdaccio:4873/#https://registry.npmmirror.com/#g' package-lock.json
+                    # 如果存在就替换；不存在也不报错（但后面的 npm ci 还是需要 lockfile）
+                    RUN test -f package-lock.json && sed -i 's#http://verdaccio:4873/#https://registry.npmmirror.com/#g' package-lock.json || true
                     RUN npm ci
                     
                     COPY . .
