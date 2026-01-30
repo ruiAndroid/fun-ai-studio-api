@@ -64,9 +64,10 @@ flowchart TB
             Runner["Runner"]
         end
 
-    subgraph S103["Git + Harbor (103, HTTP only)"]
+    subgraph S103["Git + Harbor + Verdaccio (103, HTTP only)"]
             Gitea["Gitea 2222"]
             Harbor[("Harbor Registry 80 (HTTP)")]
+            Verdaccio["Verdaccio 4873 (npm cache)"]
         end
 
         subgraph S102["Runtime (102, 102-2, ...) 🔄可扩容"]
@@ -100,6 +101,7 @@ flowchart TB
     AppCtn --> MongoDB
 
     WsCtn --> Gitea
+    WsCtn -->|npm install| Verdaccio
 ```
 
 **一句话理解**：用户通过四条路径访问系统 —— 业务 API 走 91、开发预览走 87、线上应用走 102、Agent 服务走 88（统一由 91 入口转发）。
@@ -208,11 +210,11 @@ sequenceDiagram
 |------|----|----------|----------|------|
 | **API 入口** | 91 | Nginx + API + MySQL + Prometheus | 用户唯一入口，协调所有内部服务，统一转发 | - |
 | **Agent Node** | 88 | Agent 服务（Node.js） | 前端 Agent 相关服务，由 91 转发 | - |
-| **Workspace** | 87 | workspace-node + Nginx + Docker + Verdaccio | 承载用户开发容器 | ✅ 可水平扩容 |
+| **Workspace** | 87 | workspace-node + Nginx + Docker | 承载用户开发容器 | ✅ 可水平扩容 |
 | **Deploy** | 100 | deploy 服务 | 发布任务调度 | - |
 | **Runner** | 101 | runner 进程 | 构建镜像、执行部署 | ✅ 可水平扩容 |
+| **Git + Harbor + Verdaccio** | 103 | Gitea + Harbor + Verdaccio | 源码管理 + 镜像仓库 + npm缓存 | - |
 | **Runtime** | 102 | runtime-agent + Traefik + Docker | 承载用户线上应用 | ✅ 可水平扩容 |
-| **Git** | 103 | Gitea | 源码版本管理 | - |
 | **Mongo** | 89 | MongoDB | 线上应用数据库（独立服务器） | - |
 
 > 🔄 **可扩容节点**：Workspace、Runner、Runtime 都支持水平扩容，通过粘性落点（userId/appId → nodeId）保证请求路由到正确节点。
@@ -236,6 +238,7 @@ flowchart LR
     end
 
     Harbor["Harbor 镜像仓库（103:80 HTTP）"]
+    Verdaccio["Verdaccio npm缓存（103:4873）"]
 
     P91 --> S88
     P91 --> S87
@@ -247,6 +250,7 @@ flowchart LR
     P102 -->|pull 镜像| Harbor
     P102 --> S89
     S87 --> S103
+    S87 -->|npm install| Verdaccio
 ```
 
 **各机器职责**：
@@ -289,6 +293,7 @@ flowchart LR
 | Runtime (102) | 103:80 | pull 镜像（Harbor, HTTP） |
 | Workspace (87) | 91:8080 | 节点心跳 |
 | Workspace (87) | 103:2222 | 推送代码 |
+| Workspace (87) | 103:4873 | npm install（Verdaccio） |
 
 ### 端口速查
 
@@ -301,6 +306,7 @@ flowchart LR
 | 7002 | Deploy | 只允许 91/101/102 |
 | 7005 | runtime-agent | 只允许 101 |
 | 2222 | Git SSH | 只允许 87/101 |
+| 4873 | Verdaccio (npm cache) | 只允许 87 (Workspace) |
 | 27017 | MongoDB (89) | 只允许 102+ (Runtime节点) |
 | 80 | Harbor Registry（103, HTTP） | 内网（101 push / 102 pull） |
 
