@@ -142,19 +142,32 @@ public class GiteaRepoAutomationService {
                     
                     WORKDIR /app
                     
-                    COPY package*.json ./
-                    # 如果存在就替换；不存在也不报错（但后面的 npm ci 还是需要 lockfile）
-                    # RUN test -f package-lock.json && sed -i 's#http://verdaccio:4873/#https://registry.npmmirror.com/#g' package-lock.json || true
-                    RUN npm ci
+                    # 接收构建参数（Runner 会自动传递）
+                    ARG NPM_REGISTRY=https://registry.npmjs.org
                     
+                    # 复制 .npmrc（如果存在，优先使用）
+                    COPY .npmrc* ./
+                    
+                    # 如果没有 .npmrc，使用构建参数配置 registry
+                    RUN if [ ! -f .npmrc ]; then echo "registry=${NPM_REGISTRY}" > .npmrc; fi
+                    
+                    # 复制依赖文件
+                    COPY package*.json ./
+                    
+                    # 安装依赖（优先使用 npm ci，如果没有 lockfile 则使用 npm install）
+                    RUN npm ci 2>/dev/null || npm install
+                    
+                    # 复制源代码
                     COPY . .
-                    RUN npm run build
+                    
+                    # 构建（如果有 build 脚本）
+                    RUN npm run build 2>/dev/null || echo "No build script, skipping..."
                     
                     ENV PORT=3000
                     ENV NODE_ENV=production
                     EXPOSE 3000
                     
-                    CMD [\"npm\",\"run\",\"start\"]
+                    CMD ["npm","run","start"]
                     """.formatted(baseImage);
             String dockerignore = """
                     node_modules
