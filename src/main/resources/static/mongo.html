@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Fun AI Studio - Mongo 数据库管理入口</title>
+  <style>
+    :root{
+      color-scheme:light dark;
+      --bg:#0b1220; --bd:rgba(255,255,255,.12); --bd2:rgba(255,255,255,.08);
+      --txt:#e8eefc; --muted:rgba(232,238,252,.72);
+      --pri:#60a5fa; --warn:#ffd37a;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;padding:18px;background:var(--bg);color:var(--txt);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial}
+    .top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .title{font-size:18px;font-weight:900}
+    .sub{font-size:12px;color:var(--muted);max-width:980px;line-height:1.7}
+    .grid{display:grid;grid-template-columns: 1fr 1fr;gap:12px;margin-top:14px}
+    @media (max-width: 900px){ .grid{grid-template-columns:1fr} }
+    .card{
+      background:rgba(255,255,255,.06);
+      border:1px solid var(--bd);
+      border-radius:16px;
+      padding:16px;
+      box-shadow:0 20px 80px rgba(0,0,0,.35);
+    }
+    .card h3{margin:0 0 8px 0;font-size:15px}
+    .card p{margin:0 0 12px 0;color:var(--muted);font-size:12px;line-height:1.7}
+    .btn{
+      display:inline-flex;align-items:center;justify-content:center;
+      padding:10px 14px;border-radius:12px;
+      border:1px solid rgba(96,165,250,.35);
+      background:rgba(96,165,250,.18);
+      color:var(--txt);text-decoration:none;
+      font-size:13px;font-weight:700;
+      min-width:200px;
+    }
+    .btn:hover{background:rgba(96,165,250,.26)}
+    .badge{
+      display:inline-block;
+      padding:2px 8px;border-radius:999px;
+      border:1px solid var(--bd2);
+      background:rgba(255,255,255,.06);
+      color:var(--muted);
+      font-size:12px;
+      margin-left:8px;
+    }
+    .warn{color:var(--warn)}
+    code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:rgba(255,255,255,.08);padding:2px 6px;border-radius:8px}
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <div class="title">Mongo 数据库管理入口</div>
+      <div class="sub">
+        说明：提供开发环境（Workspace）和部署环境（Deploy）的 MongoDB 数据库管理功能。<br/>
+        开发环境需要 JWT 鉴权（<code>userId + appId</code>），部署环境需要 JWT 鉴权（<code>appId</code>）。<br/>
+        建议用 URL hash 传 token：<code>#token=Bearer%20...</code>（不会出现在 access log）。
+      </div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>开发环境数据库管理 <span class="badge">可用</span></h3>
+      <p>管理用户开发容器的 MongoDB 数据库（Workspace Mongo）。支持查询、插入、更新、删除等操作。</p>
+      <a class="btn" id="goWorkspace" href="/workspace-mongo.html">进入开发环境数据库</a>
+    </div>
+
+    <div class="card">
+      <h3>部署环境数据库管理 <span class="badge">可用</span></h3>
+      <p>管理应用部署运行时的 MongoDB 数据库（Deploy Mongo）。支持查询、插入、更新、删除等操作。</p>
+      <a class="btn" id="goDeploy" href="/deploy-mongo.html">进入部署环境数据库</a>
+    </div>
+  </div>
+
+  <script>
+    // 透传 #token 到子页面（方便一次输入 token）
+    try {
+      const h = location.hash || "";
+      if (h && h.includes("token=")) {
+        document.getElementById("goWorkspace").href = "/workspace-mongo.html" + h;
+        document.getElementById("goDeploy").href = "/deploy-mongo.html" + h;
+      }
+    } catch (e) {}
+  </script>
+</body>
+</html>

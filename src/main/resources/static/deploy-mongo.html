@@ -1,0 +1,1117 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Fun Ai Studio Deploy Mongo Explorer</title>
+  <style>
+    :root{
+      color-scheme:light dark;
+      --bg:#0b1220;
+      --card:#121826;
+      --card2:#0f1522;
+      --bd:rgba(255,255,255,.12);
+      --bd2:rgba(255,255,255,.08);
+      --txt:#e8eefc;
+      --muted:rgba(232,238,252,.78);
+      --muted2:rgba(232,238,252,.62);
+      --pri:#60a5fa;
+      --pri2:#1d4ed8;
+      --danger:#ff8a8a;
+      --ok:#9bf6b0;
+      --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    }
+    *{box-sizing:border-box}
+    body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial; margin:0; padding:16px; background:var(--bg); color:var(--txt)}
+    a{color:var(--pri)}
+    code{background:rgba(255,255,255,.08); padding:2px 6px; border-radius:8px}
+
+    .card{background:rgba(255,255,255,.06); border:1px solid var(--bd); border-radius:14px; padding:12px}
+    .card h3{margin:0 0 10px 0; font-size:14px; letter-spacing:.2px}
+
+    label{display:block; font-size:12px; color:var(--muted); margin:10px 0 6px}
+    input,textarea,select,button{
+      width:100%;
+      border-radius:10px;
+      border:1px solid var(--bd2);
+      background:rgba(0,0,0,.20);
+      color:var(--txt);
+      padding:10px 10px;
+      font-size:13px;
+      outline:none;
+    }
+    textarea{min-height:98px; font-family:var(--mono)}
+    input:focus,textarea:focus,select:focus{border-color:rgba(96,165,250,.65); box-shadow:0 0 0 3px rgba(96,165,250,.15)}
+
+    .btn{cursor:pointer; background:rgba(96,165,250,.18); border-color:rgba(96,165,250,.35)}
+    .btn:hover{background:rgba(96,165,250,.26)}
+    .btn.secondary{background:rgba(255,255,255,.06); border-color:var(--bd2)}
+    .btn.secondary:hover{background:rgba(255,255,255,.10)}
+    .btn:disabled{opacity:.55; cursor:not-allowed}
+    .btn-row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+    .btn-row > button{flex:1; min-width:120px}
+
+    .topbar{
+      display:flex; align-items:center; justify-content:space-between; gap:12px;
+      margin-bottom:12px;
+    }
+    .brand{display:flex; align-items:center; gap:10px; min-width:0}
+    .title{font-size:16px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+    .pill{font-size:12px; padding:2px 8px; border-radius:999px; border:1px solid var(--bd2); background:rgba(255,255,255,.06); color:var(--muted)}
+    .statusline{font-size:12px; color:var(--muted2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:680px}
+
+    .grid{display:grid; grid-template-columns: 360px 1fr; gap:12px; align-items:start}
+    @media (max-width: 1040px){ .grid{grid-template-columns:1fr} .statusline{max-width:unset} }
+
+    .cols{max-height:420px; overflow:auto}
+    .col-item{
+      padding:9px 10px; border-radius:10px;
+      border:1px solid var(--bd2);
+      background:rgba(0,0,0,.20);
+      margin-bottom:8px; cursor:pointer;
+      color:var(--muted);
+    }
+    .col-item:hover{border-color:rgba(96,165,250,.35); color:var(--txt)}
+    .col-item.active{border-color:rgba(96,165,250,.75); color:var(--txt)}
+
+    pre{
+      white-space:pre-wrap; word-break:break-word;
+      background:rgba(0,0,0,.24);
+      border:1px solid var(--bd2);
+      border-radius:14px;
+      padding:12px;
+      overflow:auto;
+      max-height:520px;
+      font-family:var(--mono);
+      line-height:1.55;
+    }
+    .small{font-size:12px; color:var(--muted2)}
+    .err{color:var(--danger)}
+    .ok{color:var(--ok)}
+    .kv{display:grid; grid-template-columns: 1fr 1fr; gap:10px}
+
+    .modal-backdrop{
+      display:none;
+      position:fixed; inset:0;
+      background:rgba(0,0,0,.55);
+      z-index:999;
+      padding:24px;
+      overflow:auto;
+    }
+    .modal{
+      width:min(860px,100%);
+      margin:6vh auto 0;
+      background:rgba(18,24,38,.96);
+      border:1px solid var(--bd);
+      border-radius:16px;
+      padding:14px;
+      box-shadow:0 20px 80px rgba(0,0,0,.55);
+      max-height:86vh;
+      overflow:auto;
+    }
+    .modal h3{margin:0 0 8px 0}
+    .modal .content{color:var(--muted); line-height:1.75}
+    .modal .content ul{margin:8px 0 0 18px}
+    .modal .content li{margin:4px 0}
+    .modal .close-row{display:flex; justify-content:flex-end; margin-top:10px}
+
+    /* edit modal */
+    .field-grid{display:flex; flex-direction:column; gap:8px; margin-top:10px; max-height:56vh; overflow:auto; padding-right:6px}
+    .field-row{display:grid; grid-template-columns: 220px 1fr; gap:10px; align-items:start}
+    .field-row .k input{width:100%; opacity:.95}
+    .field-row .v input,.field-row .v textarea{width:100%}
+    .field-row .v textarea{min-height:64px; font-family:var(--mono)}
+    .chip{display:inline-flex; align-items:center; gap:6px; font-size:12px; padding:2px 8px; border-radius:999px; border:1px solid var(--bd2); background:rgba(255,255,255,.06); color:var(--muted)}
+    .chip code{background:transparent; padding:0}
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">
+      <div class="title">Fun Ai Studio Deploy Mongo Explorer</div>
+      <div class="pill">部署环境</div>
+    </div>
+    <div class="btn-row" style="justify-content:flex-end">
+      <button id="btnHelp" class="btn secondary" style="max-width:140px">使用说明</button>
+    </div>
+  </div>
+  <div id="status" class="statusline"></div>
+
+  <div class="grid" style="margin-top:12px">
+    <div>
+      <div class="card">
+        <h3>连接参数（部署环境）</h3>
+        <div class="kv">
+          <div>
+            <label>userId</label>
+            <input id="userId" placeholder="例如 1001" />
+          </div>
+          <div>
+            <label>appId</label>
+            <select id="appId"></select>
+          </div>
+        </div>
+        <label>Authorization</label>
+        <input id="token" placeholder="Bearer eyJ..." />
+        <div class="btn-row" style="margin-top:10px">
+          <button id="btnAuto" class="btn secondary">自动填充（当前登录）</button>
+          <button id="btnLoadCols" class="btn">加载集合</button>
+          <button id="btnClear" class="btn secondary">清空</button>
+        </div>
+        <div class="small" style="margin-top:10px">
+          小贴士：token 推荐放在 URL hash（不进 access log），例如 <code>#token=Bearer%20eyJ...</code>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <h3>Collections</h3>
+        <div id="cols" class="cols small">请先“加载集合”</div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <h3 style="margin:0 0 10px 0">写入</h3>
+        <button id="btnNewCollection" class="btn" style="width:100%">新建集合</button>
+        <div class="small" style="margin-top:8px">创建新集合（可填写字段定义；后端会用 Mongo validator 生成“表结构”约束）。</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px">
+        <h3 style="margin:0">数据列表</h3>
+        <div style="display:flex; gap:10px; align-items:center">
+          <div style="display:flex; gap:6px; align-items:center; font-size:12px">
+            <label style="margin:0; color:var(--muted2)">每页</label>
+            <input id="limit" value="50" style="width:60px; padding:6px 8px; font-size:12px" />
+          </div>
+          <div style="display:flex; gap:6px; align-items:center; font-size:12px">
+            <label style="margin:0; color:var(--muted2)">跳过</label>
+            <input id="skip" value="0" style="width:60px; padding:6px 8px; font-size:12px" />
+          </div>
+          <button id="btnAddDoc" class="btn secondary" style="width:auto; padding:6px 14px; font-size:12px">插入</button>
+          <button id="btnFind" class="btn" style="width:auto; padding:6px 14px; font-size:12px">刷新</button>
+        </div>
+      </div>
+      <div class="small" style="margin-bottom:8px; color:var(--muted2)">支持行级操作：编辑/删除（按 <code>_id</code>）</div>
+      <div id="tableBox" class="small" style="overflow:auto; border:1px solid var(--bd2); border-radius:14px; background:rgba(0,0,0,.16); max-height:calc(100vh - 280px)"></div>
+      <!-- 隐藏的查询参数 -->
+      <input type="hidden" id="collection" />
+      <input type="hidden" id="filter" value="{}" />
+      <input type="hidden" id="sort" value="" />
+      <input type="hidden" id="projection" value="" />
+      <pre id="out" style="display:none">暂无</pre>
+    </div>
+  </div>
+
+  <div id="helpBackdrop" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3>使用说明</h3>
+      <div class="content small">
+        <div>本页面提供部署环境 Mongo 基础管理（查询 + 写入），接口仍需要 JWT。</div>
+        <ul>
+          <li>推荐把 token 放在 URL hash：<code>#token=Bearer%20&lt;JWT&gt;</code>（不会出现在 queryString / access log）</li>
+          <li>也支持注入 <code>?appId=...</code>、<code>?appId=...</code></li>
+          <li>点击「自动填充」会尝试从同域登录态读取 token，并拉取 app 列表</li>
+          <li>查询结果过大时，请降低 <code>limit</code> 或使用 <code>projection</code></li>
+          <li>行级编辑/删除依赖文档包含 <code>_id</code></li>
+          <li>高级“语句执行”是安全 JSON 模式（op + 字段），不支持任意 JS</li>
+        </ul>
+      </div>
+      <div class="close-row">
+        <button id="btnHelpClose" class="btn secondary" style="max-width:140px">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 编辑弹窗（字段级编辑） -->
+  <div id="editBackdrop" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3>编辑文档</h3>
+      <div class="small" style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:8px">
+        <span class="chip">collection: <code id="editCol"></code></span>
+        <span class="chip">_id: <code id="editId"></code></span>
+      </div>
+      <div class="small" style="color:var(--muted2)">
+        提示：值会做智能解析（<code>null/true/false/数字</code>、以及以 <code>{</code>/<code>[</code> 开头的 JSON）。字段名不可修改。
+      </div>
+      <div id="editStatus" class="small" style="margin-top:8px"></div>
+
+      <div id="editFields" class="field-grid"></div>
+
+      <div class="btn-row" style="margin-top:12px">
+        <button id="btnEditSave" class="btn">保存</button>
+        <button id="btnEditCancel" class="btn secondary">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新增记录弹窗（字段级填写） -->
+  <div id="addBackdrop" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3>新增记录</h3>
+      <div class="small" style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:8px">
+        <span class="chip">collection: <code id="addCol"></code></span>
+      </div>
+      <div class="small" style="color:var(--muted2)">
+        提示：字段来自当前列表的列（先点左侧集合加载一次数据）。值会做智能解析（<code>null/true/false/数字</code>、以及以 <code>{</code>/<code>[</code> 开头的 JSON）。留空则不写入该字段。
+      </div>
+      <div id="addStatus" class="small" style="margin-top:8px"></div>
+
+      <div id="addFields" class="field-grid"></div>
+
+      <div class="btn-row" style="margin-top:12px">
+        <button id="btnAddSave" class="btn">保存</button>
+        <button id="btnAddCancel" class="btn secondary">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新建集合弹窗 -->
+  <div id="createColBackdrop" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3>新建集合</h3>
+      <label>集合名称</label>
+      <input id="createColName" placeholder="例如 users" />
+
+      <label style="margin-top:12px">
+        <input id="createColStrict" type="checkbox" style="width:auto; display:inline-block; margin-right:6px" />
+        严格校验（validationAction=error）
+      </label>
+      <div id="createColStatus" class="small" style="margin-top:8px"></div>
+
+      <div style="margin-top:10px; display:flex; align-items:center; justify-content:space-between; gap:10px">
+        <div class="small" style="color:var(--muted2)">字段定义（可选）：不填则仅创建空集合。</div>
+        <button id="btnCreateColAddField" class="btn secondary" style="width:auto; padding:6px 12px; font-size:12px">+ 添加字段</button>
+      </div>
+      <div id="createColFields" class="field-grid"></div>
+
+      <div class="btn-row" style="margin-top:12px">
+        <button id="btnCreateColSave" class="btn">创建</button>
+        <button id="btnCreateColCancel" class="btn secondary">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const state = { activeCol: null, lastQueryData: null, editCtx: null, lastFields: [], createColCtx: null };
+
+    function parseParamsFromUrl() {
+      const q = new URLSearchParams(location.search || "");
+      const h = new URLSearchParams((location.hash || "").replace(/^#/, ""));
+      // token 建议放 hash（不会上送服务器）
+      return {
+        userId: q.get("userId") || h.get("userId"),
+        appId: q.get("appId") || h.get("appId"),
+        token: h.get("token") || q.get("token") || h.get("auth") || q.get("auth"),
+      };
+    }
+
+    function setStatus(text, kind) {
+      const el = $("status");
+      el.textContent = text || "";
+      el.className = "statusline " + (kind === "err" ? "err" : kind === "ok" ? "ok" : "");
+    }
+
+    function setEditStatus(text, kind) {
+      const el = $("editStatus");
+      if (!el) return;
+      el.textContent = text || "";
+      el.className = "small " + (kind === "err" ? "err" : kind === "ok" ? "ok" : "");
+    }
+
+    function setAddStatus(text, kind) {
+      const el = $("addStatus");
+      if (!el) return;
+      el.textContent = text || "";
+      el.className = "small " + (kind === "err" ? "err" : kind === "ok" ? "ok" : "");
+    }
+
+    function setCreateColStatus(text, kind) {
+      const el = $("createColStatus");
+      if (!el) return;
+      el.textContent = text || "";
+      el.className = "small " + (kind === "err" ? "err" : kind === "ok" ? "ok" : "");
+    }
+
+    function guessTokenFromStorage() {
+      const keys = [
+        "token", "access_token", "accessToken", "jwt", "jwtToken",
+        "Authorization", "auth", "authToken", "funai_token"
+      ];
+      for (const k of keys) {
+        const v1 = (localStorage.getItem(k) || "").trim();
+        if (v1) return v1;
+        const v2 = (sessionStorage.getItem(k) || "").trim();
+        if (v2) return v2;
+      }
+      return "";
+    }
+
+    function authHeaders() {
+      const token = ($("token").value || "").trim();
+      const h = { "Content-Type": "application/json" };
+      if (token) h["Authorization"] = token.startsWith("Bearer ") ? token : ("Bearer " + token);
+      return h;
+    }
+
+    function baseParams() {
+      // userId not needed for deploy
+      const appId = ($("appId").value || "").trim();
+      if (!appId) throw new Error("请先填写 appId");
+      return { appId };
+    }
+
+    async function apiGetRaw(path, params) {
+      const qs = params ? ("?" + new URLSearchParams(params).toString()) : "";
+      const r = await fetch(path + qs, { headers: authHeaders() });
+      return await r.json();
+    }
+
+    async function apiGet(path, params) {
+      const qs = new URLSearchParams(params).toString();
+      const r = await fetch(path + "?" + qs, { headers: authHeaders() });
+      return await r.json();
+    }
+
+    async function apiPost(path, params, body) {
+      const qs = new URLSearchParams(params).toString();
+      const r = await fetch(path + "?" + qs, { method: "POST", headers: authHeaders(), body: JSON.stringify(body || {}) });
+      return await r.json();
+    }
+
+    // 后端需提供：POST /api/fun-ai/deploy/mongo/update-by-id
+
+    function extractId(doc) {
+      if (!doc || typeof doc !== "object") return null;
+      const v = doc._id;
+      if (v == null) return null;
+      if (typeof v === "string" || typeof v === "number") return String(v);
+      if (typeof v === "object" && v.$oid) return String(v.$oid);
+      return String(v);
+    }
+
+    function escHtml(s) {
+      return String(s)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    // ===== Edit modal =====
+    function openEditModal() { $("editBackdrop").style.display = "block"; }
+    function closeEditModal() { $("editBackdrop").style.display = "none"; state.editCtx = null; }
+
+    function valueToText(v) {
+      if (v === null || v === undefined) return "null";
+      if (typeof v === "object") return JSON.stringify(v, null, 2);
+      return String(v);
+    }
+
+    function isMultilineValText(txt) {
+      if (!txt) return false;
+      return txt.includes("\n") || txt.trim().startsWith("{") || txt.trim().startsWith("[") || txt.length > 60;
+    }
+
+    function parseSmartValue(txt) {
+      const t = (txt ?? "").trim();
+      if (t === "") return ""; // 空串
+      if (t === "null") return null;
+      if (t === "true") return true;
+      if (t === "false") return false;
+      // number（避免把 001 误判为数字：仅当标准数字格式）
+      if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
+      if (t.startsWith("{") || t.startsWith("[")) {
+        return JSON.parse(t);
+      }
+      return txt; // 保留原始（含空格）
+    }
+
+    function renderEditFields() {
+      const box = $("editFields");
+      box.innerHTML = "";
+      const rows = (state.editCtx && state.editCtx.rows) || [];
+      if (rows.length === 0) {
+        box.innerHTML = "<div class='small' style='color:var(--muted2)'>（无可编辑字段）</div>";
+        return;
+      }
+      rows.forEach((r, i) => {
+        const row = document.createElement("div");
+        row.className = "field-row";
+        const valTxt = r.valueText ?? "";
+        const useTA = isMultilineValText(valTxt);
+        row.innerHTML = `
+          <div class="k">
+            <label style="margin:0 0 6px">字段</label>
+            <input data-role="k" data-idx="${i}" value="${escHtml(r.key || "")}" placeholder="field_name" disabled />
+          </div>
+          <div class="v">
+            <label style="margin:0 0 6px">值</label>
+            ${useTA
+              ? `<textarea data-role="v" data-idx="${i}" placeholder='例如：123 / true / null / \"文本\" / {\"a\":1}'>${escHtml(valTxt)}</textarea>`
+              : `<input data-role="v" data-idx="${i}" value="${escHtml(valTxt)}" placeholder='例如：123 / true / null / 文本 / {"a":1}' />`
+            }
+          </div>
+        `;
+        box.appendChild(row);
+      });
+    }
+
+    function openEditForDoc(doc, idx) {
+      const col = state.activeCol || ($("collection").value || "").trim();
+      const id = extractId(doc);
+      if (!col) throw new Error("collection 为空");
+      if (!id) throw new Error("该文档缺少 _id，无法编辑");
+
+      const clone = JSON.parse(JSON.stringify(doc));
+      delete clone._id;
+      const rows = Object.keys(clone).sort().map((k) => ({ key: k, valueText: valueToText(clone[k]) }));
+      state.editCtx = { col, id, idx, rows, original: clone };
+      $("editCol").textContent = col;
+      $("editId").textContent = id;
+      setEditStatus("", "");
+      renderEditFields();
+      openEditModal();
+    }
+
+    function renderTable(items) {
+      const box = $("tableBox");
+      if (!items || items.length === 0) {
+        box.innerHTML = "<div style='padding:10px;color:rgba(232,238,252,.62)'>（无数据）</div>";
+        state.lastFields = [];
+        return;
+      }
+      
+      // 推断所有字段
+      const fieldSet = new Set();
+      items.forEach((doc) => {
+        if (doc && typeof doc === "object") {
+          Object.keys(doc).forEach((k) => fieldSet.add(k));
+        }
+      });
+      const fields = Array.from(fieldSet);
+      // _id 放最前面
+      const sortedFields = fields.sort((a, b) => {
+        if (a === "_id") return -1;
+        if (b === "_id") return 1;
+        return a.localeCompare(b);
+      });
+
+      // 保存当前列（供“新增记录”弹窗使用）
+      state.lastFields = sortedFields.filter((f) => f !== "_id");
+
+      // 生成表头
+      const headers = sortedFields.map((f) => {
+        return `<th style="text-align:left;padding:8px;color:rgba(232,238,252,.78);font-size:12px;white-space:nowrap">${escHtml(f)}</th>`;
+      }).join("") + `<th style="text-align:left;padding:8px;color:rgba(232,238,252,.78);font-size:12px;white-space:nowrap">操作</th>`;
+
+      // 生成数据行
+      const rows = items.map((doc, idx) => {
+        const cells = sortedFields.map((f) => {
+          let val = doc[f];
+          let displayVal = "";
+          let titleVal = "";
+          
+          if (val === null || val === undefined) {
+            displayVal = "<span style='color:var(--muted2);font-style:italic'>null</span>";
+            titleVal = "null";
+          } else if (typeof val === "object") {
+            // 对象/数组优化显示
+            if (Array.isArray(val)) {
+              displayVal = `<span style='color:var(--muted2)'>[数组: ${val.length} 项]</span>`;
+              titleVal = JSON.stringify(val);
+            } else if (val.$oid) {
+              // MongoDB ObjectId
+              displayVal = escHtml(val.$oid);
+              titleVal = val.$oid;
+            } else if (val.$date) {
+              // MongoDB Date
+              const dateStr = new Date(val.$date).toLocaleString('zh-CN');
+              displayVal = escHtml(dateStr);
+              titleVal = dateStr;
+            } else {
+              // 普通对象
+              const keys = Object.keys(val);
+              displayVal = `<span style='color:var(--muted2)'>{${keys.length} 个字段}</span>`;
+              titleVal = JSON.stringify(val, null, 2);
+            }
+          } else if (typeof val === "boolean") {
+            displayVal = `<span style='color:${val?'var(--ok)':'var(--danger)'}'>${val}</span>`;
+            titleVal = String(val);
+          } else if (typeof val === "number") {
+            displayVal = `<span style='color:var(--pri)'>${val}</span>`;
+            titleVal = String(val);
+          } else {
+            // 字符串
+            const strVal = String(val);
+            displayVal = escHtml(strVal.length > 50 ? strVal.slice(0, 50) + "..." : strVal);
+            titleVal = strVal;
+          }
+          
+          const isId = (f === "_id");
+          return `<td style="padding:8px;border-top:1px solid rgba(255,255,255,.08);${isId?'font-family:var(--mono);':''}max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:help" title="${escHtml(titleVal)}">${displayVal}</td>`;
+        }).join("");
+        
+        const actions = `<td style="padding:8px;border-top:1px solid rgba(255,255,255,.08);white-space:nowrap">
+          <button class="btn secondary" data-act="edit" data-idx="${idx}" style="width:auto;padding:6px 10px;border-radius:10px;font-size:11px">编辑</button>
+          <button class="btn secondary" data-act="del" data-idx="${idx}" style="width:auto;padding:6px 10px;border-radius:10px;border-color:rgba(255,138,138,.35);font-size:11px">删除</button>
+        </td>`;
+        
+        return `<tr>${cells}${actions}</tr>`;
+      }).join("");
+
+      box.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr>${headers}</tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+    }
+
+    function renderCols(cols) {
+      const box = $("cols");
+      box.innerHTML = "";
+      if (!cols || cols.length === 0) {
+        box.textContent = "（空）";
+        return;
+      }
+      cols.forEach((c) => {
+        const div = document.createElement("div");
+        div.className = "col-item" + (state.activeCol === c ? " active" : "");
+        div.textContent = c;
+        div.onclick = async () => {
+          state.activeCol = c;
+          $("collection").value = c;
+          renderCols(cols);
+          // 自动触发查询
+          setStatus("正在加载 " + c + " 的数据...", "");
+          try {
+            const p = baseParams();
+            const body = {
+              collection: c,
+              filter: ($("filter").value || "").trim() || "{}",
+              projection: ($("projection").value || "").trim(),
+              sort: ($("sort").value || "").trim(),
+              limit: parseInt(($("limit").value || "50").trim(), 10),
+              skip: parseInt(($("skip").value || "0").trim(), 10),
+            };
+            const res = await apiPost("/api/fun-ai/deploy/mongo/find", p, body);
+            if (res.code !== 200) throw new Error(res.message || "请求失败");
+            state.lastQueryData = res.data; // 保存查询结果
+            renderTable((res.data && res.data.items) || []);
+            setStatus("OK: " + c + ", 返回 " + (res.data && res.data.returned) + " 条记录", "ok");
+          } catch (e) {
+            renderTable([]);
+            setStatus(String(e.message || e), "err");
+          }
+        };
+        box.appendChild(div);
+      });
+    }
+
+    function prettyAll() {
+      ["filter","sort","projection"].forEach((k) => {
+        const el = $(k);
+        const v = (el.value || "").trim();
+        if (!v) return;
+        try { el.value = JSON.stringify(JSON.parse(v), null, 2); } catch (e) {}
+      });
+    }
+
+    function renderAppOptions(apps) {
+      const sel = $("appId");
+      sel.innerHTML = "";
+      const opt0 = document.createElement("option");
+      opt0.value = "";
+      opt0.textContent = "请选择 app";
+      sel.appendChild(opt0);
+      (apps || []).forEach((a) => {
+        const opt = document.createElement("option");
+        opt.value = String(a.id || a.appId || "");
+        const name = (a.appName || a.name || ("app-" + opt.value));
+        opt.textContent = `${name} (${opt.value})`;
+        sel.appendChild(opt);
+      });
+    }
+
+    async function autoFill() {
+      setStatus("自动填充中...", "");
+      // 1) token
+      if (!$("token").value.trim()) {
+        const guessed = guessTokenFromStorage();
+        if (guessed) $("token").value = guessed;
+      }
+      const tokenNow = $("token").value.trim();
+      if (!tokenNow) {
+        setStatus("未检测到登录 Token：请在同域的已登录页面打开本页，或手动粘贴 Bearer Token（也可放到 URL hash：#token=...）", "err");
+        return;
+      }
+      // 2) me -> userId
+      const me = await apiGetRaw("/api/fun-ai/user/me");
+      if (me.code !== 200 || !me.data) {
+        throw new Error(me.message || "获取当前用户失败（请确认 token 有效）");
+      }
+      // userId not needed
+
+      // 3) app list（需要 userId）
+      const res = await apiGetRaw("/api/fun-ai/app/list", { userId: me.data.id ? String(me.data.id) : "" });
+      if (res.code !== 200) throw new Error(res.message || "获取 app 列表失败");
+      renderAppOptions(res.data || []);
+
+      setStatus(`OK：userId=${$("userId").value.trim()}，请选择 appId`, "ok");
+    }
+
+    $("btnAuto").onclick = async () => {
+      try {
+        await autoFill();
+      } catch (e) {
+        setStatus(String(e.message || e), "err");
+      }
+    };
+
+    $("btnLoadCols").onclick = async () => {
+      setStatus("加载中...", "");
+      try {
+        const p = baseParams();
+        const res = await apiGet("/api/fun-ai/deploy/mongo/collections", p);
+        if (res.code !== 200) throw new Error(res.message || "请求失败");
+        renderCols((res.data && res.data.collections) || []);
+        setStatus("OK: db=" + (res.data && res.data.dbName), "ok");
+      } catch (e) {
+        setStatus(String(e.message || e), "err");
+      }
+    };
+
+    $("btnFind").onclick = async () => {
+      const col = ($("collection").value || "").trim();
+      if (!col) {
+        setStatus("请先选择集合", "err");
+        return;
+      }
+      setStatus("正在刷新 " + col + " 的数据...", "");
+      try {
+        const p = baseParams();
+        const body = {
+          collection: col,
+          filter: ($("filter").value || "").trim() || "{}",
+          projection: ($("projection").value || "").trim(),
+          sort: ($("sort").value || "").trim(),
+          limit: parseInt(($("limit").value || "50").trim(), 10),
+          skip: parseInt(($("skip").value || "0").trim(), 10),
+        };
+        const res = await apiPost("/api/fun-ai/deploy/mongo/find", p, body);
+        if (res.code !== 200) throw new Error(res.message || "请求失败");
+        state.lastQueryData = res.data; // 保存查询结果
+        renderTable((res.data && res.data.items) || []);
+        setStatus("OK: " + col + ", 返回 " + (res.data && res.data.returned) + " 条记录", "ok");
+      } catch (e) {
+        renderTable([]);
+        setStatus(String(e.message || e), "err");
+      }
+    };
+
+
+    // 已收敛旧的“写入/高级”区域：现在用左侧一个按钮 + 弹窗来新增记录
+
+    $("btnClear").onclick = () => {
+      $("cols").textContent = "请先“加载集合”";
+      $("collection").value = "";
+      $("filter").value = "{}";
+      $("sort").value = "";
+      $("projection").value = "";
+      $("out").textContent = "暂无";
+      renderTable([]);
+      setStatus("", "");
+      state.activeCol = null;
+    };
+
+    // UI: help modal
+    function openHelp() { $("helpBackdrop").style.display = "block"; }
+    function closeHelp() { $("helpBackdrop").style.display = "none"; }
+    $("btnHelp").onclick = openHelp;
+    $("btnHelpClose").onclick = closeHelp;
+    $("helpBackdrop").addEventListener("click", (e) => {
+      if (e.target && e.target.id === "helpBackdrop") closeHelp();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        closeHelp();
+        closeEditModal();
+        closeAddModal();
+        closeCreateColModal();
+      }
+    });
+
+    // edit modal events
+    $("btnEditCancel").onclick = closeEditModal;
+    $("editBackdrop").addEventListener("click", (e) => {
+      if (e.target && e.target.id === "editBackdrop") closeEditModal();
+    });
+    $("editFields").addEventListener("input", (e) => {
+      const t = e.target;
+      if (!t || !t.getAttribute) return;
+      const role = t.getAttribute("data-role");
+      const i = parseInt(t.getAttribute("data-idx"), 10);
+      if (!state.editCtx || !state.editCtx.rows[i]) return;
+      if (role === "v") state.editCtx.rows[i].valueText = t.value;
+    });
+
+    $("btnEditSave").onclick = async () => {
+      const saveBtn = $("btnEditSave");
+      try {
+        if (!state.editCtx) throw new Error("编辑上下文丢失");
+        const { col, id, rows, original } = state.editCtx;
+        const setObj = {};
+
+        for (const r of rows) {
+          const k = (r.key || "").trim();
+          if (!k) continue;
+          if (k === "_id") continue;
+          let newVal;
+          try {
+            newVal = parseSmartValue(r.valueText || "");
+          } catch (e) {
+            throw new Error(`字段 ${k} 的值解析失败：${e.message}`);
+          }
+          const oldVal = original ? original[k] : undefined;
+          const oldStr = (oldVal === undefined) ? "__UNDEF__" : JSON.stringify(oldVal);
+          const newStr = (newVal === undefined) ? "__UNDEF__" : JSON.stringify(newVal);
+          if (oldStr !== newStr) {
+            setObj[k] = newVal;
+          }
+        }
+
+        // 没有任何修改：允许直接关闭，不报错
+        if (Object.keys(setObj).length === 0) {
+          setEditStatus("未检测到修改。", "ok");
+          closeEditModal();
+          return;
+        }
+        const update = { $set: setObj };
+
+        const p = baseParams();
+        if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "保存中..."; }
+        setEditStatus("保存中...", "");
+        setStatus(`保存中：${col} / _id=${id}`, "");
+        const res = await apiPost("/api/fun-ai/deploy/mongo/update-by-id", p, { collection: col, id, update: JSON.stringify(update), upsert: false });
+        if (res.code !== 200) throw new Error(res.message || "请求失败");
+        setStatus("OK: matched=" + (res.data && res.data.matchedCount) + ", modified=" + (res.data && res.data.modifiedCount), "ok");
+        setEditStatus("保存成功。", "ok");
+        closeEditModal();
+        // 刷新列表
+        try { $("btnFind").click(); } catch (e) {}
+      } catch (e) {
+        setEditStatus(String(e.message || e), "err");
+        setStatus(String(e.message || e), "err");
+      } finally {
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "保存"; }
+      }
+    };
+
+    // ===== Add modal =====
+    function openAddModal() { $("addBackdrop").style.display = "block"; }
+    function closeAddModal() { $("addBackdrop").style.display = "none"; setAddStatus("", ""); }
+
+    $("btnAddCancel").onclick = closeAddModal;
+    $("addBackdrop").addEventListener("click", (e) => {
+      if (e.target && e.target.id === "addBackdrop") closeAddModal();
+    });
+
+    function renderAddFields(fields) {
+      const box = $("addFields");
+      box.innerHTML = "";
+      (fields || []).forEach((k, i) => {
+        const row = document.createElement("div");
+        row.className = "field-row";
+        row.innerHTML = `
+          <div class="k">
+            <label style="margin:0 0 6px">字段</label>
+            <input value="${escHtml(k)}" disabled />
+          </div>
+          <div class="v">
+            <label style="margin:0 0 6px">值</label>
+            <input data-role="addv" data-idx="${i}" value="" placeholder="留空则不写入；例如 123 / true / null / 文本 / {\"a\":1}" />
+          </div>
+        `;
+        box.appendChild(row);
+      });
+    }
+
+    function openAddForCurrentCollection() {
+      const col = state.activeCol || ($("collection").value || "").trim();
+      if (!col) throw new Error("请先选择集合");
+      $("addCol").textContent = col;
+      setAddStatus("", "");
+
+      let fields = Array.isArray(state.lastFields) ? state.lastFields.slice() : [];
+      if (fields.length === 0) {
+        const items = (state.lastQueryData && state.lastQueryData.items) || [];
+        const s = new Set();
+        items.forEach((d) => { if (d && typeof d === "object") Object.keys(d).forEach((k) => { if (k !== "_id") s.add(k); }); });
+        fields = Array.from(s).sort();
+      }
+      if (fields.length === 0) throw new Error("暂无字段信息：请先点击左侧集合加载一次数据");
+      renderAddFields(fields);
+      openAddModal();
+    }
+
+    const btnAddDoc = $("btnAddDoc");
+    if (btnAddDoc) {
+      btnAddDoc.onclick = () => {
+        try { openAddForCurrentCollection(); } catch (e) { setStatus(String(e.message || e), "err"); }
+      };
+    }
+
+    $("btnAddSave").onclick = async () => {
+      const saveBtn = $("btnAddSave");
+      try {
+        const col = state.activeCol || ($("collection").value || "").trim();
+        if (!col) throw new Error("请先选择集合");
+        const fields = Array.isArray(state.lastFields) ? state.lastFields : [];
+        const doc = {};
+        for (let i = 0; i < fields.length; i++) {
+          const el = document.querySelector(`[data-role="addv"][data-idx="${i}"]`);
+          if (!el) continue;
+          const raw = (el.value || "");
+          if (!raw.trim()) continue;
+          doc[fields[i]] = parseSmartValue(raw);
+        }
+        if (Object.keys(doc).length === 0) throw new Error("请至少填写一个字段的值");
+
+        const p = baseParams();
+        if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "保存中..."; }
+        setAddStatus("保存中...", "");
+        const res = await apiPost("/api/fun-ai/deploy/mongo/insert-one", p, { collection: col, doc: JSON.stringify(doc) });
+        if (res.code !== 200) throw new Error(res.message || "请求失败");
+        setAddStatus("保存成功。", "ok");
+        closeAddModal();
+        try { $("btnFind").click(); } catch (e) {}
+      } catch (e) {
+        setAddStatus(String(e.message || e), "err");
+        setStatus(String(e.message || e), "err");
+      } finally {
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "保存"; }
+      }
+    };
+
+    // ===== Create collection modal =====
+    function openCreateColModal() { $("createColBackdrop").style.display = "block"; }
+    function closeCreateColModal() { $("createColBackdrop").style.display = "none"; state.createColCtx = null; setCreateColStatus("", ""); }
+
+    $("btnCreateColCancel").onclick = closeCreateColModal;
+    $("createColBackdrop").addEventListener("click", (e) => {
+      if (e.target && e.target.id === "createColBackdrop") closeCreateColModal();
+    });
+
+    function renderCreateColFields() {
+      const box = $("createColFields");
+      box.innerHTML = "";
+      const rows = (state.createColCtx && state.createColCtx.rows) || [];
+      if (rows.length === 0) {
+        box.innerHTML = "<div class='small' style='color:var(--muted2)'>（未定义字段，可直接创建空集合）</div>";
+        return;
+      }
+      const typeOptions = [
+        ["string","string"],["number","number"],["int","int"],["long","long"],["bool","bool"],["date","date"],["objectId","objectId"],["object","object"],["array","array"]
+      ];
+      rows.forEach((r, i) => {
+        const row = document.createElement("div");
+        row.className = "field-row";
+        const opts = typeOptions.map(([v, t]) => `<option value="${v}" ${String(r.type||"string").toLowerCase()===v?"selected":""}>${t}</option>`).join("");
+        row.innerHTML = `
+          <div class="k">
+            <label style="margin:0 0 6px">字段名</label>
+            <input data-role="ck" data-idx="${i}" value="${escHtml(r.name||"")}" placeholder="field_name" />
+            <div class="small" style="margin-top:6px; display:flex; gap:10px; flex-wrap:wrap">
+              <label style="display:flex; align-items:center; gap:6px; margin:0"><input type="checkbox" data-role="creq" data-idx="${i}" ${r.required?"checked":""} style="width:auto" />必填</label>
+              <label style="display:flex; align-items:center; gap:6px; margin:0"><input type="checkbox" data-role="cnull" data-idx="${i}" ${r.nullable!==false?"checked":""} style="width:auto" />允许 null</label>
+            </div>
+          </div>
+          <div class="v">
+            <label style="margin:0 0 6px">类型</label>
+            <select data-role="ct" data-idx="${i}">${opts}</select>
+            <button class="btn secondary" data-role="crm" data-idx="${i}" style="width:auto; margin-top:10px; padding:6px 10px; border-radius:10px">移除字段</button>
+          </div>
+        `;
+        box.appendChild(row);
+      });
+    }
+
+    $("btnCreateColAddField").onclick = () => {
+      if (!state.createColCtx) state.createColCtx = { rows: [] };
+      state.createColCtx.rows.push({ name: "", type: "string", required: false, nullable: true });
+      renderCreateColFields();
+    };
+
+    $("createColFields").addEventListener("input", (e) => {
+      const t = e.target;
+      if (!t || !t.getAttribute) return;
+      const role = t.getAttribute("data-role");
+      const i = parseInt(t.getAttribute("data-idx"), 10);
+      if (!state.createColCtx || !state.createColCtx.rows[i]) return;
+      if (role === "ck") state.createColCtx.rows[i].name = t.value;
+      if (role === "ct") state.createColCtx.rows[i].type = t.value;
+      if (role === "creq") state.createColCtx.rows[i].required = !!t.checked;
+      if (role === "cnull") state.createColCtx.rows[i].nullable = !!t.checked;
+    });
+    $("createColFields").addEventListener("click", (e) => {
+      const t = e.target && e.target.closest ? e.target.closest("[data-role]") : null;
+      if (!t) return;
+      const role = t.getAttribute("data-role");
+      const i = parseInt(t.getAttribute("data-idx"), 10);
+      if (role === "crm" && state.createColCtx && state.createColCtx.rows[i]) {
+        state.createColCtx.rows.splice(i, 1);
+        renderCreateColFields();
+      }
+    });
+
+    const btnNewCollection = $("btnNewCollection");
+    if (btnNewCollection) {
+      btnNewCollection.onclick = () => {
+        $("createColName").value = "";
+        $("createColStrict").checked = false;
+        state.createColCtx = { rows: [] };
+        setCreateColStatus("", "");
+        renderCreateColFields();
+        openCreateColModal();
+      };
+    }
+
+    $("btnCreateColSave").onclick = async () => {
+      const saveBtn = $("btnCreateColSave");
+      try {
+        const name = ($("createColName").value || "").trim();
+        if (!name) throw new Error("集合名称不能为空");
+        const strict = !!$("createColStrict").checked;
+        const rows = (state.createColCtx && state.createColCtx.rows) ? state.createColCtx.rows : [];
+        const fields = [];
+        const seen = new Set();
+        for (const r of rows) {
+          const n = (r.name || "").trim();
+          if (!n) continue;
+          if (seen.has(n)) throw new Error("字段名重复：" + n);
+          seen.add(n);
+          fields.push({ name: n, type: (r.type || "string"), required: !!r.required, nullable: r.nullable !== false });
+        }
+
+        const p = baseParams();
+        if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = "创建中..."; }
+        setCreateColStatus("创建中...", "");
+        const res = await apiPost("/api/fun-ai/deploy/mongo/create-collection", p, { collection: name, strict, fields });
+        if (res.code !== 200) throw new Error(res.message || "请求失败");
+        setCreateColStatus("创建成功。", "ok");
+        closeCreateColModal();
+        try { $("btnLoadCols").click(); } catch (e) {}
+      } catch (e) {
+        setCreateColStatus(String(e.message || e), "err");
+        setStatus(String(e.message || e), "err");
+      } finally {
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = "创建"; }
+      }
+    };
+
+    // 初始化：URL 参数优先，其次 localStorage；token 若为空再尝试自动猜测。
+    try {
+      const fromUrl = parseParamsFromUrl();
+      const saved = JSON.parse(localStorage.getItem("ws_mongo_explorer") || "{}");
+      const uid = (fromUrl.userId || saved.userId || "").trim();
+      const aid = (fromUrl.appId || saved.appId || "").trim();
+      const tok = (fromUrl.token || saved.token || "").trim();
+      if (uid) $("userId").value = uid;
+      if (tok) $("token").value = tok;
+      // appId select：先放一个“当前选择”，后续 autoFill 会拉 app 列表并覆盖 options
+      renderAppOptions(aid ? [{ id: aid, appName: "当前选择" }] : []);
+      if (aid) $("appId").value = aid;
+      if (!$("token").value.trim()) {
+        const guessed = guessTokenFromStorage();
+        if (guessed) $("token").value = guessed;
+      }
+
+      // 若 URL 已明确注入三要素（appId/token），则直接锁定输入并提示用户可直接「加载集合」
+      const injectedAll = !!(fromUrl.userId && fromUrl.appId && fromUrl.token);
+      if (injectedAll) {
+        $("userId").disabled = true;
+        $("appId").disabled = true;
+        $("token").disabled = true;
+        setStatus("已从 URL 注入 appId/token，可直接点击「加载集合」。（建议 token 放在 #hash 中）", "ok");
+      }
+    } catch (e) {
+      renderAppOptions([]);
+    }
+    ["userId","appId","token"].forEach((k) => {
+      $(k).addEventListener("change", () => {
+        try {
+          localStorage.setItem("ws_mongo_explorer", JSON.stringify({
+            userId: me.data.id ? String(me.data.id) : "",
+            appId: $("appId").value.trim(),
+            token: $("token").value.trim(),
+          }));
+        } catch (e) {}
+      });
+    });
+
+    // 行级操作：编辑/删除（简单 prompt 交互）
+    $("tableBox").addEventListener("click", async (e) => {
+      const btn = e.target && e.target.closest ? e.target.closest("button[data-act]") : null;
+      if (!btn) return;
+      const act = btn.getAttribute("data-act");
+      const idx = parseInt(btn.getAttribute("data-idx"), 10);
+      try {
+        const items = (state.lastQueryData && state.lastQueryData.items) || [];
+        const doc = items[idx];
+        if (!doc) throw new Error("未找到行数据");
+        const id = extractId(doc);
+        const col = state.activeCol || ($("collection").value || "").trim();
+        if (!col) throw new Error("collection 为空");
+        if (!id) throw new Error("该文档缺少 _id，无法执行行级操作");
+
+        const p = baseParams();
+        if (act === "del") {
+          const ok = confirm(`确认删除？\ncollection=${col}\n_id=${id}`);
+          if (!ok) return;
+          // UI feedback：禁用按钮，避免重复点击
+          btn.disabled = true;
+          const oldText = btn.textContent;
+          btn.textContent = "删除中...";
+          setStatus(`删除中：${col} / _id=${id}`, "");
+          const res = await apiPost("/api/fun-ai/deploy/mongo/delete-by-id", p, { collection: col, id });
+          if (res.code !== 200) throw new Error(res.message || "请求失败");
+          const dc = (res.data && res.data.deletedCount) || 0;
+          if (dc > 0) {
+            // 立即从当前视图移除，用户能立刻看到变化
+            const nextItems = items.slice(0, idx).concat(items.slice(idx + 1));
+            if (state.lastQueryData && Array.isArray(state.lastQueryData.items)) {
+              state.lastQueryData.items = nextItems;
+              if (typeof state.lastQueryData.returned === "number") {
+                state.lastQueryData.returned = Math.max(0, state.lastQueryData.returned - 1);
+              }
+            }
+            renderTable(nextItems);
+            setStatus("OK: deletedCount=" + dc, "ok");
+            // 后台再刷新一次，保证与后端一致
+            setTimeout(() => { try { $("btnFind").click(); } catch (e) {} }, 10);
+          } else {
+            setStatus("未删除成功（deletedCount=0）。可能 _id 类型不匹配或记录已不存在。", "err");
+          }
+          // 恢复按钮状态
+          btn.disabled = false;
+          btn.textContent = oldText;
+          return;
+        }
+
+        if (act === "edit") {
+          openEditForDoc(doc, idx);
+          return;
+        }
+      } catch (err) {
+        setStatus(String(err.message || err), "err");
+      }
+    });
+  </script>
+</body>
+</html>
+
+
