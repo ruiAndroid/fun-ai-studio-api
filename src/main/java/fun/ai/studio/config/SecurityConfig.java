@@ -97,15 +97,17 @@ public class SecurityConfig {
         "/swagger-ui/**",//Swagger UI 新路径
         "/swagger-ui/index.html",//Swagger UI 首页
         "/favicon.ico", // 浏览器默认请求站点图标
-        // Workspace Mongo Explorer（静态页面；API 仍需鉴权）
+        // Mongo 数据库管理（静态页面；API 仍需鉴权）
+        "/mongo.html",
         "/workspace-mongo.html",
+        "/deploy-mongo.html",
         // Workspace/Deploy 节点管理（静态页面；API 由 AdminAuthFilter 鉴权）
         "/workspace-nodes.html",
-                        "/nodes.html",
+        "/nodes.html",
         "/nodes-admin.html",
         "/admin/nodes.html",
         "/admin/nodes-admin.html",
-                        "/workspace-nodes-admin.html",
+        "/workspace-nodes-admin.html",
         "/deploy-nodes.html",
         // /doc 页面 mermaid 渲染脚本（必须放行，否则会被 401 JSON 拦截导致浏览器拒绝执行）
         "/doc-mermaid.js",
