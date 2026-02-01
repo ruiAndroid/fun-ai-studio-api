@@ -102,7 +102,7 @@ public class WorkspaceStubServiceConfig {
             public Path downloadFile(Long userId, Long appId, String path) { throw disabled(); }
 
             @Override
-            public boolean stopRunForIdle(Long userId) { throw disabled(); }
+            public void stopRunForIdle(Long userId) { throw disabled(); }
 
             @Override
             public void stopContainerForIdle(Long userId) { throw disabled(); }
