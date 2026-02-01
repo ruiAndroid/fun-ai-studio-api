@@ -1,5 +1,6 @@
 package fun.ai.studio.config;
 
+import fun.ai.studio.entity.response.FunAiWorkspaceApiTestResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceFileReadResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceFileTreeResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceInfoResponse;
@@ -101,7 +102,7 @@ public class WorkspaceStubServiceConfig {
             public Path downloadFile(Long userId, Long appId, String path) { throw disabled(); }
 
             @Override
-            public void stopRunForIdle(Long userId) { throw disabled(); }
+            public boolean stopRunForIdle(Long userId) { throw disabled(); }
 
             @Override
             public void stopContainerForIdle(Long userId) { throw disabled(); }
@@ -111,6 +112,9 @@ public class WorkspaceStubServiceConfig {
 
             @Override
             public void cleanupWorkspaceOnAppDeleted(Long userId, Long appId) { throw disabled(); }
+
+            @Override
+            public FunAiWorkspaceApiTestResponse executeCurlCommand(Long userId, Long appId, String curlCommand, Integer timeoutSeconds) { throw disabled(); }
         };
     }
 }
