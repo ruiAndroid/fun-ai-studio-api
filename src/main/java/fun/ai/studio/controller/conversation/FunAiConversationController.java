@@ -107,7 +107,7 @@ public class FunAiConversationController {
         }
     }
     
-    @PutMapping("/title")
+    @PostMapping("/title")
     @Operation(summary = "更新会话标题", description = "修改会话的标题")
     public Result<Void> updateTitle(
             Authentication authentication,
@@ -126,7 +126,7 @@ public class FunAiConversationController {
         }
     }
     
-    @PutMapping("/archive")
+    @PostMapping("/archive")
     @Operation(summary = "归档会话", description = "将会话标记为已归档")
     public Result<Void> archiveConversation(
             Authentication authentication,
@@ -144,7 +144,7 @@ public class FunAiConversationController {
         }
     }
     
-    @DeleteMapping("/delete")
+    @GetMapping("/delete")
     @Operation(summary = "删除会话", description = "删除会话及其所有消息")
     public Result<Void> deleteConversation(
             Authentication authentication,
