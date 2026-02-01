@@ -9,6 +9,7 @@ import fun.ai.studio.enums.FunAiAppStatus;
 import fun.ai.studio.gitea.GiteaRepoAutomationService;
 import fun.ai.studio.mapper.FunAiAppMapper;
 import fun.ai.studio.service.FunAiAppService;
+import fun.ai.studio.service.FunAiConversationService;
 import fun.ai.studio.service.FunAiUserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,6 +32,9 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
 
     @Autowired(required = false)
     private GiteaRepoAutomationService giteaRepoAutomationService;
+
+    @Autowired(required = false)
+    private FunAiConversationService conversationService;
 
     @Override
     public List<FunAiApp> getAppsByUserId(Long userId) {
@@ -186,13 +190,25 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
         // 删除数据库记录
         boolean deleted = removeById(appId);
         
-        // 如果删除成功，更新用户的 app_count
+        // 如果删除成功，更新用户的 app_count 并清理会话
         if (deleted) {
             try {
                 updateUserAppCountAfterDelete(userId);
             } catch (Exception e) {
                 logger.error("更新用户应用数量失败: userId={}, error={}", userId, e.getMessage(), e);
                 // 更新失败不影响删除结果，记录日志即可
+            }
+            
+            // 清理该应用的所有会话
+            if (conversationService != null) {
+                try {
+                    conversationService.deleteConversationsByApp(userId, appId);
+                    logger.info("已清理应用会话: userId={}, appId={}", userId, appId);
+                } catch (Exception e) {
+                    logger.error("清理应用会话失败: userId={}, appId={}, error={}", 
+                        userId, appId, e.getMessage(), e);
+                    // 清理失败不影响删除结果，记录日志即可
+                }
             }
         }
         
