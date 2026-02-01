@@ -3,7 +3,7 @@ package fun.ai.studio.entity.request;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
-import javax.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotNull;
 
 @Data
 @Schema(description = "创建会话请求")
