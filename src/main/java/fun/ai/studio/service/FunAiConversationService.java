@@ -27,7 +27,7 @@ public interface FunAiConversationService {
     /**
      * 添加消息到会话
      */
-    FunAiConversationMessage addMessage(Long userId, Long conversationId, String role, String content);
+    FunAiConversationMessage addMessage(Long userId, Long conversationId, String role, String content, String gitCommitSha);
     
     /**
      * 更新会话标题

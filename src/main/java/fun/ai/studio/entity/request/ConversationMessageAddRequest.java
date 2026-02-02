@@ -23,4 +23,7 @@ public class ConversationMessageAddRequest {
     @NotBlank(message = "content 不能为空")
     @Schema(description = "消息内容", required = true)
     private String content;
+    
+    @Schema(description = "Git commit SHA（可选，关联代码提交）")
+    private String gitCommitSha;
 }

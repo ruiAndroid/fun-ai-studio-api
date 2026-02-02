@@ -87,7 +87,7 @@ public class FunAiConversationController {
             @Valid @RequestBody ConversationMessageAddRequest request) {
         try {
             FunAiConversationMessage message = conversationService.addMessage(
-                userId, request.getConversationId(), request.getRole(), request.getContent()
+                userId, request.getConversationId(), request.getRole(), request.getContent(), request.getGitCommitSha()
             );
             return Result.success(message);
         } catch (IllegalArgumentException e) {

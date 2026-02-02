@@ -127,7 +127,7 @@ public class FunAiConversationServiceImpl implements FunAiConversationService {
     
     @Override
     @Transactional
-    public FunAiConversationMessage addMessage(Long userId, Long conversationId, String role, String content) {
+    public FunAiConversationMessage addMessage(Long userId, Long conversationId, String role, String content, String gitCommitSha) {
         if (userId == null) {
             throw new IllegalArgumentException("userId 不能为空");
         }
@@ -178,6 +178,7 @@ public class FunAiConversationServiceImpl implements FunAiConversationService {
         message.setRole(role);
         message.setContent(content);
         message.setSequence(maxSequence + 1);
+        message.setGitCommitSha(gitCommitSha);  // 设置 Git commit SHA
         
         messageMapper.insert(message);
         

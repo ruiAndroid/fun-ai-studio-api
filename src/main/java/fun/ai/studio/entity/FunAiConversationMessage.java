@@ -49,6 +49,13 @@ public class FunAiConversationMessage {
     private Integer sequence;
 
     /**
+     * Git commit SHA（可选，关联代码提交）
+     */
+    @TableField("git_commit_sha")
+    @Schema(description = "Git commit SHA")
+    private String gitCommitSha;
+
+    /**
      * 创建时间
      */
     @Schema(description = "创建时间")
