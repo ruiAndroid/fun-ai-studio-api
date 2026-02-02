@@ -145,6 +145,14 @@ public class FunAiDeployController {
         return s == null || s.trim().isEmpty();
     }
 
+    private String ensureHttps(String url) {
+        if (url == null || url.isBlank()) return null;
+        String u = url.trim();
+        if (u.startsWith("https://")) return u;
+        if (u.startsWith("http://")) return "https://" + u.substring("http://".length());
+        return "https://" + u;
+    }
+
     private void maybeFillAcrPayload(Map<String, Object> payload) {
         if (payload == null) return;
         if (deployAcrProperties == null || !deployAcrProperties.isEnabled()) return;
@@ -161,7 +169,16 @@ public class FunAiDeployController {
     @GetMapping("/job/info")
     @Operation(summary = "查询 Job（通过 API 入口）")
     public Result<Map<String, Object>> getJob(@RequestParam String jobId) {
-        return Result.success(deployClient.getJob(jobId));
+        Map<String, Object> job = deployClient.getJob(jobId);
+        if (job != null) {
+            Object deployObj = job.get("deployUrl");
+            String deployUrl = deployObj == null ? null : String.valueOf(deployObj);
+            String httpsUrl = ensureHttps(deployUrl);
+            if (httpsUrl != null) {
+                job.put("deployUrl", httpsUrl);
+            }
+        }
+        return Result.success(job);
     }
 
     @GetMapping("/job/list")
