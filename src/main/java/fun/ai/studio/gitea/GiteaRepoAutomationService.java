@@ -144,9 +144,6 @@ public class GiteaRepoAutomationService {
                     
                     # 接收构建参数（Runner 会自动传递）
                     ARG NPM_REGISTRY=https://registry.npmjs.org
-                    # 运行态路由前缀（默认 /）
-                    ARG BASE_PATH=/
-                    ENV BASE_PATH=${BASE_PATH}
                     
                     # 复制 .npmrc（如果存在，优先使用）
                     COPY .npmrc* ./
@@ -164,7 +161,7 @@ public class GiteaRepoAutomationService {
                     COPY . .
                     
                     # 构建（如果有 build 脚本）
-                    RUN BASE_PATH=${BASE_PATH} npm run build 2>/dev/null || echo "No build script, skipping..."
+                    RUN npm run build 2>/dev/null || echo "No build script, skipping..."
                     
                     ENV PORT=3000
                     ENV NODE_ENV=production
