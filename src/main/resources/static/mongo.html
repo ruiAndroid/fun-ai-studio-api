@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Fun AI Studio - Mongo 数据库管理入口</title>
+  <title>Fun AI Studio - Mongo Explorer 入口</title>
   <style>
     :root{
       color-scheme:light dark;
@@ -53,26 +53,25 @@
 <body>
   <div class="top">
     <div>
-      <div class="title">Mongo 数据库管理入口</div>
+      <div class="title">Mongo Explorer 入口</div>
       <div class="sub">
-        说明：提供开发环境（Workspace）和部署环境（Deploy）的 MongoDB 数据库管理功能。<br/>
-        开发环境需要 JWT 鉴权（<code>userId + appId</code>），部署环境需要 JWT 鉴权（<code>appId</code>）。<br/>
-        建议用 URL hash 传 token：<code>#token=Bearer%20...</code>（不会出现在 access log）。
+        说明：Mongo Explorer 提供开发态和部署态的 MongoDB 数据管理功能。<br/>
+        建议用 URL hash 传 token：<code>#token=Bearer%20eyJ...</code>（不会出现在 access log）。
       </div>
     </div>
   </div>
 
   <div class="grid">
     <div class="card">
-      <h3>开发环境数据库管理 <span class="badge">可用</span></h3>
-      <p>管理用户开发容器的 MongoDB 数据库（Workspace Mongo）。支持查询、插入、更新、删除等操作。</p>
-      <a class="btn" id="goWorkspace" href="/workspace-mongo.html">进入开发环境数据库</a>
+      <h3>Workspace Mongo Explorer <span class="badge">开发态</span></h3>
+      <p>管理开发环境的 MongoDB 数据（需要 userId + appId + JWT）。支持查询、编辑、删除、新增记录和创建集合。</p>
+      <a class="btn" id="goWorkspace" href="/workspace-mongo.html">进入 Workspace Mongo</a>
     </div>
 
     <div class="card">
-      <h3>部署环境数据库管理 <span class="badge">可用</span></h3>
-      <p>管理应用部署运行时的 MongoDB 数据库（Deploy Mongo）。支持查询、插入、更新、删除等操作。</p>
-      <a class="btn" id="goDeploy" href="/deploy-mongo.html">进入部署环境数据库</a>
+      <h3>Deploy Mongo Explorer <span class="badge">部署态</span></h3>
+      <p>管理部署环境的 MongoDB 数据（需要 appId + JWT）。支持查询、编辑、删除、新增记录和创建集合。</p>
+      <a class="btn" id="goDeploy" href="/deploy-mongo.html">进入 Deploy Mongo</a>
     </div>
   </div>
 
