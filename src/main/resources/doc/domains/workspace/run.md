@@ -88,6 +88,11 @@
 
 `RUNNING` 时会返回 `previewUrl`（形如 `{previewBaseUrl}/preview/{appId}/`）。
 
+### log（非实时）
+
+- `GET /api/fun-ai/workspace/realtime/log?userId=...&appId=...&type=BUILD|INSTALL|PREVIEW&tailBytes=0`
+  - `tailBytes`: 可选，仅返回末尾 N 字节（大日志快速查看）
+
 说明：
 
 - `type=DEV/START`：会做“进程存活 + 端口就绪”判定，`RUNNING` 时返回 `previewUrl`
