@@ -251,6 +251,70 @@ public class FunAiConversationServiceImpl implements FunAiConversationService {
     
     @Override
     @Transactional
+    public void rollbackToMessage(Long userId, Long conversationId, Long messageId) {
+        if (userId == null) {
+            throw new IllegalArgumentException("userId 不能为空");
+        }
+        if (conversationId == null) {
+            throw new IllegalArgumentException("conversationId 不能为空");
+        }
+        if (messageId == null) {
+            throw new IllegalArgumentException("messageId 不能为空");
+        }
+        
+        // 验证会话归属
+        FunAiConversation conversation = conversationMapper.selectById(conversationId);
+        if (conversation == null) {
+            throw new IllegalArgumentException("会话不存在");
+        }
+        if (!conversation.getUserId().equals(userId)) {
+            throw new IllegalArgumentException("无权访问该会话");
+        }
+        
+        // 验证消息存在且属于该会话
+        FunAiConversationMessage targetMessage = messageMapper.selectById(messageId);
+        if (targetMessage == null) {
+            throw new IllegalArgumentException("消息不存在");
+        }
+        if (!targetMessage.getConversationId().equals(conversationId)) {
+            throw new IllegalArgumentException("消息不属于该会话");
+        }
+        
+        // 删除该消息之后的所有消息（sequence > targetMessage.sequence）
+        int deletedCount = messageMapper.delete(
+            new LambdaQueryWrapper<FunAiConversationMessage>()
+                .eq(FunAiConversationMessage::getConversationId, conversationId)
+                .gt(FunAiConversationMessage::getSequence, targetMessage.getSequence())
+        );
+        
+        // 重新计算消息数量
+        long newMessageCount = messageMapper.selectCount(
+            new LambdaQueryWrapper<FunAiConversationMessage>()
+                .eq(FunAiConversationMessage::getConversationId, conversationId)
+        );
+        
+        // 获取最后一条消息的时间
+        LocalDateTime lastMessageTime = messageMapper.selectList(
+            new LambdaQueryWrapper<FunAiConversationMessage>()
+                .eq(FunAiConversationMessage::getConversationId, conversationId)
+                .orderByDesc(FunAiConversationMessage::getSequence)
+                .last("LIMIT 1")
+        ).stream()
+            .map(FunAiConversationMessage::getCreateTime)
+            .findFirst()
+            .orElse(LocalDateTime.now());
+        
+        // 更新会话的消息数量和最后消息时间
+        conversationMapper.update(null,
+            new LambdaUpdateWrapper<FunAiConversation>()
+                .eq(FunAiConversation::getId, conversationId)
+                .set(FunAiConversation::getMessageCount, newMessageCount)
+                .set(FunAiConversation::getLastMessageTime, lastMessageTime)
+        );
+    }
+    
+    @Override
+    @Transactional
     public void deleteConversationsByApp(Long userId, Long appId) {
         if (userId == null) {
             throw new IllegalArgumentException("userId 不能为空");

@@ -133,4 +133,22 @@ public class FunAiConversationController {
             return Result.error("删除会话失败: " + e.getMessage());
         }
     }
+    
+    @PostMapping("/rollback")
+    @Operation(summary = "回退到指定消息", description = "删除指定消息之后的所有消息，保留该消息及之前的消息")
+    public Result<Void> rollbackToMessage(
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "会话ID", required = true) @RequestParam Long conversationId,
+            @Parameter(description = "消息ID（回退到此消息，删除之后的消息）", required = true) @RequestParam Long messageId) {
+        try {
+            conversationService.rollbackToMessage(userId, conversationId, messageId);
+            return Result.success(null);
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            log.error("rollback to message failed: conversationId={}, messageId={}, error={}", 
+                conversationId, messageId, e.getMessage(), e);
+            return Result.error("回退消息失败: " + e.getMessage());
+        }
+    }
 }

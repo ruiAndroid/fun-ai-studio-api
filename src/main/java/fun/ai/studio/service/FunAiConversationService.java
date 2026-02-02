@@ -40,6 +40,11 @@ public interface FunAiConversationService {
     void deleteConversation(Long userId, Long conversationId);
     
     /**
+     * 回退到指定消息节点（删除该消息之后的所有消息）
+     */
+    void rollbackToMessage(Long userId, Long conversationId, Long messageId);
+    
+    /**
      * 删除应用时清理所有会话
      */
     void deleteConversationsByApp(Long userId, Long appId);

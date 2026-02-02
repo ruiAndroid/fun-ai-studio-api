@@ -50,9 +50,14 @@ CREATE TABLE IF NOT EXISTS `fun_ai_conversation_message` (
 --    GET    /api/fun-ai/conversation/list            - 获取会话列表
 --    GET    /api/fun-ai/conversation/detail          - 获取会话详情
 --    POST   /api/fun-ai/conversation/message/add     - 添加消息
---    PUT    /api/fun-ai/conversation/title           - 更新标题
---    PUT    /api/fun-ai/conversation/archive         - 归档会话
---    DELETE /api/fun-ai/conversation/delete          - 删除会话
+--    POST   /api/fun-ai/conversation/title           - 更新标题
+--    GET    /api/fun-ai/conversation/delete          - 删除会话
+--    POST   /api/fun-ai/conversation/rollback        - 回退到指定消息节点
 --
--- 3. Swagger UI 访问：http://your-host:8080/swagger-ui
+-- 3. 回退功能说明：
+--    - 回退到指定消息：保留该消息及之前的所有消息，删除之后的消息
+--    - 用于撤销错误的对话或重新开始某个分支
+--    - 会自动更新会话的消息数量和最后消息时间
+--
+-- 4. Swagger UI 访问：http://your-host:8080/swagger-ui
 -- =====================================================
