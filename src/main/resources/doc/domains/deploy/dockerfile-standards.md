@@ -69,8 +69,11 @@ FROM node:20-bookworm-slim AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules /app/node_modules
 COPY . .
+# 可选：运行态路由前缀（默认 /）
+ARG BASE_PATH=/
+ENV BASE_PATH=${BASE_PATH}
 # 如果你的项目没有 build 步骤，可以删掉这一行
-RUN npm run build || true
+RUN BASE_PATH=${BASE_PATH} npm run build || true
 
 FROM node:20-bookworm-slim
 WORKDIR /app
