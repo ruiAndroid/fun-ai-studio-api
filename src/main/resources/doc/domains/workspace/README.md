@@ -4,7 +4,6 @@ Workspace 域的目标：给每个用户提供一个可持久化的“在线开�
 
 - 项目文件同步（宿主机落盘 + 容器可见）
 - 容器内运行 dev server（Vite/Node）
-- 实时日志/状态（SSE）
 - 在线终端（WebSocket + docker exec）
 - 依赖安装加速（npm 缓存/后续私有仓库）
 
@@ -34,7 +33,6 @@ Workspace 域的目标：给每个用户提供一个可持久化的“在线开�
   - 文件域：`fun.ai.studio.controller.workspace.files.FunAiWorkspaceFileController`
   - 运行态：`fun.ai.studio.controller.workspace.run.FunAiWorkspaceRunController`
   - internal：`fun.ai.studio.controller.workspace.internal.FunAiWorkspaceInternalController`
-  - SSE：`fun.ai.studio.controller.workspace.realtime.FunAiWorkspaceRealtimeController`
   - WebSocket 终端：`fun.ai.studio.workspace.realtime.WorkspaceTerminalWebSocketHandler`
 
 ## 常用增强能力
@@ -51,13 +49,10 @@ sequenceDiagram
 participant FE as "前端(Frontend)"
 participant WSFiles as "文件接口(WorkspaceFilesAPI)"
 participant WSRun as "运行态接口(WorkspaceRunAPI)"
-participant SSE as "实时通道(WorkspaceRealtimeAPI)"
 
 FE->>WSFiles: ensure-dir(确保目录)(userId,appId)
 FE->>WSFiles: upload-zip(导入) / file CRUD(文件操作) (可选)
 FE->>WSRun: build/install/preview(按钮触发)
-FE->>SSE: events(订阅)(userId,appId,withLog=true)
-SSE-->>FE: status/log/ping(状态/日志/心跳)
 ```
 
 

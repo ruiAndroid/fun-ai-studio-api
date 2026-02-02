@@ -2,35 +2,9 @@
 
 > 双机部署提示：本页接口对外仍由 API 服务器（小机）暴露，但在双机模式下会被 API 服务器（小机）网关/Nginx 转发到 Workspace 开发服务器（大机）容器节点（workspace-node）执行。
 
-实时通道包含两部分：
+实时通道包含：
 
-1) SSE：状态（轻量，给在线编辑器减少轮询）  
-2) WebSocket：在线终端（docker exec -i）
-
-## SSE（events）
-
-控制器：
-
-- `fun.ai.studio.controller.workspace.realtime.FunAiWorkspaceRealtimeController`
-- 路由：`GET /api/fun-ai/workspace/realtime/events?userId=...&appId=...`
-  - 历史兼容参数：`withLog/type`（当前实现不再推送日志，参数会被忽略）
-
-事件：
-
-- `status`：运行态变化时推送（JSON）
-- （无事件 keep-alive）：服务端会周期性发送 SSE comment 行保持连接（前端无需处理）
-- `error`：异常
-
-关键设计点：
-
-- 双机模式下 `appId` 归属校验建议在 API 服务器（小机）完成；Workspace 开发服务器（大机）仅信任 API 服务器（小机）转发并通过 allowlist/共享密钥限制来源。
-- SSE 长连接会周期性触发 `activityTracker.touch(userId)`，避免 idle 回收误伤活跃用户。
-- 日志不通过 SSE 增量推送：需要日志时通过 HTTP 拉取（见下文 `log` 接口）。
-
-## 日志（log）
-
-- `GET /api/fun-ai/workspace/realtime/log?userId=...&appId=...&type=BUILD|INSTALL|PREVIEW&tailBytes=0`
-  - `tailBytes`: 可选，仅返回末尾 N 字节（大日志快速查看）
+1) WebSocket：在线终端（docker exec -i）
 
 ## WebSocket（在线终端）
 

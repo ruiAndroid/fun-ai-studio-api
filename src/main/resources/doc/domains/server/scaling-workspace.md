@@ -8,7 +8,7 @@
 - **预览入口是用户级**：`/ws/{userId}/`（Nginx 反代到该用户固定 `hostPort`）。
 - **宿主机持久化目录**：`{hostRoot}/{userId}/...` bind mount 到容器 `/workspace`。
 - **实时链路**：
-  - SSE 与 WS 终端会持续 `touch(userId)`，影响 idle 回收策略（这在多机依然成立，只是 `touch` 的存储位置需要从内存迁移到共享存储）。
+  - WS 终端会持续 `touch(userId)`，影响 idle 回收策略（这在多机依然成立，只是 `touch` 的存储位置需要从内存迁移到共享存储）。
 
 这意味着：多机扩容的核心难点不在 Spring Boot，而在 **“/ws/{userId} 的路由与 state（容器/端口/目录）绑定在某一台机器”**。
 
