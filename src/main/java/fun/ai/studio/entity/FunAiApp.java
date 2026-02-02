@@ -60,11 +60,11 @@ public class FunAiApp {
     private String lastDeployError;
 
     @TableField(exist = false)
-    @Schema(description = "（部署态）可访问地址（由 Deploy/Runtime 计算得到）；开发态预览请用 workspacePreviewUrl", example = "http://172.21.138.102/apps/20000254/")
+    @Schema(description = "（部署态）可访问地址（由 Deploy/Runtime 计算得到）；开发态预览请用 workspacePreviewUrl", example = "http://172.21.138.102/runtime/20000254/")
     private String accessUrl;
 
     @TableField(exist = false)
-    @Schema(description = "（部署态）可访问地址（推荐前端使用该字段；与开发态 workspacePreviewUrl 分开）", example = "http://172.21.138.102/apps/20000254/")
+    @Schema(description = "（部署态）可访问地址（推荐前端使用该字段；与开发态 workspacePreviewUrl 分开）", example = "http://172.21.138.102/runtime/20000254/")
     private String deployAccessUrl;
 
     // ----------------------

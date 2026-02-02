@@ -6,7 +6,7 @@
 
 internal 子系统对外不暴露业务能力，仅提供给 nginx `auth_request` 子请求用，用于把：
 
-- `/ws/{userId}/...` 路径
+- `/preview/{appId}/...` 路径
 
 映射到对应的宿主机端口：
 
@@ -14,7 +14,7 @@ internal 子系统对外不暴露业务能力，仅提供给 nginx `auth_request
 
 ## 接口
 
-- `GET /api/fun-ai/workspace/internal/nginx/port?userId=...`
+- `GET /api/fun-ai/workspace/internal/nginx/port?appId=...`
 
 返回：
 

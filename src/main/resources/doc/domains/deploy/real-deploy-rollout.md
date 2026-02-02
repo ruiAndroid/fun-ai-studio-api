@@ -19,7 +19,7 @@
 
 - **宿主机落盘**：Workspace-dev(87) `/data/funai/workspaces`
 - **容器名**：`ws-u-{userId}`（示例）
-- **预览入口**：统一公网入口下的 `/ws/...`（由网关转发到 87 的 Nginx）
+- **预览入口**：统一公网入口下的 `/preview/...`（由网关转发到 87 的 Nginx）
 
 > 结论：Workspace 是“开发态”，不建议 Runtime/Runner 直接依赖 87 的文件系统做部署交付。
 
@@ -94,12 +94,12 @@ Deploy 控制面的主数据落库（MySQL 在 91）：
 
 ### 2.1 开发预览（Workspace）
 
-- 路径：`/ws/...`
+- 路径：`/preview/...`
 - 链路：公网入口(通常在 91) → 87 Nginx → workspace 容器端口
 
 ### 2.2 运行态访问（Runtime）
 
-- 路径：`/apps/{appId}/...`
+- 路径：`/runtime/{appId}/...`
 - 链路（推荐）：公网入口（SLB/网关）→ Runtime 网关(102) → 用户应用容器(appId)
 
 > 运行态访问不应回源到 Workspace；部署后用户访问只走 Runtime。
@@ -157,7 +157,7 @@ Deploy 控制面的主数据落库（MySQL 在 91）：
 - **验收**：
   - Deploy：`fun_ai_deploy_job` 有记录，状态能从 PENDING→RUNNING→SUCCEEDED
   - Deploy：`fun_ai_deploy_app_run` 有 last-known
-  - Runtime：容器存在，网关路由 `/apps/{appId}` 可访问
+  - Runtime：容器存在，网关路由 `/runtime/{appId}` 可访问
 
 #### 5.1.1 你现在就可以怎么做（Git 暂不可用时）
 
@@ -208,9 +208,9 @@ podman login 172.21.138.103 -u <username_or_robot>
 - Deploy(100)：`GET /deploy/jobs?limit=50` 可看到状态变化（或看 DB 表）
 - Runtime(102)：调用
   - `GET /agent/apps/status?appId=20002`（Header: `X-Runtime-Token`）应为 running
-  - 访问：`http(s)://<runtime-gateway>/apps/20002/`（nginx 示例会返回默认页）
+  - 访问：`http(s)://<runtime-gateway>/runtime/20002/`（nginx 示例会返回默认页）
 
-若访问 `http://<runtime-node>/apps/{appId}/` 出现 `Connection refused`：
+若访问 `http://<runtime-node>/runtime/{appId}/` 出现 `Connection refused`：
 
 - 说明 **Runtime 网关（Traefik/Nginx）没有在宿主机监听 80/443**
 - 需要在 Runtime 节点上启动网关容器，并接入与用户容器相同的 `RUNTIME_DOCKER_NETWORK`
@@ -261,7 +261,7 @@ podman login 172.21.138.103 -u <username_or_robot>
 
 - `runtime-agent /internal/health` OK
 - 用户容器存在（podman/docker ps）
-- `/apps/{appId}` 路由可访问
+- `/runtime/{appId}` 路由可访问
 
 ---
 
@@ -270,6 +270,6 @@ podman login 172.21.138.103 -u <username_or_robot>
 - **不要让 Runner/Runtime 依赖 Workspace 的目录**做交付：跨机复制/权限/路径差异会放大问题
 - **先跑通“镜像直部署”**再做构建：把变量从 N 个降到 1 个
 - **DB 权限**：91 的 MySQL 必须允许 100 访问（你已经遇到过 host not allowed）
-- **网关路由**：`/apps/{appId}` 必须明确由谁承接（102 网关还是 91 统一入口再转发）
+- **网关路由**：`/runtime/{appId}` 必须明确由谁承接（102 网关还是 91 统一入口再转发）
 
 

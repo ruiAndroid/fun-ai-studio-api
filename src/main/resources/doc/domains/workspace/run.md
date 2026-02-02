@@ -42,7 +42,7 @@
 - 后台脚本执行“可访问启动”（按项目 scripts 自动选择）：`start -> preview -> dev -> server`
   - 注入 `PORT/HOST/BASE_PATH` 等环境变量
   - 若选择 `preview/dev`，会尽量追加 `--host/--port/--strictPort/--base` 参数（适配 Vite 常见用法）
-  - 若选择 `start/server` 且网关使用“/ws 前缀剥离转发（方案A）”，则 `BASE_PATH` 默认注入为 `/`（避免要求后端项目支持 `/ws/{userId}` 路由前缀）
+- 若选择 `start/server` 且网关使用“/preview 前缀剥离转发（方案A）”，则 `BASE_PATH` 默认注入为 `/`（避免要求后端项目支持 `/preview/{appId}` 路由前缀）
 - 成功后写入 `/workspace/run/dev.pid` 与更新 `current.json`
 
 ### build
@@ -86,7 +86,7 @@
 
 - `IDLE / STARTING / RUNNING / DEAD / UNKNOWN / BUILDING / INSTALLING / SUCCESS / FAILED`
 
-`RUNNING` 时会返回 `previewUrl`（形如 `{previewBaseUrl}/ws/{userId}/`）。
+`RUNNING` 时会返回 `previewUrl`（形如 `{previewBaseUrl}/preview/{appId}/`）。
 
 说明：
 

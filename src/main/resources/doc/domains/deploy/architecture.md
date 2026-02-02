@@ -57,8 +57,8 @@ flowchart TD
   Browser --> Gateway
   Gateway -->|"业务 API"| API
   Gateway -->|"Agent 服务 /fun-agent/**"| AgentNode
-  Gateway -->|"预览 /ws/{userId}/..."| WSDev
-  Gateway -->|"应用访问 /apps/{appId}/..."| RTGW
+  Gateway -->|"预览 /preview/{appId}/..."| WSDev
+  Gateway -->|"应用访问 /runtime/{appId}/..."| RTGW
 
   API -->|"内部调用(创建/查询 Job)"| Deploy
   API -->|"workspace 接口转发"| WSDev
@@ -79,7 +79,7 @@ flowchart TD
 - **API（入口）**：用户/前端只打 API，API 负责鉴权与业务入口编排，然后内部调用 Deploy 控制面创建 Job
 - **Deploy（控制面）**：决定“做什么、由谁做、做到哪台 Runtime 上”，维护 Job 状态与 runtime 节点注册表/选址
 - **Runner（执行面）**：领取 Job，把构建/部署动作真正做完（构建镜像、推送、调用 Runtime-Agent 部署），再回传结果
-- **Runtime（运行态）**：真正承载用户应用容器，对外统一域名下路径路由（`/apps/{appId}/...`）
+- **Runtime（运行态）**：真正承载用户应用容器，对外统一域名下路径路由（`/runtime/{appId}/...`）
 
 ---
 
@@ -121,7 +121,7 @@ flowchart TD
 - 对 Runner 暴露内部 API：`/agent/apps/deploy`、`/agent/apps/stop`、`/agent/apps/status`
 - 在本机 Docker 上管理“用户应用容器”
 - 对 Deploy 控制面上报节点心跳（Runtime Node Registry）
-- 配合网关（建议 Traefik）实现统一域名下 `/apps/{appId}/...` 的路径路由
+- 配合网关（建议 Traefik）实现统一域名下 `/runtime/{appId}/...` 的路径路由
 
 ---
 
@@ -144,7 +144,7 @@ Runner->>Deploy: POST /deploy/jobs/claim (领取 -> RUNNING)
 Deploy-->>Runner: JobResponse(+runtimeNode: agentBaseUrl/gatewayBaseUrl)
 Runner->>Agent: POST /agent/apps/deploy (在选定节点部署应用容器)
 Runner->>Deploy: POST /deploy/jobs/{jobId}/report (SUCCEEDED/FAILED)
-FE->>GW: GET /apps/{appId}/...
+FE->>GW: GET /runtime/{appId}/...
 GW-->>FE: 反代到用户应用容器
 ```
 
@@ -174,7 +174,7 @@ Note over Deploy: 选址时优先选磁盘充裕节点
 - **Deploy**：`7002`（内网；API/Runner/Runtime-Agent 访问）
 - **workspace-node**：`7001`（内网；API/节点本机 Nginx 访问）
 - **runtime-agent**：`7005`（内网；Runner 访问）
-- **Runtime 网关**：`80/443`（公网统一入口，承载 `/apps/{appId}`）
+- **Runtime 网关**：`80/443`（公网统一入口，承载 `/runtime/{appId}`）
 
 ### 4.2 鉴权（Header / Secret / IP allowlist）
 

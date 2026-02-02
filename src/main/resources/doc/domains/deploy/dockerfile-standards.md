@@ -4,7 +4,7 @@
 
 - `docker build` → 产出镜像
 - `docker push` → 推到 Harbor（103）
-- Runtime 拉取并运行 → `/apps/{appId}` 可访问
+- Runtime 拉取并运行 → `/runtime/{appId}` 可访问
 
 ---
 

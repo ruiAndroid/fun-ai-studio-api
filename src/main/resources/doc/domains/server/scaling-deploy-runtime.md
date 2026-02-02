@@ -26,7 +26,7 @@
 
 - **Runtime 节点（可多台，横向扩容）**
   - 部署：`runtime-agent`（FastAPI）+ Docker/Podman + 网关（Traefik/Nginx）
-  - 作用：承载用户应用容器，对外提供 `/apps/{appId}/...` 访问
+  - 作用：承载用户应用容器，对外提供 `/runtime/{appId}/...` 访问
   - 现网：`172.21.138.102`
 
 - **Git 服务器（源码真相源）**
@@ -59,7 +59,7 @@
 ### 2.3 Runtime 节点
 
 - 入站：
-  - `80/443`（对公网：统一域名下 `/apps/{appId}`）
+  - `80/443`（对公网：统一域名下 `/runtime/{appId}`）
   - `7005`（内网：仅允许运行 Runner 的部署机访问）
 - 出站：
   - 到 Deploy：`7002`（心跳注册）
@@ -89,7 +89,7 @@
 
 - Docker/Podman（运行用户应用容器）
 - Python 3.10+（runtime-agent）
-- Traefik/Nginx（统一域名路径路由 `/apps/{appId}`）
+- Traefik/Nginx（统一域名路径路由 `/runtime/{appId}`）
 
 ---
 
@@ -308,7 +308,7 @@ deploy.runtime-node-registry.disk-free-drain-pct=25.0
 
 - **Docker/Podman**（运行用户应用容器）
 - **Python 3.10+**（runtime-agent）
-- **Traefik/Nginx**（统一域名路径路由 `/apps/{appId}`）
+- **Traefik/Nginx**（统一域名路径路由 `/runtime/{appId}`）
 - **runtime-agent 配置**（`/opt/funai/runtime/config/runtime.env`）：
   - `RUNTIME_NODE_NAME=rt-node-02`（104）/ `rt-node-03`（105）
   - `RUNTIME_NODE_AGENT_BASE_URL=http://172.21.138.104:7005`（或 105）
@@ -334,7 +334,7 @@ deploy.runtime-node-registry.disk-free-drain-pct=25.0
 #### Step 2：安全组放行
 
 - **104/105 入站**：
-  - `80/443`（对公网：统一域名下 `/apps/{appId}`）
+  - `80/443`（对公网：统一域名下 `/runtime/{appId}`）
   - `7005`（内网：仅允许 Runner 101 访问）
 - **104/105 出站**：
   - 到 Deploy（100）：`7002`（心跳注册）
@@ -365,7 +365,7 @@ curl -sS -H "X-Admin-Token: <你的ADMIN_TOKEN>" \
 
 ```nginx
 # 示例：按 appId placement 查表后动态转发（或用 Traefik 动态路由）
-location /apps/ {
+location /runtime/ {
     # 方案 A：API 侧查 placement，返回 X-Runtime-Upstream header，网关转发
     # 方案 B：Traefik 动态服务发现（推荐）
 }

@@ -62,7 +62,7 @@ AppAPI-->>FE: 运行态+目录(runStatus+projectDir)
 
 关键约束：
 
-- **同一 userId 同一时间只允许运行一个 app**（预览入口是用户级 `/ws/{userId}/`），open-editor 里会在必要时先 stop 旧 run，避免“看到旧应用”的错觉。
+- **同一 userId 同一时间只允许运行一个 app**（预览入口是应用级 `/preview/{appId}/`），open-editor 里会在必要时先 stop 旧 run，避免“看到旧应用”的错觉。
 
 ## 与 Workspace 的边界与依赖
 

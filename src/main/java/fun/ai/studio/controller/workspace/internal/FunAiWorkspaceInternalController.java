@@ -38,9 +38,10 @@ public class FunAiWorkspaceInternalController {
     }
 
     @GetMapping("/nginx/port")
-    @Operation(summary = "（内部）nginx 反代查询端口", description = "供 nginx auth_request 使用：根据 userId 返回 X-WS-Port 头。不做 ensure/start，避免副作用。")
+    @Operation(summary = "（内部）nginx 反代查询端口", description = "供 nginx auth_request 使用：根据 appId 或 userId 返回 X-WS-Port 头。不做 ensure/start，避免副作用。")
     public ResponseEntity<Void> nginxPort(
-            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "用户ID", required = false) @RequestParam(required = false) Long userId,
+            @Parameter(description = "应用ID", required = false) @RequestParam(required = false) Long appId,
             HttpServletRequest request
     ) {
         try {
@@ -52,8 +53,8 @@ public class FunAiWorkspaceInternalController {
                 boolean ok = required.equals(tokenHeader) || required.equals(tokenParam);
                 if (!ok) {
                     String remote = request == null ? null : request.getRemoteAddr();
-                    log.warn("nginx port unauthorized: userId={}, remoteAddr={}, hasHeader={}, hasParam={}",
-                            userId, remote, StringUtils.hasText(tokenHeader), StringUtils.hasText(tokenParam));
+                    log.warn("nginx port unauthorized: userId={}, appId={}, remoteAddr={}, hasHeader={}, hasParam={}",
+                            userId, appId, remote, StringUtils.hasText(tokenHeader), StringUtils.hasText(tokenParam));
                     return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
                 }
             } else {
@@ -73,7 +74,7 @@ public class FunAiWorkspaceInternalController {
             // 因此 API 工程不再提供端口查询能力：该能力应由 workspace-node（大机）本机实现并供 nginx 调用。
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
         } catch (Exception e) {
-            log.warn("nginx port lookup failed: userId={}, error={}", userId, e.getMessage());
+            log.warn("nginx port lookup failed: userId={}, appId={}, error={}", userId, appId, e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }

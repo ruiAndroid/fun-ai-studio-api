@@ -22,7 +22,7 @@
 - **API（入口）**：权限/归属校验 + 创建部署 Job（内部调用 Deploy 控制面）
 - **Deploy（控制面）**：Job 队列、Runtime 节点注册表、placement（选址）、状态落库与审计
 - **Runner（执行面）**：领取 Job，执行 “拉代码 → 构建镜像 → push Harbor → 调 Runtime 部署 → 回传结果”
-- **Runtime（运行态）**：拉取镜像并运行容器，挂载网关路由 `/apps/{appId}`
+- **Runtime（运行态）**：拉取镜像并运行容器，挂载网关路由 `/runtime/{appId}`
 
 关键原则：
 
@@ -69,7 +69,7 @@
 
 1) runtime-agent(102) 拉取镜像并启动容器
 2) 网关按 label 自动路由：
-   - `/apps/{appId}/...` → 对应容器端口
+   - `/runtime/{appId}/...` → 对应容器端口
 
 ---
 

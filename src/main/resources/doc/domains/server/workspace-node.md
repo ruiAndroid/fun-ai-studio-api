@@ -10,7 +10,7 @@
   - 数据库：MySQL
 - **Workspace 开发服务器（大机，容器节点/重负载）**
   - 容器节点服务：`fun-ai-studio-workspace`（workspace-node，Spring Boot，`7001`）
-  - 反向代理：Nginx（处理 `/ws/{userId}/...`）
+  - 反向代理：Nginx（处理 `/preview/{appId}/...`）
   - 容器运行时：Podman（兼容 docker CLI）
   - Workspace 容器：每用户一个 `ws-u-{userId}`（端口池映射）
   - npm 缓存：Verdaccio（容器，`4873`）
@@ -36,30 +36,30 @@
 ### 2.2 端口
 
 - **workspace-node**：`7001`（仅供本机 Nginx/本机调用；若跨机调用需收敛来源 IP）
-- **Workspace 开发服务器（大机）Nginx**：`80`（供 API 服务器（小机）`/ws/*` 转发；建议只允 API 服务器（小机）来源 IP）
+- **Workspace 开发服务器（大机）Nginx**：`80`（供 API 服务器（小机）`/preview/*` 转发；建议只允 API 服务器（小机）来源 IP）
 - **Verdaccio**：`4873`（容器网络内使用为主；如需跨机/公网使用需严格收敛）
 - **每用户 workspace 预览 hostPort**：例如 `20021`（仅本机 Nginx 反代到 `127.0.0.1:${hostPort}`，不对公网直接暴露）
 
-## 3. Workspace 开发服务器（大机）Nginx（/ws 预览反代）核心逻辑
+## 3. Workspace 开发服务器（大机）Nginx（/preview 预览反代）核心逻辑
 
-设计目标：外部统一访问 `/ws/{userId}/...`，Nginx 先询问 workspace-node 得到该 userId 的 `hostPort`，再反代到 `127.0.0.1:${hostPort}`。
+设计目标：外部统一访问 `/preview/{appId}/...`，Nginx 先询问 workspace-node 得到该 appId 对应的 `hostPort`，再反代到 `127.0.0.1:${hostPort}`。
 
 ### 3.1 `auth_request` 获取端口
 
-- Nginx 子请求：`/_ws_port` → 本机 `127.0.0.1:7001/api/fun-ai/workspace/internal/nginx/port?userId=$ws_uid`
+- Nginx 子请求：`/_ws_port` → 本机 `127.0.0.1:7001/api/fun-ai/workspace/internal/nginx/port?appId=$ws_appid`
 - workspace-node 返回：Header 中携带 `X-WS-HostPort: <port>`
 - Nginx 读取 header 设置变量：`$ws_port`
 
 ### 3.2 反代到用户容器 hostPort
 
-`/ws/{userId}/...` → `proxy_pass http://127.0.0.1:$ws_port;`
+`/preview/{appId}/...` → `proxy_pass http://127.0.0.1:$ws_port;`
 
 ### 3.3 “sleeping 页面”机制（很重要）
 
 当容器已存在但 **dev server 没有在 $ws_port 上监听**时，`127.0.0.1:$ws_port` 会 `connection refused`。为提升 UX，Nginx 常配置：
 
 - upstream 错误 → `error_page ... =200 /__ws_sleeping;`
-- 这会导致 `curl -I /ws/...` 看到 **200**，但 body 是一段“已休眠提示页”（可自定义为更友好的 HTML）。
+- 这会导致 `curl -I /preview/...` 看到 **200**，但 body 是一段“已休眠提示页”（可自定义为更友好的 HTML）。
 
 建议：把 `/__ws_sleeping` 做成 **更友好的中文 HTML**（带恢复指引 + 自动刷新），参考 `src/main/resources/doc/阿里云部署文档.md` 中的 Nginx 配置片段。
 
@@ -67,9 +67,9 @@
 
 ### 3.4 iframe 跨站（第三方 Cookie）注意事项
 
-如果你把预览页（例如 `https://<preview-host>/ws/<uid>/`）放进控制台页面的 `iframe`，那么对浏览器来说：
+如果你把预览页（例如 `https://<preview-host>/preview/<appId>/`）放进控制台页面的 `iframe`，那么对浏览器来说：
 
-- 预览域名的 cookie（例如我们用于根路径资源路由的 `ws_uid`）会变成**第三方 Cookie**
+- 预览域名的 cookie（例如我们用于根路径资源路由的 `ws_appid`）会变成**第三方 Cookie**
 - `SameSite=Lax/Strict` 默认不会在 iframe 场景发送，导致 `/@vite/client`、`/src/*`、以及“根路径 /api 分流到 workspace”的逻辑失效
 
 要让 cookie 在跨站 iframe 中可用，必须：
@@ -77,31 +77,31 @@
 - **HTTPS**（否则 `Secure` cookie 不生效）
 - `Set-Cookie` 增加 `SameSite=None; Secure`
 
-对应 Nginx 配置参考 `src/main/resources/doc/阿里云部署文档.md` 中 `/ws/{userId}/...` location 的 `Set-Cookie ws_uid=...` 段落。
+对应 Nginx 配置参考 `src/main/resources/doc/阿里云部署文档.md` 中 `/preview/{appId}/...` location 的 `Set-Cookie ws_appid=...` 段落。
 
-补充：如果你发现访问 `/ws/{userId}/` 在浏览器里出现 **302 循环**（`Location` 还是 `/ws/{userId}/`），一般是因为上游 dev server 需要保留 `/ws/{userId}` 前缀，
+补充：如果你发现访问 `/preview/{appId}/` 在浏览器里出现 **302 循环**（`Location` 还是 `/preview/{appId}/`），一般是因为上游 dev server 需要保留 `/preview/{appId}` 前缀，
 此时 workspace-dev Nginx 不要做“剥离前缀再转发”，而应直接：
 
-- `/ws/{userId}/...`：剥离前缀后转发到上游根路径：
-  - `location ~ ^/ws/(?<uid>\d+)(?<rest>/.*)?$ { ... proxy_pass http://127.0.0.1:$ws_port$rest; }`
+- `/preview/{appId}/...`：剥离前缀后转发到上游根路径：
+  - `location ~ ^/preview/(?<appid>\d+)(?<rest>/.*)?$ { ... proxy_pass http://127.0.0.1:$ws_port$rest; }`
 - 根路径资源（通过 cookie 路由到 workspace）：`proxy_pass http://127.0.0.1:$ws_port$request_uri;`
 
-## 3.5 API 服务器（小机）Nginx 只切 `/ws/*` 到 Workspace 开发服务器（大机）（推荐先做，低风险）
+## 3.5 API 服务器（小机）Nginx 只切 `/preview/*` 到 Workspace 开发服务器（大机）（推荐先做，低风险）
 
-目标：先把“预览流量”（`/ws/*`）从 API 服务器（小机）转发到 Workspace 开发服务器（大机）Nginx，**不改动 API 服务器（小机）业务 API**，验证用户预览已经走 Workspace 开发服务器（大机）容器节点。
+目标：先把“预览流量”（`/preview/*`）从 API 服务器（小机）转发到 Workspace 开发服务器（大机）Nginx，**不改动 API 服务器（小机）业务 API**，验证用户预览已经走 Workspace 开发服务器（大机）容器节点。
 
 ### 3.5.1 安全组最小放行建议
 
 - Workspace 开发服务器（大机）入方向：
-  - **80/tcp**：只允许 API 服务器（小机）公网 IP（例如 `47.118.27.59`）访问（用于 `/ws/*` 转发）
+  - **80/tcp**：只允许 API 服务器（小机）公网 IP（例如 `47.118.27.59`）访问（用于 `/preview/*` 转发）
   - （可选）**7001/tcp**：只允许 Workspace 开发服务器（大机）本机或 API 服务器（小机）访问（如果你未来要让 API 服务器（小机）直连 workspace-node API；不做 API 切流时可不开放）
 
-### 3.5.2 API 服务器（小机）Nginx 示例（`/ws/*` → Workspace 开发服务器（大机）Nginx）
+### 3.5.2 API 服务器（小机）Nginx 示例（`/preview/*` → Workspace 开发服务器（大机）Nginx）
 
-以下配置片段放在 API 服务器（小机）对外 server 块中（`server { ... }`），将 `/ws/` 前缀原样转发到 Workspace 开发服务器（大机）：
+以下配置片段放在 API 服务器（小机）对外 server 块中（`server { ... }`），将 `/preview/` 前缀原样转发到 Workspace 开发服务器（大机）：
 
 ```nginx
-# API 服务器（小机）：把 /ws/ 转发到 Workspace 开发服务器（大机）Nginx
+# API 服务器（小机）：把 /preview/ 转发到 Workspace 开发服务器（大机）Nginx
 
 # 重要：/doc 文档与 doc-mermaid.js 必须走 API（否则会出现浏览器 GET /doc-mermaid.js 502，导致 sequenceDiagram 不渲染）
 # 若你的 Nginx 有正则静态规则（例如 location ~* \.(js|css|ico)$），请优先加下面的精确/前缀匹配并放在 regex 之前：
@@ -109,7 +109,7 @@
 # location = /favicon.ico    { proxy_pass http://127.0.0.1:8080; }
 # location ^~ /doc/          { proxy_pass http://127.0.0.1:8080; }
 
-location ^~ /ws/ {
+location ^~ /preview/ {
     proxy_http_version 1.1;
 
     # WebSocket（在线终端）需要
@@ -134,7 +134,7 @@ location ^~ /ws/ {
 
 说明：
 
-- `proxy_pass http://39.97.61.139;` 不带路径，可让 `/ws/...` 原样落到 Workspace 开发服务器（大机）Nginx 的 `/ws/...`。
+- `proxy_pass http://39.97.61.139;` 不带路径，可让 `/preview/...` 原样落到 Workspace 开发服务器（大机）Nginx 的 `/preview/...`。
 - `$connection_upgrade` 需要在 `http {}` 里定义（若你们已有可跳过）：
 
 ```nginx
@@ -149,7 +149,7 @@ map $http_upgrade $connection_upgrade {
 在 API 服务器（小机）或任意能访问公网入口的机器验证：
 
 ```bash
-curl -I http://47.118.27.59/ws/<userId>/
+curl -I http://47.118.27.59/preview/<appId>/
 ```
 
 预期：
@@ -197,7 +197,7 @@ workspace-node.internal.require-signature=false
 - Header：`X-WS-Node-Token: <token>`
 - body（示例）：
   - `nodeName`：节点名（唯一，例如 ws-node-01）
-  - `nginxBaseUrl`：该节点 Nginx 基址（供 /ws 路由）
+  - `nginxBaseUrl`：该节点 Nginx 基址（供 /preview 路由）
   - `apiBaseUrl`：该节点 workspace-node API 基址（供 API 侧转发/签名）
 
 配置（API 服务 `application-prod.properties`）：
@@ -401,7 +401,7 @@ curl -s "http://127.0.0.1:7001/api/fun-ai/workspace/run/status?userId=<uid>"
 
 ```bash
 curl -I http://127.0.0.1:<hostPort>/
-curl -I "http://127.0.0.1/ws/<uid>/" -H "Host: <BIG_PUBLIC_IP>"
+curl -I "http://127.0.0.1/preview/<appId>/" -H "Host: <BIG_PUBLIC_IP>"
 ```
 
 ## 9. 清理验证数据（避免污染真实 userId/appId）

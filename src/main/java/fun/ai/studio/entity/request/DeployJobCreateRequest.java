@@ -14,7 +14,7 @@ public class DeployJobCreateRequest {
     @Schema(description = "（可选）Git ref（branch/tag/commit），默认 main", example = "main")
     private String gitRef;
 
-    @Schema(description = "（可选）对外访问路径前缀，默认 /apps/{appId}", example = "/apps/20000411")
+    @Schema(description = "（可选）对外访问路径前缀，默认 /runtime/{appId}", example = "/runtime/20000411")
     private String basePath;
 
     @Schema(description = "（可选）镜像 tag（Runner build 时使用），默认 latest", example = "latest")

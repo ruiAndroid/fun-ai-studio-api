@@ -54,13 +54,13 @@ public class SwaggerConfig implements WebMvcConfigurer {
                                 - Workspace-dev（开发容器节点）：workspace-node(7001) + Nginx(/ws) + 用户 workspace 容器 + verdaccio/npm 缓存 + workspace 落盘目录。
                                 - Deploy（发布控制面）：fun-ai-studio-deploy(7002)，维护 Job 队列与 runtime 节点注册表/选址。
                                 - Runner（执行面）：fun-ai-studio-runner(Python)，轮询 claim 任务并执行构建/部署动作。
-                                - Runtime（运行态，可多台横向扩容）：runtime-agent(7005) + Docker/Podman + 网关(80/443)，承载用户应用容器并对外暴露 /apps/{appId}/...
+                                - Runtime（运行态，可多台横向扩容）：runtime-agent(7005) + Docker/Podman + 网关(80/443)，承载用户应用容器并对外暴露 /runtime/{appId}/...
                                 - Git（源码真相源）：Gitea（103；Runner 用 SSH 拉代码构建，Workspace push 源码）
 
                                 【接口/流量说明】
                                 - `/api/fun-ai/workspace/**`：对外仍由 API 暴露（本 Swagger 可见），多机部署时会转发到 workspace-dev 的 workspace-node 执行。
-                                - `/ws/{userId}/...`：用户预览入口，公网入口通常先到 API 网关/Nginx，再转发到 workspace-dev Nginx，再反代到该用户容器 hostPort。
-                                - `/api/fun-ai/deploy/**`：用户创建部署任务入口（只访问 API）；API 内部调用 Deploy(7002) 创建 Job，Runner 领取执行，Runtime 对外提供 `/apps/{appId}/...`。
+                                - `/preview/{appId}/...`：用户预览入口，公网入口通常先到 API 网关/Nginx，再转发到 workspace-dev Nginx，再反代到该用户容器 hostPort。
+                                - `/api/fun-ai/deploy/**`：用户创建部署任务入口（只访问 API）；API 内部调用 Deploy(7002) 创建 Job，Runner 领取执行，Runtime 对外提供 `/runtime/{appId}/...`。
 
                                 【节点管理（运维）】
                                 - 入口页：`/admin/nodes.html#token={{adminToken}}`

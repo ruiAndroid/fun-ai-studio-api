@@ -31,14 +31,14 @@
   - `8080`：cAdvisor（容器指标，若部署）
 - **Workspace-dev**
   - `7001`：workspace-node API（仅内网）
-  - `80`：Workspace-dev Nginx（仅供 API(91) 的 Nginx 转发 `/ws/*`）
+  - `80`：Workspace-dev Nginx（仅供 API(91) 的 Nginx 转发 `/preview/*`）
 - **Deploy**
   - `7002`：Deploy 控制面（仅内网：API 调用 + 运维 + 后续 Runner/Runtime 心跳）
 - **Runner**
   - （无对外端口）通过 `7002` 访问 Deploy；通过 `7005` 访问 runtime-agent
 - **Runtime**
   - `7005`：runtime-agent（仅内网：Runner 访问）
-  - `80/443`：Runtime 网关（对公网：用户访问 `/apps/{appId}/...`；按你们网关/SLB 形态）
+  - `80/443`：Runtime 网关（对公网：用户访问 `/runtime/{appId}/...`；按你们网关/SLB 形态）
 - **Git + Harbor（103）**
   - `2222`：Gitea SSH（Workspace/Runner 拉推代码）
   - `3000`：Gitea Web（仅运维/白名单）
@@ -69,7 +69,7 @@
   - **TCP 7001**：允许来源 **`172.21.138.91/32`**
     - 用途：API → workspace-node API（workspace 操作转发/代理）
   - **TCP 80**：允许来源 **`172.21.138.91/32`**
-    - 用途：API(91) 上 Nginx → Workspace-dev(87) 上 Nginx（转发 `/ws/{userId}/...` 预览流量）
+    - 用途：API(91) 上 Nginx → Workspace-dev(87) 上 Nginx（转发 `/preview/{appId}/...` 预览流量）
   - 说明：**不建议**把 `87:80`、`87:7001` 对公网开放
   - （监控）**TCP 9100**：允许来源 **`172.21.138.91/32`**
     - 用途：API(91) 上 Prometheus → Workspace-dev(87) node_exporter
@@ -94,7 +94,7 @@
   - **TCP 7001** → **`172.21.138.87/32`**
     - 用途：API → workspace-node API
   - **TCP 80** → **`172.21.138.87/32`**
-    - 用途：API Nginx → Workspace-dev Nginx（`/ws/*` 转发）
+    - 用途：API Nginx → Workspace-dev Nginx（`/preview/*` 转发）
   - （监控）**TCP 9100** → **`172.21.138.87/32,172.21.138.100/32,172.21.138.101/32,172.21.138.102/32`**
     - 用途：Prometheus 抓取各机器 node_exporter
   - （监控）**TCP 8080** → **`172.21.138.87/32,172.21.138.102/32`**
@@ -125,7 +125,7 @@
   - **TCP 7005**：允许来源 **`172.21.138.101/32`**
     - 用途：Runner → runtime-agent
   - **TCP 80/443**：对公网开放（或仅对 SLB/网关来源开放）
-    - 用途：用户访问统一入口下的 `/apps/{appId}/...`
+    - 用途：用户访问统一入口下的 `/runtime/{appId}/...`
   - （监控）**TCP 9100**：允许来源 **`172.21.138.91/32`**
     - 用途：API(91) 上 Prometheus → Runtime(102) node_exporter
   - （监控）**TCP 8080**：允许来源 **`172.21.138.91/32`**

@@ -81,9 +81,9 @@ public class FunAiDeployController {
             maybeFillGitPayload(payload, userId, appId);
         } catch (Exception ignore) {
         }
-        // basePath 默认 /apps/{appId}
+        // basePath 默认 /runtime/{appId}
         if (!payload.containsKey("basePath") || payload.get("basePath") == null) {
-            payload.put("basePath", "/apps/" + appId);
+            payload.put("basePath", "/runtime/" + appId);
         }
         // containerPort 默认 3000
         if (!payload.containsKey("containerPort") || payload.get("containerPort") == null) {

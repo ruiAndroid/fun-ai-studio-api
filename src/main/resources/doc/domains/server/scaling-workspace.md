@@ -5,12 +5,12 @@
 当前工程的 Workspace 能力在单机上成立的关键假设：
 
 - **每用户一个容器**：容器名 `ws-u-{userId}`，并通过 `docker` CLI 进行 `run/exec/inspect/stop`。
-- **预览入口是用户级**：`/ws/{userId}/`（Nginx 反代到该用户固定 `hostPort`）。
+- **预览入口是应用级**：`/preview/{appId}/`（Nginx 反代到该用户固定 `hostPort`）。
 - **宿主机持久化目录**：`{hostRoot}/{userId}/...` bind mount 到容器 `/workspace`。
 - **实时链路**：
   - WS 终端会持续 `touch(userId)`，影响 idle 回收策略（这在多机依然成立，只是 `touch` 的存储位置需要从内存迁移到共享存储）。
 
-这意味着：多机扩容的核心难点不在 Spring Boot，而在 **“/ws/{userId} 的路由与 state（容器/端口/目录）绑定在某一台机器”**。
+这意味着：多机扩容的核心难点不在 Spring Boot，而在 **“/preview/{appId} 的路由与 state（容器/端口/目录）绑定在某一台机器”**。
 
 ---
 
@@ -54,7 +54,7 @@ flowchart TD
 ### 职责划分
 
 - **Gateway（统一入口）**
-  - 负责静态资源、API 反代、以及 **/ws/{userId}/ 预览流量路由**。
+  - 负责静态资源、API 反代、以及 **/preview/{appId}/ 预览流量路由**。
   - 推荐继续使用 Nginx（你们已有 `auth_request` 设计）。
 
 - **ControlPlane（Spring Boot API）**
@@ -68,7 +68,7 @@ flowchart TD
 
 ---
 
-## 关键设计：/ws/{userId}/ 的路由与“用户落点（Placement）”
+## 关键设计：/preview/{appId}/ 的路由与“用户落点（Placement）”
 
 ### 必须引入一个“用户落点表”
 
@@ -88,14 +88,14 @@ flowchart TD
 
 #### 策略 A（推荐）：Gateway 动态转发到 WorkspaceNode（按 userId 查表）
 
-1. 用户访问 `https://your-domain/ws/{userId}/...`
+1. 用户访问 `https://your-domain/preview/{appId}/...`
 2. Gateway 子请求 `auth_request` 到 ControlPlane，拿到该 userId 的 `nodeUpstream`（或在 header 中返回）
 3. Gateway 按 header 选择 upstream 转发到对应 WorkspaceNode，再由 WorkspaceNode 反代到本机容器 `hostPort`
 
 优点：
 
 - 对外仍是一个域名
-- /ws 流量不必穿过 ControlPlane（减少 Java 压力）
+- /preview 流量不必穿过 ControlPlane（减少 Java 压力）
 
 #### 策略 B（简化版）：ControlPlane 302 跳转到节点域名
 

@@ -36,8 +36,8 @@ flowchart TB
 
     subgraph Routes["四种访问路径"]
         R1["/api/** 业务接口"]
-        R2["/ws/** 开发预览"]
-        R3["/apps/** 线上应用"]
+        R2["/preview/** 开发预览"]
+        R3["/runtime/** 线上应用"]
         R4["/fun-agent/** Agent服务"]
     end
 
@@ -121,7 +121,7 @@ sequenceDiagram
 
     U->>API: 打开编辑器
     API->>WS: 确保容器就绪
-    WS-->>U: 返回预览地址 /ws/{userId}/
+    WS-->>U: 返回预览地址 /preview/{appId}/
 
     U->>WS: 编辑代码、npm install
     WS->>WS: 容器内执行、实时日志
@@ -138,7 +138,7 @@ sequenceDiagram
    - 隔离环境：你装的依赖不影响别人
    - 持久化：代码保存在宿主机，容器重建不丢失
 
-2. **预览地址是用户级的** (`/ws/{userId}/`)
+2. **预览地址是应用级的** (`/preview/{appId}/`)
    - 不是项目级，因为同一时间只运行一个项目
    - Nginx 通过 `auth_request` 动态查端口
 
@@ -175,7 +175,7 @@ sequenceDiagram
     RT->>RT: 启动应用
     R->>D: 报告成功
 
-    U->>RT: 访问 /apps/{appId}/
+    U->>RT: 访问 /runtime/{appId}/
     RT->>M: 应用读写数据
 ```
 
@@ -276,8 +276,8 @@ flowchart LR
 |------|------|
 | `/api/**` | 91:8080 (API) |
 | `/fun-agent/**` | 91 → 88:80 (Agent Node，由 91 转发) |
-| `/ws/**` | 87:80 (Workspace) |
-| `/apps/**` | 102:80 (Runtime) |
+| `/preview/**` | 87:80 (Workspace) |
+| `/runtime/**` | 102:80 (Runtime) |
 
 **内部调用**：
 | 调用方 | 目标 | 用途 |
@@ -316,7 +316,7 @@ flowchart LR
 
 ### 为什么开发态和运行态要完全分开？
 
-**问题**：开发时的预览 (`/ws/`) 和线上访问 (`/apps/`) 能不能合并？
+**问题**：开发时的预览 (`/preview/`) 和线上访问 (`/runtime/`) 能不能合并？
 
 **不能，因为**：
 - 开发态容器随时可能重启、npm install、代码报错

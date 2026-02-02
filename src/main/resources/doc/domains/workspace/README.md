@@ -11,15 +11,15 @@ Workspace 域的目标：给每个用户提供一个可持久化的“在线开�
 
 在“多机部署”（现网 6 台：API / workspace-dev / Deploy / Runner / Runtime / Git）模式下：
 
-- **对外 URL 不变**：前端/调用方仍请求 API（入口）暴露的 `/api/fun-ai/workspace/**` 与 `/ws/{userId}/...`
-- **实际执行在 workspace-dev**：API 会将 workspace 相关请求（以及 `/ws/*` 预览流量）转发到 workspace-dev（workspace-node + workspace-dev Nginx）完成
+- **对外 URL 不变**：前端/调用方仍请求 API（入口）暴露的 `/api/fun-ai/workspace/**` 与 `/preview/{appId}/...`
+- **实际执行在 workspace-dev**：API 会将 workspace 相关请求（以及 `/preview/*` 预览流量）转发到 workspace-dev（workspace-node + workspace-dev Nginx）完成
 - **排障位置变化**：容器、端口池、运行日志、verdaccio 等问题优先在 workspace-dev 排查
 
 ## 核心约束（单机版）
 
 - **每个用户一个容器**：容器名 `ws-u-{userId}`（可配置前缀）
 - **每个用户同一时间仅运行一个 app**：切换 app 时会 stop 旧 run
-- **预览入口是用户级**：`/ws/{userId}/`（Nginx 反代到该用户固定 hostPort）
+- **预览入口是应用级**：`/preview/{appId}/`（Nginx 反代到该用户固定 hostPort）
 - **宿主机持久化目录**：`{hostRoot}/{userId}/...` 挂载到容器 `containerWorkdir`（默认 `/workspace`）
   - 宿主机：`{hostRoot}/{userId}/apps/{appId}` <-> 容器：`/workspace/apps/{appId}`
   - 宿主机：`{hostRoot}/{userId}/run` <-> 容器：`/workspace/run`
@@ -33,7 +33,6 @@ Workspace 域的目标：给每个用户提供一个可持久化的“在线开�
   - 文件域：`fun.ai.studio.controller.workspace.files.FunAiWorkspaceFileController`
   - 运行态：`fun.ai.studio.controller.workspace.run.FunAiWorkspaceRunController`
   - internal：`fun.ai.studio.controller.workspace.internal.FunAiWorkspaceInternalController`
-  - WebSocket 终端：`fun.ai.studio.workspace.realtime.WorkspaceTerminalWebSocketHandler`
 
 ## 常用增强能力
 
