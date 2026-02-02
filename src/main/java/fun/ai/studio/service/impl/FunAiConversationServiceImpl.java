@@ -44,17 +44,16 @@ public class FunAiConversationServiceImpl implements FunAiConversationService {
             throw new IllegalArgumentException("appId 不能为空");
         }
         
-        // 检查会话数量限制
+        // 检查会话数量限制（不再区分归档状态，所有会话都计入）
         long count = conversationMapper.selectCount(
             new LambdaQueryWrapper<FunAiConversation>()
                 .eq(FunAiConversation::getUserId, userId)
                 .eq(FunAiConversation::getAppId, appId)
-                .eq(FunAiConversation::getArchived, false)
         );
         
         if (count >= maxConversationsPerApp) {
             throw new IllegalArgumentException(
-                "该应用的活跃会话数已达上限（" + maxConversationsPerApp + "），请归档或删除旧会话后再创建"
+                "该应用的会话数已达上限（" + maxConversationsPerApp + "），请删除旧会话后再创建"
             );
         }
         
@@ -71,7 +70,7 @@ public class FunAiConversationServiceImpl implements FunAiConversationService {
     }
     
     @Override
-    public ConversationListResponse listConversations(Long userId, Long appId, Boolean archived) {
+    public ConversationListResponse listConversations(Long userId, Long appId) {
         if (userId == null) {
             throw new IllegalArgumentException("userId 不能为空");
         }
@@ -79,16 +78,13 @@ public class FunAiConversationServiceImpl implements FunAiConversationService {
             throw new IllegalArgumentException("appId 不能为空");
         }
         
-        LambdaQueryWrapper<FunAiConversation> wrapper = new LambdaQueryWrapper<FunAiConversation>()
-            .eq(FunAiConversation::getUserId, userId)
-            .eq(FunAiConversation::getAppId, appId)
-            .orderByDesc(FunAiConversation::getLastMessageTime);
-        
-        if (archived != null) {
-            wrapper.eq(FunAiConversation::getArchived, archived);
-        }
-        
-        List<FunAiConversation> conversations = conversationMapper.selectList(wrapper);
+        // 查询所有会话，按最后消息时间倒序
+        List<FunAiConversation> conversations = conversationMapper.selectList(
+            new LambdaQueryWrapper<FunAiConversation>()
+                .eq(FunAiConversation::getUserId, userId)
+                .eq(FunAiConversation::getAppId, appId)
+                .orderByDesc(FunAiConversation::getLastMessageTime)
+        );
         
         ConversationListResponse response = new ConversationListResponse();
         response.setConversations(conversations);
@@ -221,31 +217,6 @@ public class FunAiConversationServiceImpl implements FunAiConversationService {
             new LambdaUpdateWrapper<FunAiConversation>()
                 .eq(FunAiConversation::getId, conversationId)
                 .set(FunAiConversation::getTitle, title)
-        );
-    }
-    
-    @Override
-    @Transactional
-    public void archiveConversation(Long userId, Long conversationId) {
-        if (userId == null) {
-            throw new IllegalArgumentException("userId 不能为空");
-        }
-        if (conversationId == null) {
-            throw new IllegalArgumentException("conversationId 不能为空");
-        }
-        
-        FunAiConversation conversation = conversationMapper.selectById(conversationId);
-        if (conversation == null) {
-            throw new IllegalArgumentException("会话不存在");
-        }
-        if (!conversation.getUserId().equals(userId)) {
-            throw new IllegalArgumentException("无权访问该会话");
-        }
-        
-        conversationMapper.update(null,
-            new LambdaUpdateWrapper<FunAiConversation>()
-                .eq(FunAiConversation::getId, conversationId)
-                .set(FunAiConversation::getArchived, true)
         );
     }
     

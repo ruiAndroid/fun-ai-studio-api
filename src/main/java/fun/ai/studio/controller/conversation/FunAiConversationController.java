@@ -56,11 +56,10 @@ public class FunAiConversationController {
     @Operation(summary = "获取会话列表", description = "获取指定应用的所有会话")
     public Result<ConversationListResponse> listConversations(
             Authentication authentication,
-            @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
-            @Parameter(description = "是否只查询已归档的会话") @RequestParam(required = false) Boolean archived) {
+            @Parameter(description = "应用ID", required = true) @RequestParam Long appId) {
         try {
             Long userId = Long.parseLong(authentication.getName());
-            ConversationListResponse response = conversationService.listConversations(userId, appId, archived);
+            ConversationListResponse response = conversationService.listConversations(userId, appId);
             return Result.success(response);
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
@@ -123,24 +122,6 @@ public class FunAiConversationController {
             log.error("update conversation title failed: conversationId={}, error={}", 
                 conversationId, e.getMessage(), e);
             return Result.error("更新标题失败: " + e.getMessage());
-        }
-    }
-    
-    @PostMapping("/archive")
-    @Operation(summary = "归档会话", description = "将会话标记为已归档")
-    public Result<Void> archiveConversation(
-            Authentication authentication,
-            @Parameter(description = "会话ID", required = true) @RequestParam Long conversationId) {
-        try {
-            Long userId = Long.parseLong(authentication.getName());
-            conversationService.archiveConversation(userId, conversationId);
-            return Result.success(null);
-        } catch (IllegalArgumentException e) {
-            return Result.error(e.getMessage());
-        } catch (Exception e) {
-            log.error("archive conversation failed: conversationId={}, error={}", 
-                conversationId, e.getMessage(), e);
-            return Result.error("归档会话失败: " + e.getMessage());
         }
     }
     

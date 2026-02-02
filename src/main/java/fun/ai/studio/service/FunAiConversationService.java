@@ -17,7 +17,7 @@ public interface FunAiConversationService {
     /**
      * 获取应用的会话列表
      */
-    ConversationListResponse listConversations(Long userId, Long appId, Boolean archived);
+    ConversationListResponse listConversations(Long userId, Long appId);
     
     /**
      * 获取会话详情（包含消息列表）
@@ -33,11 +33,6 @@ public interface FunAiConversationService {
      * 更新会话标题
      */
     void updateConversationTitle(Long userId, Long conversationId, String title);
-    
-    /**
-     * 归档会话
-     */
-    void archiveConversation(Long userId, Long conversationId);
     
     /**
      * 删除会话（及其所有消息）
