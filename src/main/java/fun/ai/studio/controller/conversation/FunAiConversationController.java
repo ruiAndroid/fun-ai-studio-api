@@ -13,7 +13,6 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
@@ -36,10 +35,9 @@ public class FunAiConversationController {
     @PostMapping("/create")
     @Operation(summary = "创建新会话", description = "为指定应用创建新的对话会话")
     public Result<FunAiConversation> createConversation(
-            Authentication authentication,
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Valid @RequestBody ConversationCreateRequest request) {
         try {
-            Long userId = Long.parseLong(authentication.getName());
             FunAiConversation conversation = conversationService.createConversation(
                 userId, request.getAppId(), request.getTitle()
             );
@@ -55,10 +53,9 @@ public class FunAiConversationController {
     @GetMapping("/list")
     @Operation(summary = "获取会话列表", description = "获取指定应用的所有会话")
     public Result<ConversationListResponse> listConversations(
-            Authentication authentication,
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId) {
         try {
-            Long userId = Long.parseLong(authentication.getName());
             ConversationListResponse response = conversationService.listConversations(userId, appId);
             return Result.success(response);
         } catch (IllegalArgumentException e) {
@@ -72,10 +69,9 @@ public class FunAiConversationController {
     @GetMapping("/detail")
     @Operation(summary = "获取会话详情", description = "获取会话详情及其所有消息")
     public Result<ConversationDetailResponse> getConversationDetail(
-            Authentication authentication,
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "会话ID", required = true) @RequestParam Long conversationId) {
         try {
-            Long userId = Long.parseLong(authentication.getName());
             ConversationDetailResponse response = conversationService.getConversationDetail(userId, conversationId);
             return Result.success(response);
         } catch (IllegalArgumentException e) {
@@ -89,10 +85,9 @@ public class FunAiConversationController {
     @PostMapping("/message/add")
     @Operation(summary = "添加消息", description = "向会话中添加新消息")
     public Result<FunAiConversationMessage> addMessage(
-            Authentication authentication,
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Valid @RequestBody ConversationMessageAddRequest request) {
         try {
-            Long userId = Long.parseLong(authentication.getName());
             FunAiConversationMessage message = conversationService.addMessage(
                 userId, request.getConversationId(), request.getRole(), request.getContent()
             );
@@ -109,11 +104,10 @@ public class FunAiConversationController {
     @PostMapping("/title")
     @Operation(summary = "更新会话标题", description = "修改会话的标题")
     public Result<Void> updateTitle(
-            Authentication authentication,
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "会话ID", required = true) @RequestParam Long conversationId,
             @Parameter(description = "新标题", required = true) @RequestParam String title) {
         try {
-            Long userId = Long.parseLong(authentication.getName());
             conversationService.updateConversationTitle(userId, conversationId, title);
             return Result.success(null);
         } catch (IllegalArgumentException e) {
@@ -128,10 +122,9 @@ public class FunAiConversationController {
     @GetMapping("/delete")
     @Operation(summary = "删除会话", description = "删除会话及其所有消息")
     public Result<Void> deleteConversation(
-            Authentication authentication,
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "会话ID", required = true) @RequestParam Long conversationId) {
         try {
-            Long userId = Long.parseLong(authentication.getName());
             conversationService.deleteConversation(userId, conversationId);
             return Result.success(null);
         } catch (IllegalArgumentException e) {
