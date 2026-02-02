@@ -3,7 +3,6 @@ package fun.ai.studio.controller.conversation;
 import fun.ai.studio.common.Result;
 import fun.ai.studio.entity.FunAiConversation;
 import fun.ai.studio.entity.FunAiConversationMessage;
-import fun.ai.studio.entity.request.ConversationCreateRequest;
 import fun.ai.studio.entity.request.ConversationMessageAddRequest;
 import fun.ai.studio.entity.response.ConversationDetailResponse;
 import fun.ai.studio.entity.response.ConversationListResponse;
@@ -36,11 +35,10 @@ public class FunAiConversationController {
     @Operation(summary = "创建新会话", description = "为指定应用创建新的对话会话")
     public Result<FunAiConversation> createConversation(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
-            @Valid @RequestBody ConversationCreateRequest request) {
+            @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
+            @Parameter(description = "会话标题（可选）") @RequestParam(required = false) String title) {
         try {
-            FunAiConversation conversation = conversationService.createConversation(
-                userId, request.getAppId(), request.getTitle()
-            );
+            FunAiConversation conversation = conversationService.createConversation(userId, appId, title);
             return Result.success(conversation);
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
