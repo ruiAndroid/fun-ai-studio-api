@@ -89,6 +89,8 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
         if (!uri.startsWith(WORKSPACE_API_PREFIX)) return true;
         // Mongo Explorer：需要在 API 服务器（小机）侧做 appOwned 等业务校验，再由 controller 调用 WorkspaceNodeClient 转发到 workspace-node
         if (uri.startsWith("/api/fun-ai/workspace/mongo/")) return true;
+        // realtime/log：需要在 API 服务器（小机）侧做 appOwned 校验，再由 controller 拉取 workspace-node 日志
+        if (uri.startsWith("/api/fun-ai/workspace/realtime/log")) return true;
         return false;
     }
 
