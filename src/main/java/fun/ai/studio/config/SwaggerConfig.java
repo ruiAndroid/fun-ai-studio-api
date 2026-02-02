@@ -7,8 +7,10 @@ import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.info.License;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
+import io.swagger.v3.oas.models.servers.Server;
 import io.swagger.v3.oas.models.tags.Tag;
 import org.springdoc.core.customizers.OpenApiCustomizer;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
@@ -36,9 +38,12 @@ public class SwaggerConfig implements WebMvcConfigurer {
             + "4) workspace-dev 的 workspace-node 服务是否在线（7001）\n"
             + "5) 若启用 workspace 节点注册表：检查 /admin/nodes.html 或 /admin/nodes-admin.html?mode=workspace 是否显示节点 healthy";
 
+    @Value("${funai.siteBaseUrl:}")
+    private String siteBaseUrl;
+
     @Bean
     public OpenAPI customOpenAPI() {
-        return new OpenAPI()
+        OpenAPI openApi = new OpenAPI()
                 .info(new Info()
                         .title("FunAiStudioApi")
                         .description("""
@@ -87,6 +92,22 @@ public class SwaggerConfig implements WebMvcConfigurer {
                                         .type(SecurityScheme.Type.HTTP)
                                         .scheme("bearer")
                                         .bearerFormat("JWT")));
+        String baseUrl = normalizeBaseUrl(siteBaseUrl);
+        if (baseUrl != null && !baseUrl.isBlank()) {
+            openApi.addServersItem(new Server().url(baseUrl));
+        }
+        return openApi;
+    }
+
+    private String normalizeBaseUrl(String baseUrl) {
+        if (baseUrl == null) {
+            return null;
+        }
+        String normalized = baseUrl.trim();
+        if (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
     }
     
     /**
