@@ -68,6 +68,7 @@ public class FunAiConversationController {
     @Operation(summary = "获取会话详情", description = "获取会话详情及其所有消息")
     public Result<ConversationDetailResponse> getConversationDetail(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
             @Parameter(description = "会话ID", required = true) @RequestParam Long conversationId) {
         try {
             ConversationDetailResponse response = conversationService.getConversationDetail(userId, conversationId);
@@ -103,6 +104,7 @@ public class FunAiConversationController {
     @Operation(summary = "更新会话标题", description = "修改会话的标题")
     public Result<Void> updateTitle(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
             @Parameter(description = "会话ID", required = true) @RequestParam Long conversationId,
             @Parameter(description = "新标题", required = true) @RequestParam String title) {
         try {
@@ -121,6 +123,7 @@ public class FunAiConversationController {
     @Operation(summary = "删除会话", description = "删除会话及其所有消息")
     public Result<Void> deleteConversation(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
             @Parameter(description = "会话ID", required = true) @RequestParam Long conversationId) {
         try {
             conversationService.deleteConversation(userId, conversationId);
