@@ -149,11 +149,17 @@
           </div>
           <div>
             <label>appId</label>
-            <select id="appId"></select>
+            <input id="appId" placeholder="例如 20000123" />
           </div>
         </div>
+        <div id="appList" class="small" style="margin-top:10px; max-height:160px; overflow:auto; border:1px solid var(--bd2); border-radius:12px; padding:8px; background:rgba(0,0,0,.14)">
+          （点击“自动填充”加载 app 列表；也可直接手动填写 appId）
+        </div>
         <label>Authorization</label>
-        <input id="token" placeholder="Bearer eyJ..." />
+        <div style="display:flex; gap:10px; align-items:center">
+          <input id="token" type="password" placeholder="Bearer eyJ..." style="flex:1" />
+          <button id="btnToggleToken" class="btn secondary" type="button" style="width:110px">显示</button>
+        </div>
         <div class="btn-row" style="margin-top:10px">
           <button id="btnAuto" class="btn secondary">自动填充（当前登录）</button>
           <button id="btnLoadCols" class="btn">加载集合</button>
@@ -624,18 +630,27 @@
     }
 
     function renderAppOptions(apps) {
-      const sel = $("appId");
-      sel.innerHTML = "";
-      const opt0 = document.createElement("option");
-      opt0.value = "";
-      opt0.textContent = "请选择 app";
-      sel.appendChild(opt0);
-      (apps || []).forEach((a) => {
-        const opt = document.createElement("option");
-        opt.value = String(a.id || a.appId || "");
-        const name = (a.appName || a.name || ("app-" + opt.value));
-        opt.textContent = `${name} (${opt.value})`;
-        sel.appendChild(opt);
+      const box = $("appList");
+      if (!box) return;
+      box.innerHTML = "";
+      const list = (apps || []).filter(Boolean);
+      if (!list.length) {
+        box.textContent = "（暂无 app 列表；请手动填写 appId）";
+        return;
+      }
+      list.forEach((a) => {
+        const id = (a && (a.id || a.appId)) ? String(a.id || a.appId) : "";
+        if (!id) return;
+        const name = (a.appName || a.name || ("app-" + id));
+        const div = document.createElement("div");
+        div.className = "col-item";
+        div.style.marginBottom = "6px";
+        div.textContent = `${name} (${id})`;
+        div.onclick = () => {
+          $("appId").value = id;
+          setStatus("已选择 appId=" + id, "ok");
+        };
+        box.appendChild(div);
       });
     }
 
@@ -673,6 +688,13 @@
       } catch (e) {
         setStatus(String(e.message || e), "err");
       }
+    };
+
+    $("btnToggleToken").onclick = () => {
+      const el = $("token");
+      if (!el) return;
+      el.type = (el.type === "password") ? "text" : "password";
+      $("btnToggleToken").textContent = (el.type === "password") ? "显示" : "隐藏";
     };
 
     $("btnLoadCols").onclick = async () => {
