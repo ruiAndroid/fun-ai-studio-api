@@ -109,6 +109,10 @@ public class SecurityConfig {
         "/admin/nodes-admin.html",
         "/workspace-nodes-admin.html",
         "/deploy-nodes.html",
+        // 预览入口（/preview/{appId}/...）：公开访问（通常由 Nginx 反代到 workspace-dev / hostPort；若请求落到 Spring 也不应被 JWT 拦截）
+        "/preview/**",
+        // 运行态入口（/runtime/{appId}/...）：公开访问（通常由网关/反代指向 runtime 节点；若请求落到 Spring 也不应被 JWT 拦截）
+        "/runtime/**",
         // /doc 页面 mermaid 渲染脚本（必须放行，否则会被 401 JSON 拦截导致浏览器拒绝执行）
         "/doc-mermaid.js",
         "/chatui/**",
