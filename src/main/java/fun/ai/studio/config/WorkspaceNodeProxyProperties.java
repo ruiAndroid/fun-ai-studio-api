@@ -49,6 +49,13 @@ public class WorkspaceNodeProxyProperties {
     private long readTimeoutMs = 0;
 
     /**
+     * run/status 专用超时（毫秒）：避免 workspace-node 正在清理/重启时导致 API list/info 被长时间阻塞。
+     * - 0：不设置（不推荐）
+     * - 建议：800~2000
+     */
+    private long runStatusTimeoutMs = 1200;
+
+    /**
      * 为了生成签名需要计算 body sha256：
      * - 小于阈值：直接读入内存
      * - 大于阈值：落盘到临时文件（避免 OOM）
@@ -93,6 +100,14 @@ public class WorkspaceNodeProxyProperties {
 
     public void setReadTimeoutMs(long readTimeoutMs) {
         this.readTimeoutMs = readTimeoutMs;
+    }
+
+    public long getRunStatusTimeoutMs() {
+        return runStatusTimeoutMs;
+    }
+
+    public void setRunStatusTimeoutMs(long runStatusTimeoutMs) {
+        this.runStatusTimeoutMs = runStatusTimeoutMs;
     }
 
     public long getBodySpoolThresholdBytes() {

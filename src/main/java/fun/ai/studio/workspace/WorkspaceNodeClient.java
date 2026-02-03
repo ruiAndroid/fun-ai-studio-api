@@ -88,7 +88,12 @@ public class WorkspaceNodeClient {
     public FunAiWorkspaceRunStatusResponse getRunStatus(Long userId) {
         String path = "/api/fun-ai/workspace/run/status";
         String query = query(Map.of("userId", String.valueOf(userId)));
-        return requestJson("GET", path, query, null, new TypeReference<Result<FunAiWorkspaceRunStatusResponse>>() {});
+        long timeoutMs = 0;
+        try {
+            if (props != null && props.getRunStatusTimeoutMs() > 0) timeoutMs = props.getRunStatusTimeoutMs();
+        } catch (Exception ignore) {
+        }
+        return requestJson("GET", path, query, null, new TypeReference<Result<FunAiWorkspaceRunStatusResponse>>() {}, timeoutMs);
     }
 
     public boolean hasPackageJson(Long userId, Long appId) {
@@ -281,6 +286,10 @@ public class WorkspaceNodeClient {
     }
 
     private <T> T requestJson(String method, String path, String query, byte[] body, TypeReference<Result<T>> typeRef) {
+        return requestJson(method, path, query, body, typeRef, 0);
+    }
+
+    private <T> T requestJson(String method, String path, String query, byte[] body, TypeReference<Result<T>> typeRef, long timeoutMs) {
         if (!isEnabled()) {
             throw new IllegalStateException("workspace-node client disabled");
         }
@@ -315,8 +324,16 @@ public class WorkspaceNodeClient {
         String baseUrl = nodeResolver.resolve(userId).getApiBaseUrl();
         URI uri = URI.create(joinUrl(baseUrl, p, q));
         HttpRequest.Builder reqB = HttpRequest.newBuilder().uri(uri);
-        if (props.getReadTimeoutMs() > 0) {
-            reqB.timeout(Duration.ofMillis(props.getReadTimeoutMs()));
+        // timeout 优先级：
+        // 1) 每次调用传入 timeoutMs（用于 run/status 等聚合接口，避免卡住 list/info）
+        // 2) 全局 readTimeoutMs（可能为 0，用于 SSE/下载等长连接）
+        try {
+            if (timeoutMs > 0) {
+                reqB.timeout(Duration.ofMillis(timeoutMs));
+            } else if (props.getReadTimeoutMs() > 0) {
+                reqB.timeout(Duration.ofMillis(props.getReadTimeoutMs()));
+            }
+        } catch (Exception ignore) {
         }
         if ("GET".equals(m) || "HEAD".equals(m)) {
             reqB.method(m, HttpRequest.BodyPublishers.noBody());

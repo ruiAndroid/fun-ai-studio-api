@@ -28,6 +28,13 @@ public class DeployProxyProperties {
      */
     private long readTimeoutMs = 8000;
 
+    /**
+     * listJobs/listJobsByApp 专用超时（毫秒）：用于 app/list 聚合展示，避免 Deploy 侧卡住拖慢 list。
+     * - 0：使用 readTimeoutMs
+     * - 建议：800~2000
+     */
+    private long listJobsTimeoutMs = 1500;
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -58,6 +65,14 @@ public class DeployProxyProperties {
 
     public void setReadTimeoutMs(long readTimeoutMs) {
         this.readTimeoutMs = readTimeoutMs;
+    }
+
+    public long getListJobsTimeoutMs() {
+        return listJobsTimeoutMs;
+    }
+
+    public void setListJobsTimeoutMs(long listJobsTimeoutMs) {
+        this.listJobsTimeoutMs = listJobsTimeoutMs;
     }
 }
 

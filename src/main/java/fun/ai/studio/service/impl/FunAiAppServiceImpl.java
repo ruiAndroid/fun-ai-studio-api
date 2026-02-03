@@ -163,6 +163,35 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
                 .update();
     }
 
+    @Override
+    public boolean markReady(Long userId, Long appId) {
+        if (userId == null || appId == null) return false;
+        // 只对 DEPLOYING 的应用做落库更新，避免覆盖其他人工/异常兜底状态
+        return this.lambdaUpdate()
+                .eq(FunAiApp::getId, appId)
+                .eq(FunAiApp::getUserId, userId)
+                .eq(FunAiApp::getAppStatus, FunAiAppStatus.DEPLOYING.code())
+                .set(FunAiApp::getAppStatus, FunAiAppStatus.READY.code())
+                .set(FunAiApp::getLastDeployError, null)
+                .update();
+    }
+
+    @Override
+    public boolean markFailed(Long userId, Long appId, String errorMessage) {
+        if (userId == null || appId == null) return false;
+        String msg = (errorMessage == null || errorMessage.trim().isEmpty())
+                ? "deploy failed"
+                : errorMessage.trim();
+        // 只对 DEPLOYING 的应用做落库更新，避免覆盖其他人工/异常兜底状态
+        return this.lambdaUpdate()
+                .eq(FunAiApp::getId, appId)
+                .eq(FunAiApp::getUserId, userId)
+                .eq(FunAiApp::getAppStatus, FunAiAppStatus.DEPLOYING.code())
+                .set(FunAiApp::getAppStatus, FunAiAppStatus.FAILED.code())
+                .set(FunAiApp::getLastDeployError, msg)
+                .update();
+    }
+
     // 旧链路（zip 上传 + 解压 + npm build + /fun-ai-app 静态站点部署）已移除：
     // - uploadAppFile / getLatestUploadedZipPath / deployApp
     // deploy 相关工具方法也一并移除（避免误用与依赖旧目录结构）

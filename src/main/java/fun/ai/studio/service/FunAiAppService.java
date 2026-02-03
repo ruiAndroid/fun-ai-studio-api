@@ -87,4 +87,16 @@ public interface FunAiAppService extends IService<FunAiApp> {
      * 仅允许操作自己名下的应用。
      */
     boolean markStopped(Long userId, Long appId);
+
+    /**
+     * 标记部署成功：DEPLOYING -> READY，并清空 last_deploy_error。
+     * 仅允许操作自己名下的应用。
+     */
+    boolean markReady(Long userId, Long appId);
+
+    /**
+     * 标记部署失败：DEPLOYING -> FAILED，并写入 last_deploy_error。
+     * 仅允许操作自己名下的应用。
+     */
+    boolean markFailed(Long userId, Long appId, String errorMessage);
 }

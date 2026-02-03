@@ -52,7 +52,7 @@ public class DeployClient {
 
     public List<Map<String, Object>> listJobs(int limit) {
         String path = "/deploy/jobs?limit=" + limit;
-        return requestJson("GET", path, null, new TypeReference<Result<List<Map<String, Object>>>>() {});
+        return requestJson("GET", path, null, new TypeReference<Result<List<Map<String, Object>>>>() {}, listJobsTimeoutMsOrDefault());
     }
 
     /**
@@ -60,7 +60,7 @@ public class DeployClient {
      */
     public List<Map<String, Object>> listJobsByApp(String appId, int limit) {
         String path = "/deploy/jobs/by-app?appId=" + urlPath(appId) + "&limit=" + limit;
-        return requestJson("GET", path, null, new TypeReference<Result<List<Map<String, Object>>>>() {});
+        return requestJson("GET", path, null, new TypeReference<Result<List<Map<String, Object>>>>() {}, listJobsTimeoutMsOrDefault());
     }
 
     public Map<String, Object> cancelJob(String jobId) {
@@ -84,6 +84,24 @@ public class DeployClient {
     }
 
     private <T> T requestJson(String method, String pathAndQuery, Object bodyObj, TypeReference<Result<T>> typeRef) {
+        long timeoutMs = 0;
+        try {
+            timeoutMs = props == null ? 0 : props.getReadTimeoutMs();
+        } catch (Exception ignore) {
+        }
+        return requestJson(method, pathAndQuery, bodyObj, typeRef, timeoutMs);
+    }
+
+    private long listJobsTimeoutMsOrDefault() {
+        try {
+            if (props != null && props.getListJobsTimeoutMs() > 0) return props.getListJobsTimeoutMs();
+            return props == null ? 0 : props.getReadTimeoutMs();
+        } catch (Exception ignore) {
+            return 0;
+        }
+    }
+
+    private <T> T requestJson(String method, String pathAndQuery, Object bodyObj, TypeReference<Result<T>> typeRef, long timeoutMs) {
         if (!isEnabled()) {
             throw new DeployProxyException("deploy-proxy 未启用或 base-url 未配置");
         }
@@ -99,10 +117,10 @@ public class DeployClient {
         }
 
         HttpRequest.Builder b = HttpRequest.newBuilder().uri(URI.create(url));
-        // read-timeout：避免 Deploy 侧 cleanup/purge 卡住导致 API 侧线程长期阻塞
+        // timeout：用于 listJobs 等聚合调用避免拖慢 list；其他接口默认使用 readTimeoutMs
         try {
-            if (props != null && props.getReadTimeoutMs() > 0) {
-                b.timeout(Duration.ofMillis(props.getReadTimeoutMs()));
+            if (timeoutMs > 0) {
+                b.timeout(Duration.ofMillis(timeoutMs));
             }
         } catch (Exception ignore) {
         }

@@ -181,12 +181,12 @@ public class FunAiAppController {
             List<Map<String, Object>> jobs = deployClient.listJobs(200);
             if (jobs == null || jobs.isEmpty()) return;
 
+            // appId -> latestJob（通常 list 已按更新时间倒序；因此“首次出现”视为最新）
+            Map<Long, Map<String, Object>> latestJobByApp = new HashMap<>();
             // appId -> deployUrl（取最后出现的一个，通常 list 已按更新时间倒序）
             Map<Long, String> appPreview = new HashMap<>();
             for (Map<String, Object> j : jobs) {
                 if (j == null) continue;
-                Object status = j.get("status");
-                if (status == null || !"SUCCEEDED".equals(String.valueOf(status))) continue;
                 Object payloadObj = j.get("payload");
                 if (!(payloadObj instanceof Map)) continue;
                 Map<?, ?> payload = (Map<?, ?>) payloadObj;
@@ -198,17 +198,63 @@ public class FunAiAppController {
                 } catch (Exception ignore) {
                     continue;
                 }
+
+                // latest job (first one wins)
+                if (!latestJobByApp.containsKey(appId)) {
+                    latestJobByApp.put(appId, j);
+                }
+
+                Object status = j.get("status");
+                if (status == null || !"SUCCEEDED".equals(String.valueOf(status))) continue;
                 Object deployObj = j.get("deployUrl");
                 String deployUrl = deployObj == null ? null : String.valueOf(deployObj);
                 if (deployUrl == null || deployUrl.isBlank()) continue;
                 appPreview.put(appId, deployUrl);
             }
 
-            if (appPreview.isEmpty()) return;
             for (FunAiApp a : apps) {
                 if (a == null) continue;
+
+                // 状态对账：如果 app 还卡在 DEPLOYING，但 Job 已到终态，则写回数据库
+                // 这能修复“部署成功后 appStatus 仍显示 2（部署中）”的问题
+                try {
+                    if (userId != null
+                            && a.getId() != null
+                            && a.getAppStatus() != null
+                            && a.getAppStatus() == FunAiAppStatus.DEPLOYING.code()
+                            && latestJobByApp.containsKey(a.getId())) {
+                        Map<String, Object> latest = latestJobByApp.get(a.getId());
+                        String st = latest == null || latest.get("status") == null ? null : String.valueOf(latest.get("status"));
+                        if ("SUCCEEDED".equals(st)) {
+                            boolean ok = funAiAppService.markReady(userId, a.getId());
+                            if (ok) {
+                                a.setAppStatus(FunAiAppStatus.READY.code());
+                                a.setLastDeployError(null);
+                            }
+                        } else if ("FAILED".equals(st)) {
+                            String err = latest == null || latest.get("errorMessage") == null ? null : String.valueOf(latest.get("errorMessage"));
+                            boolean ok = funAiAppService.markFailed(userId, a.getId(), err);
+                            if (ok) {
+                                a.setAppStatus(FunAiAppStatus.FAILED.code());
+                                a.setLastDeployError(err);
+                            }
+                        } else if ("CANCELLED".equals(st)) {
+                            boolean ok = funAiAppService.markStopped(userId, a.getId());
+                            if (ok) {
+                                a.setAppStatus(FunAiAppStatus.UPLOADED.code());
+                                a.setLastDeployError(null);
+                            }
+                        }
+                    }
+                } catch (Exception ignore) {
+                }
+
                 String preview = appPreview.get(a.getId());
-                if (preview != null && !preview.isBlank()) {
+                // 约定：只有 READY 才给出“部署态访问地址”。下线（UPLOADED=1）后，不应继续展示旧的 deployUrl，避免前端误以为仍可访问。
+                if (preview != null
+                        && !preview.isBlank()
+                        && a.getAppStatus() != null
+                        && a.getAppStatus() == FunAiAppStatus.READY.code()) {
                     a.setDeployAccessUrl(preview);
                     // 兼容：老前端仍读 accessUrl
                     a.setAccessUrl(preview);
