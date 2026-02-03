@@ -93,6 +93,9 @@ public class SecurityConfig {
     
     //白名单接口，不需要鉴权可以直接调用的
     public static final String[] URL_WHITELIST = {
+        // Spring Boot 默认错误页（避免 error dispatch 再次被鉴权拦截导致日志刷屏）
+        "/error",
+        "/error/**",
         "/swagger-ui.html",//接口文档（兼容旧路径）
         "/swagger-ui/**",//Swagger UI 新路径
         "/swagger-ui/index.html",//Swagger UI 首页

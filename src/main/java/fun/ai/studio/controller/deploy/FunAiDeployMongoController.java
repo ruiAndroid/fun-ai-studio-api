@@ -130,6 +130,11 @@ public class FunAiDeployMongoController {
                 .header("Accept", "application/json");
 
         byte[] body = bodyBytes == null ? new byte[0] : bodyBytes;
+        // FastAPI 对 required body 的接口：若 Content-Length=0 会直接报 "Field required"（loc=[body]）
+        // 这里兜底：非 GET/HEAD 且 body 为空时补一个 {}，让错误更可读（例如缺 collection 字段）
+        if (!"GET".equals(m) && !"HEAD".equals(m) && body.length == 0) {
+            body = "{}".getBytes(StandardCharsets.UTF_8);
+        }
         if ("GET".equals(m) || "HEAD".equals(m)) {
             b.method(m, HttpRequest.BodyPublishers.noBody());
         } else {
