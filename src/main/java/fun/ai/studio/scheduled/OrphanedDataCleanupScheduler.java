@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fun.ai.studio.entity.FunAiApp;
 import fun.ai.studio.mapper.FunAiAppMapper;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -59,6 +60,7 @@ public class OrphanedDataCleanupScheduler {
      * cron 格式：秒 分 时 日 月 周
      */
     @Scheduled(cron = "0 0 2 * * ?")
+    @SchedulerLock(name = "orphanedDataCleanup", lockAtLeastFor = "PT1M", lockAtMostFor = "PT30M")
     public void cleanOrphanedData() {
         if (!enabled) {
             log.debug("孤立数据清理已禁用");
