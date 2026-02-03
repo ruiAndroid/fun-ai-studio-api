@@ -77,6 +77,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             contentLen = request.getContentLengthLong();
         } catch (Exception ignore) {
         }
+        // 重要：multipart/form-data 上传场景下读取 request.getParameterMap()/getParameter 可能触发容器解析并消费输入流，
+        // 导致后续 controller 绑定不到 MultipartFile（Required part 'file' is not present）。
+        // 因此这里对 multipart 请求跳过参数 map 打印。
         String params = formatParamMapSafe(request);
 
         logger.info("[{}] {} method={} uri={}{} params={} contentType={} contentLength={} thread={}",
@@ -179,6 +182,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private String formatParamMapSafe(HttpServletRequest request) {
         try {
+            if (request != null) {
+                String ct = request.getContentType();
+                if (ct != null && ct.toLowerCase(Locale.ROOT).startsWith("multipart/form-data")) {
+                    return "{_skipped=multipart}";
+                }
+            }
             Map<String, String[]> raw = request == null ? null : request.getParameterMap();
             if (raw == null || raw.isEmpty()) return "{}";
 

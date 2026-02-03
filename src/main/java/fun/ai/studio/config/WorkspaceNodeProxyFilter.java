@@ -18,6 +18,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -146,6 +147,14 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
         BodyHolder body = null;
         try {
             body = readBodyMaybeSpoolToDisk(request, props.getBodySpoolThresholdBytes());
+
+            // 1.1 multipart 上传兜底校验：避免前端字段名不叫 file 时，workspace-node 抛 500（Required part 'file' is not present）难以定位
+            if (isUploadMultipartEndpoint(request) && !multipartContainsFileField(body)) {
+                denyAsResult(response, 400,
+                        "缺少 multipart 字段 file。请使用 form-data 字段名 file 上传（示例：curl -F \"file=@app.zip\"）");
+                return;
+            }
+
             String bodySha = body.sha256Hex;
 
             long ts = Instant.now().getEpochSecond();
@@ -217,6 +226,51 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
                 body.closeQuietly();
             }
         }
+    }
+
+    private boolean isUploadMultipartEndpoint(HttpServletRequest request) {
+        if (request == null) return false;
+        String uri = request.getRequestURI();
+        if (uri == null) return false;
+        if (!(uri.contains("/files/upload-zip") || uri.contains("/files/upload-file"))) return false;
+        String ct = request.getContentType();
+        return ct != null && ct.toLowerCase(Locale.ROOT).startsWith("multipart/form-data");
+    }
+
+    /**
+     * 轻量检测 multipart body 是否包含 name="file" 字段声明。
+     * <p>
+     * 说明：这里不做完整 multipart 解析（避免引入依赖/复杂度），只做字符串扫描用于“更友好的报错”。
+     */
+    private boolean multipartContainsFileField(BodyHolder body) {
+        if (body == null) return false;
+        // multipart headers 是 ASCII；这里用 ISO_8859_1 逐字节映射，避免因非 UTF-8 文件内容导致解码异常
+        Charset cs = StandardCharsets.ISO_8859_1;
+        String needle1 = "name=\"file\"";
+        String needle2 = "name=file";
+
+        try {
+            if (body.bytes != null && body.bytes.length > 0) {
+                // 只扫前 256KB，字段声明一定在开头的 headers 区域
+                int n = Math.min(body.bytes.length, 256 * 1024);
+                String head = new String(body.bytes, 0, n, cs);
+                return head.contains(needle1) || head.contains(needle2);
+            }
+            if (body.tempFile != null && Files.exists(body.tempFile)) {
+                int max = 256 * 1024;
+                byte[] buf = new byte[max];
+                int n;
+                try (InputStream in = Files.newInputStream(body.tempFile)) {
+                    n = in.read(buf);
+                }
+                if (n <= 0) return false;
+                String head = new String(buf, 0, n, cs);
+                return head.contains(needle1) || head.contains(needle2);
+            }
+        } catch (Exception ignore) {
+            // ignore
+        }
+        return false;
     }
 
     private void copyRequestHeaders(HttpServletRequest request, HttpRequest.Builder reqB) {

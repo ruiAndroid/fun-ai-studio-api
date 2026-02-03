@@ -19,14 +19,14 @@
 ## 接口
 
 - `POST /ensure-dir`：确保应用目录存在（会先 ensure workspace）
-- `POST /upload-zip`：上传 zip 解压到 `apps/{appId}`
+- `POST /upload-zip`：上传 zip 解压到 `apps/{appId}`（multipart 表单字段名必须为 `file`）
 - `GET /tree`：获取文件树（默认忽略 `node_modules/.git/dist/build/.next/target`）
 - `GET /content`：读文件（2MB 文本限制）
 - `POST /content`：写文件（支持 `expectedLastModifiedMs` 乐观锁；`forceWrite=true` 时强制写入，跳过乐观锁校验）
 - `POST /mkdir`：创建目录
 - `POST /delete`：删除文件/目录
 - `POST /move`：移动/重命名
-- `POST /upload-file`：上传单文件
+- `POST /upload-file`：上传单文件（multipart 表单字段名必须为 `file`）
 - `GET /download-file`：下载单文件
 - `GET /download-zip`：下载应用目录 zip（可选排除 `node_modules`）
 
