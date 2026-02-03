@@ -124,6 +124,8 @@ public class SecurityConfig {
         "/@react-refresh",
         "/src/**",
         "/assets/**",
+        // Vite 默认模板静态资源（很多新建项目会引用 <img src="/vite.svg">，会打到站点根路径）
+        "/vite.svg",
         // /doc 页面 mermaid 渲染脚本（必须放行，否则会被 401 JSON 拦截导致浏览器拒绝执行）
         "/doc-mermaid.js",
         "/chatui/**",
