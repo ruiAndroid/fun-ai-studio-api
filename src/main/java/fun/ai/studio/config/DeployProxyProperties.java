@@ -19,6 +19,15 @@ public class DeployProxyProperties {
     private String baseUrl = "http://127.0.0.1:7002";
     private String sharedSecret = "";
 
+    /**
+     * 请求总超时（包含读取）。0 表示不设置。
+     *
+     * <pre>
+     * deploy-proxy.read-timeout-ms=8000
+     * </pre>
+     */
+    private long readTimeoutMs = 8000;
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -41,6 +50,14 @@ public class DeployProxyProperties {
 
     public void setSharedSecret(String sharedSecret) {
         this.sharedSecret = sharedSecret;
+    }
+
+    public long getReadTimeoutMs() {
+        return readTimeoutMs;
+    }
+
+    public void setReadTimeoutMs(long readTimeoutMs) {
+        this.readTimeoutMs = readTimeoutMs;
     }
 }
 

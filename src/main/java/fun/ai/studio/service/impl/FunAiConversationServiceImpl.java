@@ -281,7 +281,7 @@ public class FunAiConversationServiceImpl implements FunAiConversationService {
         }
         
         // 删除该消息之后的所有消息（sequence > targetMessage.sequence）
-        int deletedCount = messageMapper.delete(
+        messageMapper.delete(
             new LambdaQueryWrapper<FunAiConversationMessage>()
                 .eq(FunAiConversationMessage::getConversationId, conversationId)
                 .gt(FunAiConversationMessage::getSequence, targetMessage.getSequence())
@@ -329,13 +329,23 @@ public class FunAiConversationServiceImpl implements FunAiConversationService {
                 .eq(FunAiConversation::getUserId, userId)
                 .eq(FunAiConversation::getAppId, appId)
         );
-        
-        for (FunAiConversation conversation : conversations) {
-            // 删除会话的所有消息
-            messageMapper.delete(
-                new LambdaQueryWrapper<FunAiConversationMessage>()
-                    .eq(FunAiConversationMessage::getConversationId, conversation.getId())
-            );
+
+        // 批量删除消息（避免 N+1：每个会话一次 delete）
+        if (conversations != null && !conversations.isEmpty()) {
+            List<Long> ids = conversations.stream()
+                    .filter(c -> c != null && c.getId() != null)
+                    .map(FunAiConversation::getId)
+                    .toList();
+            // MySQL 对 IN 参数有上限，做简单分片更稳（应用内会话数量通常不大）
+            final int batchSize = 500;
+            for (int i = 0; i < ids.size(); i += batchSize) {
+                List<Long> batch = ids.subList(i, Math.min(i + batchSize, ids.size()));
+                if (batch.isEmpty()) continue;
+                messageMapper.delete(
+                        new LambdaQueryWrapper<FunAiConversationMessage>()
+                                .in(FunAiConversationMessage::getConversationId, batch)
+                );
+            }
         }
         
         // 删除所有会话

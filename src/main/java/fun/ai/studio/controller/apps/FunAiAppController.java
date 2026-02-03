@@ -2,6 +2,7 @@ package fun.ai.studio.controller.apps;
 
 
 import fun.ai.studio.common.Result;
+import fun.ai.studio.config.FunAiAppDeleteProperties;
 import fun.ai.studio.entity.FunAiApp;
 import fun.ai.studio.entity.FunAiWorkspaceRun;
 import fun.ai.studio.entity.request.UpdateFunAiAppBasicInfoRequest;
@@ -22,6 +23,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.bind.annotation.*;
 
 import java.nio.file.Files;
@@ -31,6 +33,10 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Stream;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 
 /**
  * AI应用控制器
@@ -68,6 +74,13 @@ public class FunAiAppController {
 
     @Autowired(required = false)
     private DeployClient deployClient;
+
+    @Autowired
+    @Qualifier("appCleanupExecutor")
+    private Executor appCleanupExecutor;
+
+    @Autowired(required = false)
+    private FunAiAppDeleteProperties appDeleteProperties;
 
     private boolean detectPackageJson(Path appDir) {
         if (appDir == null || !Files.isDirectory(appDir)) return false;
@@ -345,70 +358,131 @@ public class FunAiAppController {
     public Result<String> deleteApp(@Parameter(description = "用户ID", required = true) @RequestParam Long userId,
                                     @Parameter(description = "应用ID", required = true) @RequestParam Long appId) {
         try {
+            String trace = Long.toHexString(ThreadLocalRandom.current().nextLong());
+            long t0 = System.nanoTime();
+            logger.info("[{}] delete app start: userId={}, appId={}", trace, userId, appId);
+
+            long tDb0 = System.nanoTime();
             boolean deleted = funAiAppService.deleteApp(appId, userId);
             if (!deleted) {
                 return Result.error("删除应用失败");
             }
+            long dbMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - tDb0);
+
             // workspace 清理（宿主机 /data/funai/workspaces/{userId}/apps/{appId}）
             // 注意：deleteApp 已做归属校验，这里不再重复校验，且清理失败不影响删除结果
-            String cleanupWarn = null;
-            String giteaWarn = null;
-            try {
-                if (workspaceNodeClient != null && workspaceNodeClient.isEnabled()) {
-                    // 双机模式：通知 Workspace 开发服务器（大机）清理 workspace app 目录（与 API 服务器（小机）funai.workspace.enabled 无关）
-                    workspaceNodeClient.cleanupOnAppDeleted(userId, appId);
-                } else if (funAiWorkspaceService != null && workspaceProperties != null && workspaceProperties.isEnabled()) {
-                    funAiWorkspaceService.cleanupWorkspaceOnAppDeleted(userId, appId);
+            CompletableFuture<String> cleanupWsF = CompletableFuture.supplyAsync(() -> {
+                long ts = System.nanoTime();
+                try {
+                    if (workspaceNodeClient != null && workspaceNodeClient.isEnabled()) {
+                        // 双机模式：通知 Workspace 开发服务器（大机）清理 workspace app 目录（与 API 服务器（小机）funai.workspace.enabled 无关）
+                        workspaceNodeClient.cleanupOnAppDeleted(userId, appId);
+                    } else if (funAiWorkspaceService != null && workspaceProperties != null && workspaceProperties.isEnabled()) {
+                        funAiWorkspaceService.cleanupWorkspaceOnAppDeleted(userId, appId);
+                    }
+                    return null;
+                } catch (Exception e) {
+                    logger.warn("[{}] cleanup workspace after delete app failed: userId={}, appId={}, err={}",
+                            trace, userId, appId, e.getMessage(), e);
+                    return e.getMessage();
+                } finally {
+                    long ms = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - ts);
+                    logger.info("[{}] cleanup workspace finished: userId={}, appId={}, ms={}", trace, userId, appId, ms);
                 }
-            } catch (Exception e) {
-                cleanupWarn = e.getMessage();
-                logger.warn("cleanup workspace after delete app failed: userId={}, appId={}, err={}", userId, appId, e.getMessage(), e);
-            }
+            }, appCleanupExecutor);
 
             // gitea 仓库清理（best-effort：失败不影响删除结果）
-            try {
-                if (giteaRepoAutomationService != null) {
-                    boolean ok = giteaRepoAutomationService.deleteRepoOnAppDeleted(userId, appId);
-                    if (!ok) {
-                        giteaWarn = "gitea 仓库删除失败（请检查 gitea 配置/token/网络）";
+            CompletableFuture<String> cleanupGiteaF = CompletableFuture.supplyAsync(() -> {
+                long ts = System.nanoTime();
+                try {
+                    if (giteaRepoAutomationService != null) {
+                        boolean ok = giteaRepoAutomationService.deleteRepoOnAppDeleted(userId, appId);
+                        if (!ok) {
+                            return "gitea 仓库删除失败（请检查 gitea 配置/token/网络）";
+                        }
                     }
+                    return null;
+                } catch (Exception e) {
+                    logger.warn("[{}] cleanup gitea repo after delete app failed: userId={}, appId={}, err={}",
+                            trace, userId, appId, e.getMessage(), e);
+                    return e.getMessage();
+                } finally {
+                    long ms = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - ts);
+                    logger.info("[{}] cleanup gitea finished: userId={}, appId={}, ms={}", trace, userId, appId, ms);
                 }
-            } catch (Exception e) {
-                giteaWarn = e.getMessage();
-                logger.warn("cleanup gitea repo after delete app failed: userId={}, appId={}, err={}", userId, appId, e.getMessage(), e);
-            }
+            }, appCleanupExecutor);
 
             // deploy 侧完整清理（best-effort：下线容器 + 清理本地镜像 + 清理 job/placement/last-known 数据）
-            String deployWarn = null;
-            try {
-                if (deployClient != null && deployClient.isEnabled()) {
-                    Map<String, Object> cleanupBody = new HashMap<>();
-                    cleanupBody.put("userId", userId);
-                    cleanupBody.put("appId", String.valueOf(appId));
-                    // 调用 cleanup 接口一次性完成：stop container + rmi images + purge data
-                    deployClient.cleanupApp(cleanupBody);
+            CompletableFuture<String> cleanupDeployF = CompletableFuture.supplyAsync(() -> {
+                long ts = System.nanoTime();
+                try {
+                    if (deployClient != null && deployClient.isEnabled()) {
+                        Map<String, Object> cleanupBody = new HashMap<>();
+                        cleanupBody.put("userId", userId);
+                        cleanupBody.put("appId", String.valueOf(appId));
+                        // 调用 cleanup 接口一次性完成：stop container + rmi images + purge data
+                        deployClient.cleanupApp(cleanupBody);
+                    }
+                    return null;
+                } catch (Exception e) {
+                    logger.warn("[{}] cleanup deploy data after delete app failed: userId={}, appId={}, err={}",
+                            trace, userId, appId, e.getMessage(), e);
+                    return e.getMessage();
+                } finally {
+                    long ms = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - ts);
+                    logger.info("[{}] cleanup deploy finished: userId={}, appId={}, ms={}", trace, userId, appId, ms);
                 }
-            } catch (Exception e) {
-                deployWarn = e.getMessage();
-                logger.warn("cleanup deploy data after delete app failed: userId={}, appId={}, err={}", userId, appId, e.getMessage(), e);
+            }, appCleanupExecutor);
+
+            // 为了保证接口延迟稳定：只短暂等待一小段时间拿“快速失败/快速成功”的结果；
+            // 如果外部清理还在进行，则后台继续跑，避免拖慢 delete 接口。
+            long waitMs = 800;
+            try {
+                if (appDeleteProperties != null) {
+                    waitMs = appDeleteProperties.getCleanupWaitMs();
+                }
+            } catch (Exception ignore) {
+            }
+            // 安全兜底：避免误配导致长时间阻塞（最大 10 秒）
+            if (waitMs < 0) waitMs = 0;
+            if (waitMs > 10_000) waitMs = 10_000;
+            boolean allDoneWithinWait = false;
+            try {
+                CompletableFuture.allOf(cleanupWsF, cleanupGiteaF, cleanupDeployF).get(waitMs, TimeUnit.MILLISECONDS);
+                allDoneWithinWait = true;
+            } catch (Exception ignore) {
             }
 
+            String cleanupWarn = cleanupWsF.isDone() ? cleanupWsF.getNow(null) : null;
+            String giteaWarn = cleanupGiteaF.isDone() ? cleanupGiteaF.getNow(null) : null;
+            String deployWarn = cleanupDeployF.isDone() ? cleanupDeployF.getNow(null) : null;
+
+            boolean stillRunning = !(cleanupWsF.isDone() && cleanupGiteaF.isDone() && cleanupDeployF.isDone());
+
+            String msg = "删除应用成功";
+            boolean hasParen = false;
             if (cleanupWarn != null && !cleanupWarn.isBlank()) {
-                if (giteaWarn != null && !giteaWarn.isBlank()) {
-                    return Result.success("删除应用成功（磁盘目录清理失败：" + cleanupWarn + "；Gitea 清理失败：" + giteaWarn + "）");
-                }
-                return Result.success("删除应用成功（磁盘目录清理失败：" + cleanupWarn + "）");
+                msg += "（磁盘目录清理失败：" + cleanupWarn;
+                hasParen = true;
             }
             if (giteaWarn != null && !giteaWarn.isBlank()) {
-                if (deployWarn != null && !deployWarn.isBlank()) {
-                    return Result.success("删除应用成功（Gitea 清理失败：" + giteaWarn + "；Deploy 清理失败：" + deployWarn + "）");
-                }
-                return Result.success("删除应用成功（Gitea 清理失败：" + giteaWarn + "）");
+                msg += (hasParen ? "；" : "（") + "Gitea 清理失败：" + giteaWarn;
+                hasParen = true;
             }
             if (deployWarn != null && !deployWarn.isBlank()) {
-                return Result.success("删除应用成功（Deploy 清理失败：" + deployWarn + "）");
+                msg += (hasParen ? "；" : "（") + "Deploy 清理失败：" + deployWarn;
+                hasParen = true;
             }
-            return Result.success("删除应用成功");
+            if (stillRunning && !allDoneWithinWait) {
+                msg += (hasParen ? "；" : "（") + "部分清理仍在后台执行";
+                hasParen = true;
+            }
+            if (hasParen) msg += "）";
+
+            long totalMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t0);
+            logger.info("[{}] delete app end: userId={}, appId={}, dbMs={}, waitCleanupMs={}, totalMs={}",
+                    trace, userId, appId, dbMs, waitMs, totalMs);
+            return Result.success(msg);
         } catch (IllegalArgumentException e) {
             logger.warn("删除应用失败: userId={}, appId={}, error={}", userId, appId, e.getMessage());
             return Result.error(e.getMessage());

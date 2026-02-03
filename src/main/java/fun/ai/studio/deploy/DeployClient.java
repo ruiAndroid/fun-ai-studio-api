@@ -99,6 +99,13 @@ public class DeployClient {
         }
 
         HttpRequest.Builder b = HttpRequest.newBuilder().uri(URI.create(url));
+        // read-timeout：避免 Deploy 侧 cleanup/purge 卡住导致 API 侧线程长期阻塞
+        try {
+            if (props != null && props.getReadTimeoutMs() > 0) {
+                b.timeout(Duration.ofMillis(props.getReadTimeoutMs()));
+            }
+        } catch (Exception ignore) {
+        }
         if ("GET".equals(m) || "HEAD".equals(m)) {
             b.method(m, HttpRequest.BodyPublishers.noBody());
         } else {
