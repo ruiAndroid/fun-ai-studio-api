@@ -356,10 +356,11 @@
     }
 
     function baseParams() {
-      // userId not needed for deploy
+      // deploy mongo 仍需要 userId（用于校验权限 + 生成 dbName：db_u{userId}_a{appId}）
+      const userId = ($("userId").value || "").trim();
       const appId = ($("appId").value || "").trim();
-      if (!appId) throw new Error("请先填写 appId");
-      return { appId };
+      if (!userId || !appId) throw new Error("请先填写 userId/appId");
+      return { userId, appId };
     }
 
     async function apiGetRaw(path, params) {
@@ -655,7 +656,8 @@
       if (me.code !== 200 || !me.data) {
         throw new Error(me.message || "获取当前用户失败（请确认 token 有效）");
       }
-      // userId not needed
+      // 写回 userId（deploy mongo 仍需要 userId 参与 dbName 与权限校验）
+      if (me.data.id) $("userId").value = String(me.data.id);
 
       // 3) app list（需要 userId）
       const res = await apiGetRaw("/api/fun-ai/app/list", { userId: me.data.id ? String(me.data.id) : "" });

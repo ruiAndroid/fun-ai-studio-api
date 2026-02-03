@@ -4,12 +4,17 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import fun.ai.studio.common.Result;
 import fun.ai.studio.deploy.DeployClient;
+import fun.ai.studio.entity.FunAiUser;
+import fun.ai.studio.service.FunAiUserService;
 import fun.ai.studio.service.FunAiAppService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -41,17 +46,43 @@ public class FunAiDeployMongoController {
     private static final Logger log = LoggerFactory.getLogger(FunAiDeployMongoController.class);
 
     private final FunAiAppService funAiAppService;
+    private final FunAiUserService funAiUserService;
     private final DeployClient deployClient;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
 
-    public FunAiDeployMongoController(FunAiAppService funAiAppService, DeployClient deployClient, ObjectMapper objectMapper) {
+    public FunAiDeployMongoController(FunAiAppService funAiAppService,
+                                      FunAiUserService funAiUserService,
+                                      DeployClient deployClient,
+                                      ObjectMapper objectMapper) {
         this.funAiAppService = funAiAppService;
+        this.funAiUserService = funAiUserService;
         this.deployClient = deployClient;
         this.objectMapper = objectMapper;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(3))
                 .build();
+    }
+
+    private Long resolveUserId(Long userId) {
+        if (userId != null) return userId;
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth == null || !auth.isAuthenticated()) return null;
+            Object principal = auth.getPrincipal();
+            String username = null;
+            if (principal instanceof UserDetails ud) {
+                username = ud.getUsername();
+            } else if (principal instanceof String s) {
+                username = s;
+            }
+            if (!StringUtils.hasText(username)) return null;
+            if (funAiUserService == null) return null;
+            FunAiUser u = funAiUserService.findByUsername(username);
+            return u == null ? null : u.getId();
+        } catch (Exception ignore) {
+            return null;
+        }
     }
 
     private void assertAppOwned(Long userId, Long appId) {
@@ -143,14 +174,15 @@ public class FunAiDeployMongoController {
     @GetMapping("/collections")
     @Operation(summary = "列出集合（部署态）", description = "列出 db_u{userId}_a{appId} 的集合列表（由 runtime-agent 执行）")
     public Result<Object> collections(
-            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "用户ID（可选：不传则从登录态推断）", required = false) @RequestParam(required = false) Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId
     ) {
         try {
-            assertAppOwned(userId, appId);
+            Long uid = resolveUserId(userId);
+            assertAppOwned(uid, appId);
             String agentBaseUrl = resolveRuntimeAgentBaseUrl(appId);
             return proxyToRuntimeAgent("GET", agentBaseUrl, "/api/fun-ai/deploy/mongo/collections",
-                    "userId=" + userId + "&appId=" + appId, null);
+                    "userId=" + uid + "&appId=" + appId, null);
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
         } catch (Exception e) {
@@ -162,16 +194,17 @@ public class FunAiDeployMongoController {
     @PostMapping("/find")
     @Operation(summary = "查询文档（部署态）", description = "find（由 runtime-agent 执行）")
     public Result<Object> find(
-            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "用户ID（可选：不传则从登录态推断）", required = false) @RequestParam(required = false) Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
             @RequestBody(required = false) Object body
     ) {
         try {
-            assertAppOwned(userId, appId);
+            Long uid = resolveUserId(userId);
+            assertAppOwned(uid, appId);
             String agentBaseUrl = resolveRuntimeAgentBaseUrl(appId);
             byte[] bytes = body == null ? new byte[0] : objectMapper.writeValueAsBytes(body);
             return proxyToRuntimeAgent("POST", agentBaseUrl, "/api/fun-ai/deploy/mongo/find",
-                    "userId=" + userId + "&appId=" + appId, bytes);
+                    "userId=" + uid + "&appId=" + appId, bytes);
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
         } catch (Exception e) {
@@ -183,15 +216,16 @@ public class FunAiDeployMongoController {
     @GetMapping("/doc")
     @Operation(summary = "读取单条文档（部署态）", description = "按 _id 查询单条文档（由 runtime-agent 执行）")
     public Result<Object> doc(
-            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "用户ID（可选：不传则从登录态推断）", required = false) @RequestParam(required = false) Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
             @Parameter(description = "集合名", required = true) @RequestParam String collection,
             @Parameter(description = "文档ID(_id)", required = true) @RequestParam String id
     ) {
         try {
-            assertAppOwned(userId, appId);
+            Long uid = resolveUserId(userId);
+            assertAppOwned(uid, appId);
             String agentBaseUrl = resolveRuntimeAgentBaseUrl(appId);
-            String q = "userId=" + userId + "&appId=" + appId
+            String q = "userId=" + uid + "&appId=" + appId
                     + "&collection=" + urlEnc(collection)
                     + "&id=" + urlEnc(id);
             return proxyToRuntimeAgent("GET", agentBaseUrl, "/api/fun-ai/deploy/mongo/doc", q, null);
@@ -245,11 +279,12 @@ public class FunAiDeployMongoController {
 
     private Result<Object> proxyPost(Long userId, Long appId, String upstreamPath, Object body, String op) {
         try {
-            assertAppOwned(userId, appId);
+            Long uid = resolveUserId(userId);
+            assertAppOwned(uid, appId);
             String agentBaseUrl = resolveRuntimeAgentBaseUrl(appId);
             byte[] bytes = body == null ? new byte[0] : objectMapper.writeValueAsBytes(body);
             return proxyToRuntimeAgent("POST", agentBaseUrl, upstreamPath,
-                    "userId=" + userId + "&appId=" + appId, bytes);
+                    "userId=" + uid + "&appId=" + appId, bytes);
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
         } catch (Exception e) {
