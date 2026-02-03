@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
+import jakarta.servlet.DispatcherType;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -44,6 +45,8 @@ public class SecurityConfig {
                         .accessDeniedHandler(accessDeniedHandler())
                 )
                 .authorizeHttpRequests(auth -> auth
+                        // 避免 async dispatch（SSE/Streaming）二次进入 Security 导致 response 已提交仍抛 AccessDeniedException 刷屏
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                         // 确保 Swagger UI 相关路径都被允许（放在最前面，优先级最高）
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/swagger-ui/index.html").permitAll()
                         .requestMatchers("/v3/api-docs/**").permitAll()
@@ -116,6 +119,11 @@ public class SecurityConfig {
         "/preview/**",
         // 运行态入口（/runtime/{appId}/...）：公开访问（通常由网关/反代指向 runtime 节点；若请求落到 Spring 也不应被 JWT 拦截）
         "/runtime/**",
+        // Vite 开发预览常见根路径资源（若 nginx 未正确路由到 /preview/{appId}，也不应被 JWT 拦截；落到 API 时返回 404 更合理）
+        "/@vite/**",
+        "/@react-refresh",
+        "/src/**",
+        "/assets/**",
         // /doc 页面 mermaid 渲染脚本（必须放行，否则会被 401 JSON 拦截导致浏览器拒绝执行）
         "/doc-mermaid.js",
         "/chatui/**",
