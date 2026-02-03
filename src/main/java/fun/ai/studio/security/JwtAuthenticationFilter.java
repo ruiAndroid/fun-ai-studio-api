@@ -23,6 +23,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 
@@ -30,6 +35,14 @@ import java.util.UUID;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final Logger logger = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
+    private static final Set<String> SENSITIVE_PARAM_KEYS = Set.of(
+            "password", "passwd", "pass",
+            "token", "access_token", "refresh_token", "jwt",
+            "authorization", "cookie",
+            "secret", "appsecret", "client_secret"
+    );
+    private static final int MAX_PARAM_KEYS_TO_LOG = 24;
+    private static final int MAX_PARAM_VALUE_LEN = 128;
 
     private final UserDetailsService userDetailsService;
 
@@ -58,12 +71,23 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String method = request.getMethod();
         String uri = request.getRequestURI();
         String query = request.getQueryString();
-        logger.info("[{}] {} method={} uri={}{} thread={}",
+        String contentType = request.getContentType();
+        long contentLen = -1;
+        try {
+            contentLen = request.getContentLengthLong();
+        } catch (Exception ignore) {
+        }
+        String params = formatParamMapSafe(request);
+
+        logger.info("[{}] {} method={} uri={}{} params={} contentType={} contentLength={} thread={}",
                 requestId,
                 this.getClass().getSimpleName(),
                 method,
                 uri,
                 (query == null ? "" : ("?" + query)),
+                params,
+                (contentType == null ? "-" : contentType),
+                contentLen,
                 Thread.currentThread().getName());
         String url = request.getServletPath();
 
@@ -151,6 +175,49 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // 如果没有Authorization头或者不是Bearer Token格式，则直接放行
         // 让Spring Security的其他配置来决定是否需要认证
         chain.doFilter(request, response);
+    }
+
+    private String formatParamMapSafe(HttpServletRequest request) {
+        try {
+            Map<String, String[]> raw = request == null ? null : request.getParameterMap();
+            if (raw == null || raw.isEmpty()) return "{}";
+
+            Map<String, Object> out = new LinkedHashMap<>();
+            int n = 0;
+            for (Map.Entry<String, String[]> e : raw.entrySet()) {
+                if (e == null) continue;
+                String k = e.getKey();
+                if (k == null) continue;
+                if (n++ >= MAX_PARAM_KEYS_TO_LOG) {
+                    out.put("_truncated", true);
+                    break;
+                }
+                String keyLower = k.toLowerCase(Locale.ROOT);
+                boolean sensitive = SENSITIVE_PARAM_KEYS.contains(keyLower);
+                String[] vs = e.getValue();
+                if (sensitive) {
+                    out.put(k, "***");
+                } else if (vs == null) {
+                    out.put(k, null);
+                } else if (vs.length == 1) {
+                    out.put(k, clamp(vs[0]));
+                } else {
+                    out.put(k, Arrays.stream(vs).map(this::clamp).toArray(String[]::new));
+                }
+            }
+            return out.toString();
+        } catch (Exception ignore) {
+            return "{_err=true}";
+        }
+    }
+
+    private String clamp(String v) {
+        if (v == null) return null;
+        String s = v;
+        if (s.length() > MAX_PARAM_VALUE_LEN) {
+            s = s.substring(0, MAX_PARAM_VALUE_LEN) + "...";
+        }
+        return s;
     }
 
     private void sendErrorResponse(HttpServletResponse response, String message) throws IOException {
