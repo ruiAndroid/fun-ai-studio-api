@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 
 import fun.ai.studio.entity.FunAiApp;
 import fun.ai.studio.entity.FunAiUser;
+import fun.ai.studio.config.FunAiAppLimitsProperties;
 import fun.ai.studio.enums.FunAiAppStatus;
 import fun.ai.studio.gitea.GiteaRepoAutomationService;
 import fun.ai.studio.mapper.FunAiAppMapper;
@@ -35,6 +36,9 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
 
     @Autowired(required = false)
     private FunAiConversationService conversationService;
+
+    @Autowired(required = false)
+    private FunAiAppLimitsProperties appLimitsProperties;
 
     @Override
     public List<FunAiApp> getAppsByUserId(Long userId) {
@@ -275,10 +279,18 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
         if (appCount == null) {
             appCount = 0;
         }
-        
-        if (appCount >= 20) {
-            logger.warn("用户应用数量已达上限: userId={}, appCount={}", userId, appCount);
-            throw new IllegalArgumentException("已达项目数量上限");
+
+        int maxApps = 20;
+        try {
+            if (appLimitsProperties != null && appLimitsProperties.getMaxAppsPerUser() > 0) {
+                maxApps = appLimitsProperties.getMaxAppsPerUser();
+            }
+        } catch (Exception ignore) {
+        }
+
+        if (appCount >= maxApps) {
+            logger.warn("用户应用数量已达上限: userId={}, appCount={}, maxApps={}", userId, appCount, maxApps);
+            throw new IllegalArgumentException("已达项目数量上限（max=" + maxApps + "）");
         }
         
         // 1. 查询用户实际的应用列表（用于生成应用名称）
