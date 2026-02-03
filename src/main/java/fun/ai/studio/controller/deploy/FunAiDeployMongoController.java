@@ -15,13 +15,16 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.web.client.RestTemplate;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
@@ -49,7 +52,7 @@ public class FunAiDeployMongoController {
     private final FunAiUserService funAiUserService;
     private final DeployClient deployClient;
     private final ObjectMapper objectMapper;
-    private final HttpClient httpClient;
+    private final RestTemplate restTemplate;
 
     public FunAiDeployMongoController(FunAiAppService funAiAppService,
                                       FunAiUserService funAiUserService,
@@ -59,9 +62,15 @@ public class FunAiDeployMongoController {
         this.funAiUserService = funAiUserService;
         this.deployClient = deployClient;
         this.objectMapper = objectMapper;
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(3))
-                .build();
+        this.restTemplate = new RestTemplate(buildFactory());
+    }
+
+    private SimpleClientHttpRequestFactory buildFactory() {
+        // 对 runtime-agent 的请求：快速失败，避免卡住 API 线程
+        SimpleClientHttpRequestFactory f = new SimpleClientHttpRequestFactory();
+        f.setConnectTimeout((int) Duration.ofSeconds(3).toMillis());
+        f.setReadTimeout((int) Duration.ofSeconds(15).toMillis());
+        return f;
     }
 
     private Long resolveUserId(Long userId) {
@@ -123,40 +132,42 @@ public class FunAiDeployMongoController {
         if (!p.startsWith("/")) p = "/" + p;
         String q = (query == null || query.isBlank()) ? "" : ("?" + query);
 
-        String url = agentBaseUrl + p + q;
-        HttpRequest.Builder b = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .timeout(Duration.ofSeconds(15))
-                .header("Accept", "application/json");
-
         byte[] body = bodyBytes == null ? new byte[0] : bodyBytes;
         // FastAPI 对 required body 的接口：若 Content-Length=0 会直接报 "Field required"（loc=[body]）
         // 这里兜底：非 GET/HEAD 且 body 为空时补一个 {}，让错误更可读（例如缺 collection 字段）
         if (!"GET".equals(m) && !"HEAD".equals(m) && body.length == 0) {
             body = "{}".getBytes(StandardCharsets.UTF_8);
         }
+        String url = agentBaseUrl + p + q;
         // 仅对 deploy mongo 场景做轻量诊断：打印 body 长度（不打印内容，避免敏感数据落盘）
         if (log.isInfoEnabled() && path != null && path.contains("/deploy/mongo")) {
             log.info("deploy-mongo proxy -> runtime-agent: method={}, url={}, bodyLen={}", m, url, body.length);
         }
-        if ("GET".equals(m) || "HEAD".equals(m)) {
-            b.method(m, HttpRequest.BodyPublishers.noBody());
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+        HttpMethod hm;
+        try {
+            hm = HttpMethod.valueOf(m);
+        } catch (Exception ignore) {
+            hm = HttpMethod.POST;
+        }
+        HttpEntity<byte[]> entity;
+        if (HttpMethod.GET.equals(hm) || HttpMethod.HEAD.equals(hm)) {
+            entity = new HttpEntity<>(headers);
         } else {
-            b.method(m, HttpRequest.BodyPublishers.ofByteArray(body));
-            b.header("Content-Type", "application/json");
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            entity = new HttpEntity<>(body, headers);
         }
 
-        HttpResponse<byte[]> resp;
+        ResponseEntity<byte[]> resp;
         try {
-            resp = httpClient.send(b.build(), HttpResponse.BodyHandlers.ofByteArray());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return Result.error("runtime-agent 请求被中断");
+            resp = restTemplate.exchange(url, hm, entity, byte[].class);
         } catch (Exception e) {
             return Result.error("runtime-agent 请求失败：" + e.getMessage());
         }
 
-        byte[] rawBytes = resp.body() == null ? new byte[0] : resp.body();
+        byte[] rawBytes = resp.getBody() == null ? new byte[0] : resp.getBody();
         String raw = new String(rawBytes, StandardCharsets.UTF_8);
 
         // 1) runtime-agent 正常结构：{code,message,data}（与 API Result 结构一致），尽量原样透传
@@ -180,10 +191,11 @@ public class FunAiDeployMongoController {
         }
 
         // 3) fallback：非标准响应
-        if (resp.statusCode() >= 200 && resp.statusCode() < 300) {
+        int status = resp.getStatusCode().value();
+        if (status >= 200 && status < 300) {
             return Result.error("runtime-agent 响应解析失败（非 Result/JSON）：body=" + truncate(raw, 300));
         }
-        return Result.error("runtime-agent HTTP " + resp.statusCode() + "：" + truncate(raw, 300));
+        return Result.error("runtime-agent HTTP " + status + "：" + truncate(raw, 300));
     }
 
     private String truncate(String s, int max) {
