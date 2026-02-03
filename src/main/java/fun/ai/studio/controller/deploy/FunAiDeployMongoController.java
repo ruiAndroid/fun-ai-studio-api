@@ -135,6 +135,10 @@ public class FunAiDeployMongoController {
         if (!"GET".equals(m) && !"HEAD".equals(m) && body.length == 0) {
             body = "{}".getBytes(StandardCharsets.UTF_8);
         }
+        // 仅对 deploy mongo 场景做轻量诊断：打印 body 长度（不打印内容，避免敏感数据落盘）
+        if (log.isInfoEnabled() && path != null && path.contains("/deploy/mongo")) {
+            log.info("deploy-mongo proxy -> runtime-agent: method={}, url={}, bodyLen={}", m, url, body.length);
+        }
         if ("GET".equals(m) || "HEAD".equals(m)) {
             b.method(m, HttpRequest.BodyPublishers.noBody());
         } else {
@@ -222,6 +226,9 @@ public class FunAiDeployMongoController {
             String agentBaseUrl = resolveRuntimeAgentBaseUrl(appId);
             // 原样转发 JSON（避免 Object->JSON 二次序列化导致 body 丢失/变空）
             byte[] bytes = body == null ? new byte[0] : body.getBytes(StandardCharsets.UTF_8);
+            if (log.isInfoEnabled()) {
+                log.info("deploy-mongo incoming find: userId={}, appId={}, inBodyLen={}", uid, appId, bytes.length);
+            }
             return proxyToRuntimeAgent("POST", agentBaseUrl, "/api/fun-ai/deploy/mongo/find",
                     "userId=" + uid + "&appId=" + appId, bytes);
         } catch (IllegalArgumentException e) {
