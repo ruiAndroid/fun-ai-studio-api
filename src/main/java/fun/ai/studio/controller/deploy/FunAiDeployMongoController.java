@@ -214,13 +214,14 @@ public class FunAiDeployMongoController {
     public Result<Object> find(
             @Parameter(description = "用户ID（可选：不传则从登录态推断）", required = false) @RequestParam(required = false) Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
-            @RequestBody(required = false) Object body
+            @RequestBody(required = false) String body
     ) {
         try {
             Long uid = resolveUserId(userId);
             assertAppOwned(uid, appId);
             String agentBaseUrl = resolveRuntimeAgentBaseUrl(appId);
-            byte[] bytes = body == null ? new byte[0] : objectMapper.writeValueAsBytes(body);
+            // 原样转发 JSON（避免 Object->JSON 二次序列化导致 body 丢失/变空）
+            byte[] bytes = body == null ? new byte[0] : body.getBytes(StandardCharsets.UTF_8);
             return proxyToRuntimeAgent("POST", agentBaseUrl, "/api/fun-ai/deploy/mongo/find",
                     "userId=" + uid + "&appId=" + appId, bytes);
         } catch (IllegalArgumentException e) {
@@ -260,7 +261,7 @@ public class FunAiDeployMongoController {
     public Result<Object> insertOne(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
-            @RequestBody(required = false) Object body
+            @RequestBody(required = false) String body
     ) {
         return proxyPost(userId, appId, "/api/fun-ai/deploy/mongo/insert-one", body, "insert-one");
     }
@@ -270,7 +271,7 @@ public class FunAiDeployMongoController {
     public Result<Object> updateById(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
-            @RequestBody(required = false) Object body
+            @RequestBody(required = false) String body
     ) {
         return proxyPost(userId, appId, "/api/fun-ai/deploy/mongo/update-by-id", body, "update-by-id");
     }
@@ -280,7 +281,7 @@ public class FunAiDeployMongoController {
     public Result<Object> deleteById(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
-            @RequestBody(required = false) Object body
+            @RequestBody(required = false) String body
     ) {
         return proxyPost(userId, appId, "/api/fun-ai/deploy/mongo/delete-by-id", body, "delete-by-id");
     }
@@ -290,17 +291,18 @@ public class FunAiDeployMongoController {
     public Result<Object> createCollection(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
-            @RequestBody(required = false) Object body
+            @RequestBody(required = false) String body
     ) {
         return proxyPost(userId, appId, "/api/fun-ai/deploy/mongo/create-collection", body, "create-collection");
     }
 
-    private Result<Object> proxyPost(Long userId, Long appId, String upstreamPath, Object body, String op) {
+    private Result<Object> proxyPost(Long userId, Long appId, String upstreamPath, String body, String op) {
         try {
             Long uid = resolveUserId(userId);
             assertAppOwned(uid, appId);
             String agentBaseUrl = resolveRuntimeAgentBaseUrl(appId);
-            byte[] bytes = body == null ? new byte[0] : objectMapper.writeValueAsBytes(body);
+            // 原样转发 JSON（避免二次序列化导致 body 丢失/变空）
+            byte[] bytes = body == null ? new byte[0] : body.getBytes(StandardCharsets.UTF_8);
             return proxyToRuntimeAgent("POST", agentBaseUrl, upstreamPath,
                     "userId=" + uid + "&appId=" + appId, bytes);
         } catch (IllegalArgumentException e) {
