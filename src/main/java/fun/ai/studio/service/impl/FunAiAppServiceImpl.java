@@ -5,7 +5,6 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 
 import fun.ai.studio.entity.FunAiApp;
 import fun.ai.studio.entity.FunAiUser;
-import fun.ai.studio.config.FunAiAppLimitsProperties;
 import fun.ai.studio.enums.FunAiAppStatus;
 import fun.ai.studio.gitea.GiteaRepoAutomationService;
 import fun.ai.studio.mapper.FunAiAppMapper;
@@ -15,6 +14,7 @@ import fun.ai.studio.service.FunAiUserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -37,8 +37,12 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
     @Autowired(required = false)
     private FunAiConversationService conversationService;
 
-    @Autowired(required = false)
-    private FunAiAppLimitsProperties appLimitsProperties;
+    /**
+     * 单用户最多可创建应用数量（默认 20）。
+     * 使用 @Value 避免部署时漏同步“新增 Java 文件”导致编译失败。
+     */
+    @Value("${funai.app.limits.max-apps-per-user:20}")
+    private int maxAppsPerUser;
 
     @Override
     public List<FunAiApp> getAppsByUserId(Long userId) {
@@ -280,14 +284,7 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
             appCount = 0;
         }
 
-        int maxApps = 20;
-        try {
-            if (appLimitsProperties != null && appLimitsProperties.getMaxAppsPerUser() > 0) {
-                maxApps = appLimitsProperties.getMaxAppsPerUser();
-            }
-        } catch (Exception ignore) {
-        }
-
+        int maxApps = (maxAppsPerUser > 0 ? maxAppsPerUser : 20);
         if (appCount >= maxApps) {
             logger.warn("用户应用数量已达上限: userId={}, appCount={}, maxApps={}", userId, appCount, maxApps);
             throw new IllegalArgumentException("已达项目数量上限（max=" + maxApps + "）");
