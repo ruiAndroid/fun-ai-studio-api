@@ -172,7 +172,8 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
         // 验证应用是否属于该用户
         FunAiApp existingApp = getAppByIdAndUserId(appId, userId);
         if (existingApp == null) {
-            throw new RuntimeException("应用不存在或无权限操作");
+            logger.warn("删除应用失败: 应用不存在或无权限操作, userId={}, appId={}", userId, appId);
+            throw new IllegalArgumentException("应用不存在或无权限操作");
         }
         
         // DISABLED 不允许删除（管理员禁用的应用需要先解禁）
