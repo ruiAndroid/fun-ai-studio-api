@@ -150,16 +150,29 @@ public class FunAiDeployMongoController {
         byte[] rawBytes = resp.body() == null ? new byte[0] : resp.body();
         String raw = new String(rawBytes, StandardCharsets.UTF_8);
 
-        // runtime-agent 成功时会返回 {code,message,data}；这里尽量原样透传
+        // 1) runtime-agent 正常结构：{code,message,data}（与 API Result 结构一致），尽量原样透传
         try {
             Result<Object> r = objectMapper.readValue(rawBytes, new TypeReference<Result<Object>>() {});
-            if (r != null) return r;
+            if (r != null && r.getCode() != null) return r;
         } catch (Exception ignore) {
         }
 
-        // fallback：非标准响应
+        // 2) FastAPI HTTPException：通常是 {"detail":"..."}（尤其是 4xx/5xx）
+        try {
+            Map<String, Object> m2 = objectMapper.readValue(rawBytes, new TypeReference<Map<String, Object>>() {});
+            if (m2 != null) {
+                Object detail = m2.get("detail");
+                if (detail != null) {
+                    String msg = String.valueOf(detail);
+                    return Result.error("runtime-agent: " + msg);
+                }
+            }
+        } catch (Exception ignore) {
+        }
+
+        // 3) fallback：非标准响应
         if (resp.statusCode() >= 200 && resp.statusCode() < 300) {
-            return Result.error("runtime-agent 响应解析失败（非 Result 结构）：body=" + truncate(raw, 300));
+            return Result.error("runtime-agent 响应解析失败（非 Result/JSON）：body=" + truncate(raw, 300));
         }
         return Result.error("runtime-agent HTTP " + resp.statusCode() + "：" + truncate(raw, 300));
     }
