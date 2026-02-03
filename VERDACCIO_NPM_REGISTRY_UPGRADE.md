@@ -66,7 +66,7 @@ RUN if [ ! -f .npmrc ]; then echo "registry=${NPM_REGISTRY}" > .npmrc; fi
 RUN npm ci 2>/dev/null || npm install
 
 # 兼容没有 build 脚本
-RUN npm run build 2>/dev/null || echo "No build script, skipping..."
+RUN if node -e "const p=require('./package.json');const s=(p&&p.scripts)||{};process.exit(s.build?0:1)"; then npm run build; else echo "No build script, skipping..."; fi
 ```
 
 **优点**:

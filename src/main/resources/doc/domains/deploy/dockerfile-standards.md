@@ -70,8 +70,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules /app/node_modules
 COPY . .
 # 可选：运行态路由前缀（默认 /）
-# 如果你的项目没有 build 步骤，可以删掉这一行
-RUN npm run build || true
+# 构建（可选）：
+# - 若存在 scripts.build：执行 npm run build（失败应让 docker build 失败，避免“构建失败但部署成功”）
+# - 若不存在 build 脚本：跳过
+RUN if node -e "const p=require('./package.json');const s=(p&&p.scripts)||{};process.exit(s.build?0:1)"; then npm run build; else echo "No build script, skipping..."; fi
 
 FROM node:20-bookworm-slim
 WORKDIR /app
