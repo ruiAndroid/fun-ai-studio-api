@@ -52,7 +52,7 @@ lombok.config
 # Gradle
 .gradle/
 build/
-
+.kiro/
 # JRebel
 rebel-*.xml
 
