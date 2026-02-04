@@ -1,6 +1,6 @@
 # Workspace：npm 依赖安装加速（Verdaccio 代理仓库）
 
-> 双机部署提示：Verdaccio/依赖缓存通常部署在 Workspace 开发服务器（大机）（容器节点）侧，workspace 容器通过容器网络访问 `http://verdaccio:4873`；API 服务器（小机）侧只需要保持配置与转发链路正确。
+> 现网提示（已更新）：Verdaccio 已统一部署到 **103** 机器，Workspace（87）上的用户容器通过内网访问 `http://172.21.138.103:4873`（或你们内网 DNS 对应的域名）。API（91）侧只需要保持配置与转发链路正确。
 
 ## 背景与目标
 
@@ -31,7 +31,7 @@
 
 > 注意：这个策略只影响平台“受控任务”（build/install/preview/dev）。用户在终端里手工执行 npm 仍可能产生其它缓存（可通过运维命令清理）。
 
-## Verdaccio 代理仓库（同机容器网络访问）
+## Verdaccio 代理仓库（统一部署在 103）
 
 Verdaccio 的收益：
 
@@ -39,71 +39,58 @@ Verdaccio 的收益：
 - **更快**：首次下载后由 Verdaccio 缓存，后续安装几乎不再出网
 - **更可控**：后续可加鉴权/白名单/审计（本项目先按单机最简方式跑通）
 
-### 部署（阿里云单机，podman-docker 兼容，仅容器网络访问）
+### 部署（103：内网常驻基础设施，推荐仅内网访问）
 
 > 重要：Verdaccio 是**运维侧常驻基础设施**。当前后端只负责创建/管理 `ws-u-{userId}` 的 workspace 用户容器，不会自动拉起 `verdaccio` 容器。
 
-#### 手动启动/重建命令（可直接复制执行）
+#### 手动启动/重建命令（在 103 上执行，可直接复制）
 
-1) 创建网络（一次性）：
-
-```bash
-docker network create funai-net
-```
-
-2) 启动 Verdaccio（常驻 + 持久化）：
+1) 启动 Verdaccio（常驻 + 持久化）：
 
 ```bash
 mkdir -p /data/funai/verdaccio/{conf,storage}
 
 docker run -d --name verdaccio --restart=always \
-  --network funai-net \
-  -v /data/funai/verdaccio/conf:/verdaccio/conf \
-  -v /data/funai/verdaccio/storage:/verdaccio/storage \
+  -p 4873:4873 \
+  -v /data/funai/verdaccio/conf:/verdaccio/conf:Z \
+  -v /data/funai/verdaccio/storage:/verdaccio/storage:Z \
   docker.io/verdaccio/verdaccio:5
 ```
 
-3) 如需“重建 Verdaccio 容器”（保留数据，仅重建容器）：
+2) 如需“重建 Verdaccio 容器”（保留数据，仅重建容器）：
 
 ```bash
 docker rm -f verdaccio 2>/dev/null || true
 
 docker run -d --name verdaccio --restart=always \
-  --network funai-net \
-  -v /data/funai/verdaccio/conf:/verdaccio/conf \
-  -v /data/funai/verdaccio/storage:/verdaccio/storage \
+  -p 4873:4873 \
+  -v /data/funai/verdaccio/conf:/verdaccio/conf:Z \
+  -v /data/funai/verdaccio/storage:/verdaccio/storage:Z \
   docker.io/verdaccio/verdaccio:5
 ```
 
-4) 把已有 workspace 容器加入 `funai-net`（老容器需要；新容器创建时会自动加）：
-
-```bash
-docker network connect funai-net ws-u-10000021 2>/dev/null || true
-docker network connect funai-net ws-u-10000023 2>/dev/null || true
-```
-
-5) 基本验证（确认 Verdaccio 已启动且可访问）：
+3) 基本验证（确认 Verdaccio 已启动且可访问）：
 
 ```bash
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
 docker logs --tail 50 verdaccio
 
-# 在任意加入 funai-net 的容器里验证（以某个 ws-u-* 容器为例）
-docker exec ws-u-10000021 bash -lc "curl -I http://verdaccio:4873 || wget -S --spider http://verdaccio:4873"
+# 在 103 宿主机验证
+curl -I http://127.0.0.1:4873/-/ping || true
 ```
 
-> 说明：本方案面向 **仅容器网络访问**，因此不需要 `-p 4873:4873` 映射到宿主机。若你要给公网/内网访问，需要额外做域名/HTTPS/鉴权/限流，并慎重开放端口。
+> 安全建议：4873 **只给内网**（至少仅允许 87/101 等必要机器访问），不要对公网开放。对外统一走 80/443（网关/Nginx/SLB）更安全。
 
 Verdaccio 上游（uplink）建议指向 `https://registry.npmmirror.com`，由 Verdaccio 负责缓存。
 
 ---
 
-## 重要提醒：不要把仓库 lockfile 的 `resolved` 写成 `http://verdaccio:4873/...`
+## 重要提醒：不要把仓库 lockfile 的 `resolved` 写成“内网 Verdaccio 地址”
 
-你们当前体系里，**Runner（101）构建镜像**通常不在 Workspace 的 `funai-net` 容器网络内，因此：
+即便 Verdaccio 统一部署在 103，仍不建议把 `package-lock.json` / `npm-shrinkwrap.json` 的 `resolved` 写成内网地址（例如 `http://172.21.138.103:4873/...` 或内网域名），原因：
 
-- `verdaccio` 这个 hostname 在 Runner 的构建容器里大概率 **无法解析**（会报 `ENOTFOUND`）
-- 即使 `npm config set registry http://verdaccio:4873` 在 workspace 容器内可用，也不代表 Runner 构建时可用
+- **环境耦合**：离开内网环境（本地开发/临时机/第三方 runner）就会不可构建
+- **网络策略差异**：Runner/构建容器是否允许访问 103:4873 往往取决于安全组/路由
 
 因此：
 
@@ -159,42 +146,44 @@ Verdaccio 的缓存不是按容器归属的，因此**无法直接得到“容�
   - `/data/funai/verdaccio/conf`
   - `/data/funai/verdaccio/storage`
 
-### 后端配置（Spring Boot）
+### 后端配置（Spring Boot / workspace-node）
 
-在 `application-prod.properties` 增加/确认：
+在 workspace-node（87）侧的 `application-prod.properties` 增加/确认（示例使用 103 内网 IP）：
 
 ```properties
-funai.workspace.networkName=funai-net
-funai.workspace.npmRegistry=http://verdaccio:4873
+# Verdaccio（npm 代理仓库）统一部署在 103
+funai.workspace.npmRegistry=http://172.21.138.103:4873
+
+# 若容器内启用了 HTTP(S)_PROXY，务必把 verdaccio 地址加入 no_proxy（否则 npm 可能绕代理导致 403/超时）
+funai.workspace.noProxy=localhost,127.0.0.1,172.21.138.103,host.containers.internal
 ```
 
 效果：
 
-- workspace 容器创建时会 `--network funai-net`
 - 容器内注入 `NPM_CONFIG_REGISTRY` / `npm_config_registry`
 - 运行态脚本会把 **实际 registry** 写到 `run/dev.log`，便于排查
 
 ### 验收
 
-- 启动/安装时查看 `run/dev.log`：应包含 `npm registry: http://verdaccio:4873`
+- 启动/安装时查看 `run/dev.log`：应包含 `npm registry: http://172.21.138.103:4873`
 - Verdaccio 日志可看到首次下载，后续命中缓存
 
 ## 预热（建议）：让 Verdaccio 先缓存一批常用依赖
 
 思路：用一个临时 warmup 项目跑一次安装，但确保 registry 指向 Verdaccio，这样缓存会进入 Verdaccio `storage`：
 
-- `npm config set registry http://verdaccio:4873`
+- `npm config set registry http://172.21.138.103:4873`
 - `npm install` 或 `npm ci`
 
-> 验收：在 `run/dev.log` 或安装输出中确认 `npm registry` 为 `http://verdaccio:4873`。
+> 验收：在 `run/dev.log` 或安装输出中确认 `npm registry` 为 `http://172.21.138.103:4873`。
 
-如果你的 warmup 项目在宿主机目录（例如 `/tmp/npm-warmup`），且 Verdaccio 仅在容器网络 `funai-net` 内可访问，推荐用一个临时容器来执行预热（执行完自动删除，不占用长期资源）：
+如果你的 warmup 项目在宿主机目录（例如 `/tmp/npm-warmup`），推荐用一个临时容器来执行预热（执行完自动删除，不占用长期资源）：
 
 ```bash
-docker run --rm --network funai-net \
+docker run --rm \
   -v /tmp/npm-warmup:/work -w /work \
   <你的workspace镜像> \
-  bash -lc "npm config set registry http://verdaccio:4873 && (npm ci || npm install)"
+  bash -lc "npm config set registry http://172.21.138.103:4873 && (npm ci || npm install)"
 ```
 
 > `<你的workspace镜像>` 建议直接使用你生产环境的 workspace 镜像（ACR），避免拉取 DockerHub 失败。
@@ -224,16 +213,20 @@ docker.io/verdaccio/verdaccio:5
 - **不要依赖 DockerHub 的 node 镜像**来跑 warmup，直接用你生产环境的 workspace 镜像（ACR）。
 - verdaccio 镜像也建议同步到 ACR（同理）。
 
-### 3) `funai-net` 网络不存在
+### 3) 访问 103:4873 超时 / Connection refused
 
-现象：`unable to find network with name or ID funai-net: network not found`
+现象：
 
-解决：先手动创建网络（一次性）：
+- `connect ETIMEDOUT 172.21.138.103:4873`
+- `Connection refused`
 
-```bash
-docker network create funai-net
-docker network ls
-```
+排查/解决：
+
+- 在 87（workspace-node）上验证连通性：
+  - `curl -I http://172.21.138.103:4873/-/ping`
+- 检查 103 上 Verdaccio 是否在监听：
+  - `ss -lntp | grep 4873`
+- 检查安全组/防火墙是否放行 **103:4873**（至少允许来源 87/101）
 
 ### 4) 调用 `/open-editor` 只会起用户容器，不会自动起 Verdaccio
 
@@ -241,7 +234,7 @@ docker network ls
 
 原因：当前实现将 Verdaccio 视为**运维侧常驻基础设施**，后端不会自动拉起 `verdaccio`。
 
-解决：按本文“手动启动/重建命令”先把 Verdaccio 起好；并把老的 `ws-u-*` 容器 `network connect` 进 `funai-net`。
+解决：按本文“手动启动/重建命令”先把 103 上的 Verdaccio 起好。
 
 ### 5) Verdaccio 启动报 `config.yaml` 非法
 
@@ -288,7 +281,7 @@ YAML
 
 你们这次踩到的更直观现象（平台侧常见）：
 
-- `npm create vite@latest ...` / `npm install` 报：`npm error 500 Internal Server Error - GET http://verdaccio:4873/<pkg>`
+- `npm create vite@latest ...` / `npm install` 报：`npm error 500 Internal Server Error - GET http://172.21.138.103:4873/<pkg>`
 - Verdaccio 容器日志出现：`EACCES: permission denied, mkdir '/verdaccio/storage/<pkg>'`
 - 根因：Verdaccio 无法写入挂载的宿主机 `storage` 目录，导致“上游请求虽成功，但无法落盘缓存”，最终对客户端返回 500。
 
@@ -299,7 +292,7 @@ docker rm -f verdaccio 2>/dev/null || true
 chown -R 10001:65533 /data/funai/verdaccio/conf /data/funai/verdaccio/storage
 
 docker run -d --name verdaccio --restart=always \
-  --network funai-net \
+  -p 4873:4873 \
   -v /data/funai/verdaccio/conf:/verdaccio/conf:Z \
   -v /data/funai/verdaccio/storage:/verdaccio/storage:Z \
   docker.io/verdaccio/verdaccio:5
@@ -321,7 +314,7 @@ docker run -d --name verdaccio --restart=always \
 #### 路线 1（推荐：兼容 Runner 构建）：保持 lockfile 使用外网镜像源
 
 - 让 `resolved` 保持为 `https://registry.npmmirror.com/`（或 npmjs）
-- workspace 侧仍可通过 Verdaccio 做“开发期加速”，但**不要把 lockfile 提交成 `http://verdaccio:4873`**
+- workspace 侧仍可通过 Verdaccio 做“开发期加速”，但**不要把 lockfile 提交成 `http://172.21.138.103:4873`**
 
 #### 路线 2（仅用于 workspace 容器网络内预热，不要提交到仓库）：把 resolved 临时替换成 Verdaccio
 
@@ -330,13 +323,13 @@ docker run -d --name verdaccio --restart=always \
 把 `package-lock.json` 里的 `resolved` 批量改成走 Verdaccio，然后在容器网络内执行 `npm ci`：
 
 ```bash
-sed -i 's#https://registry.npmmirror.com/#http://verdaccio:4873/#g' /tmp/npm-warmup/package-lock.json
-sed -i 's#https://registry.npmjs.org/#http://verdaccio:4873/#g' /tmp/npm-warmup/package-lock.json
+sed -i 's#https://registry.npmmirror.com/#http://172.21.138.103:4873/#g' /tmp/npm-warmup/package-lock.json
+sed -i 's#https://registry.npmjs.org/#http://172.21.138.103:4873/#g' /tmp/npm-warmup/package-lock.json
 
-docker run --rm --network funai-net \
+docker run --rm \
   -v /tmp/npm-warmup:/work -w /work \
   <你的workspace镜像> \
-  bash -lc "rm -rf node_modules && npm config set registry http://verdaccio:4873 && npm config set audit false && npm ci"
+  bash -lc "rm -rf node_modules && npm config set registry http://172.21.138.103:4873 && npm config set audit false && npm ci"
 ```
 
 ### 7) 删除 lockfile 后 `npm install` 报 ERESOLVE（peer 依赖冲突）
@@ -351,7 +344,7 @@ docker run --rm --network funai-net \
 
 现象（容器内）：
 
-- `npm error 403 Forbidden - GET http://verdaccio:4873/@scope%2Fpkg`
+- `npm error 403 Forbidden - GET http://172.21.138.103:4873/@scope%2Fpkg`
 
 排查思路（关键命令）：
 
@@ -362,19 +355,19 @@ docker run --rm --network funai-net \
 podman logs -f verdaccio
 
 # 触发一次查询（在 workspace 容器内）
-podman exec -it ws-u-10000021 sh -lc 'npm view @radix-ui/react-dialog --registry http://verdaccio:4873'
+podman exec -it ws-u-10000021 sh -lc 'npm view @radix-ui/react-dialog --registry http://172.21.138.103:4873'
 ```
 
 2) 若 workspace 镜像内没有 curl，可用 node 验证 registry 连通性（不依赖 curl/wget）：
 
 ```bash
-podman exec -it ws-u-10000021 sh -lc 'node -e "require(\"dns\").lookup(\"verdaccio\",(e,a)=>console.log(e||a))"'
-podman exec -it ws-u-10000021 sh -lc 'node -e "require(\"http\").get(\"http://verdaccio:4873/-/ping\",r=>{console.log(r.statusCode);r.resume();}).on(\"error\",e=>console.error(e));"'
+podman exec -it ws-u-10000021 sh -lc 'node -e "require(\"dns\").lookup(\"172.21.138.103\",(e,a)=>console.log(e||a))"'
+podman exec -it ws-u-10000021 sh -lc 'node -e "require(\"http\").get(\"http://172.21.138.103:4873/-/ping\",r=>{console.log(r.statusCode);r.resume();}).on(\"error\",e=>console.error(e));"'
 ```
 
-3) 常见根因：容器内启用了 `HTTP_PROXY/HTTPS_PROXY`，但 `no_proxy/NO_PROXY` 没包含 `verdaccio`，npm 会走代理导致被拦截成 403。
+3) 常见根因：容器内启用了 `HTTP_PROXY/HTTPS_PROXY`，但 `no_proxy/NO_PROXY` 没包含 `172.21.138.103`（或对应域名），npm 会走代理导致被拦截成 403。
 
-- 解决：确保 `funai.workspace.noProxy` 包含 `verdaccio`（以及必要时其解析 IP），并重建 workspace 容器让 env 生效。
+- 解决：确保 `funai.workspace.noProxy` 包含 `172.21.138.103`（以及必要时对应域名），并重建 workspace 容器让 env 生效。
 
 ```bash
 podman exec -it ws-u-10000021 sh -lc 'env | sort | grep -iE "http_proxy|https_proxy|no_proxy|npm_config_.*proxy"'
