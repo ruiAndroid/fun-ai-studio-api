@@ -37,12 +37,19 @@ public class OrphanedDataCleanupScheduler {
     private final FunAiAppMapper appMapper;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
+    private static final String HDR_RUNTIME_TOKEN = "X-Runtime-Token";
 
     @Value("${funai.cleanup.workspace-url:http://172.21.138.87:7001}")
     private String workspaceUrl;
 
     @Value("${funai.cleanup.runtime-url:http://172.21.138.102:7005}")
     private String runtimeUrl;
+
+    /**
+     * runtime-agent token（Header: X-Runtime-Token）
+     */
+    @Value("${funai.cleanup.runtime-token:}")
+    private String runtimeToken;
 
     @Value("${funai.cleanup.enabled:true}")
     private boolean enabled;
@@ -51,6 +58,8 @@ public class OrphanedDataCleanupScheduler {
         this.appMapper = appMapper;
         this.objectMapper = objectMapper;
         this.httpClient = HttpClient.newBuilder()
+                // runtime-agent（FastAPI/uvicorn）对 HTTP/2 prior-knowledge/h2c 兼容性不一致；强制 HTTP/1.1 避免 "Invalid HTTP request received."
+                .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
     }
@@ -120,7 +129,7 @@ public class OrphanedDataCleanupScheduler {
             request.put("existingAppIds", new ArrayList<>(existingAppIds));
             
             String requestBody = objectMapper.writeValueAsString(request);
-            
+
             HttpRequest httpRequest = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .timeout(Duration.ofMinutes(5))
@@ -149,6 +158,10 @@ public class OrphanedDataCleanupScheduler {
             log.warn("runtime URL 未配置，跳过部署态清理");
             return;
         }
+        if (!StringUtils.hasText(runtimeToken)) {
+            log.warn("runtimeToken 未配置（X-Runtime-Token）：跳过部署态清理（否则 runtime-agent 会返回 401 unauthorized）");
+            return;
+        }
 
         try {
             String url = runtimeUrl.replaceAll("/$", "") + "/agent/cleanup-orphaned";
@@ -162,6 +175,7 @@ public class OrphanedDataCleanupScheduler {
                     .uri(URI.create(url))
                     .timeout(Duration.ofMinutes(5))
                     .header("Content-Type", "application/json")
+                    .header(HDR_RUNTIME_TOKEN, runtimeToken)
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                     .build();
             
