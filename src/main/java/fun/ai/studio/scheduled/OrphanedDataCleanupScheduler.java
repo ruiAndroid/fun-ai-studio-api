@@ -68,7 +68,7 @@ public class OrphanedDataCleanupScheduler {
      * 每天凌晨 2:00 执行清理任务
      * cron 格式：秒 分 时 日 月 周
      */
-    @Scheduled(cron = "0 0 2 * * ?")
+    @Scheduled(cron = "${funai.cleanup.cron:0 0 2 * * ?}")
     @SchedulerLock(name = "orphanedDataCleanup", lockAtLeastFor = "PT1M", lockAtMostFor = "PT30M")
     public void cleanOrphanedData() {
         if (!enabled) {
