@@ -188,6 +188,10 @@
 
 当你们新增更多节点时，按以下规则"照抄追加"：
 
+- **新增 Workspace 节点**
+  - Workspace 入站：放行来自 API(91) 的 `80` 与 `7001`
+  - API 出站：放行到新增 Workspace 节点的 `80` 与 `7001`
+  - Workspace 出站：放行到 API(91) 的 `8080`（心跳）与 103 `4873`（Verdaccio，如需）
 - **新增 Runner（执行面）**
   - Runner 出站：到 Deploy `7002`、到每个 Runtime 的 `7005`
   - Deploy 入站：放行来自该 Runner 的 `7002`

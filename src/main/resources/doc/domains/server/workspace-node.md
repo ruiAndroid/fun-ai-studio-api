@@ -18,6 +18,34 @@
 
 > 两台服务器位于不同 VPC 时，优先用公网互通 + 安全组收敛（只放行必要端口与来源 IP）。
 
+## 1.5 从 0 开始的基础准备（新节点）
+
+> 目标：把一台空白服务器准备到可部署 workspace-node + Nginx + 容器运行时的状态。
+
+- **系统初始化**：更新系统、设置时区、开启时间同步（chrony/ntp）。
+- **基础依赖**：安装 JDK 17、Maven、Nginx、Podman、podman-docker。
+- **目录准备**：创建 `/data/funai/workspaces`、`/data/funai/verdaccio`、`/opt/fun-ai-studio`。
+- **服务启用**：`systemctl enable --now nginx`、`systemctl enable --now podman.socket`。
+- **安全组**：仅放行 `80/tcp`（入口 Nginx）与 `7001/tcp`（workspace-node），来源限定为 API 入口机。
+
+示例（Alibaba Cloud Linux 3，可按实际发行版调整包名）：
+
+```bash
+# 基础环境
+timedatectl set-timezone Asia/Shanghai
+systemctl enable --now chronyd
+
+# 依赖
+yum install -y java-17-openjdk-devel maven nginx podman podman-docker
+
+# 目录
+mkdir -p /data/funai/workspaces /data/funai/verdaccio/{conf,storage} /opt/fun-ai-studio/config
+
+# 服务
+systemctl enable --now nginx
+systemctl enable --now podman.socket
+```
+
 ## 2. Workspace 开发服务器（大机）关键目录与端口约定
 
 ### 2.1 目录
