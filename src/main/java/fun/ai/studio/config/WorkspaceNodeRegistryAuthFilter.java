@@ -4,6 +4,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -21,6 +23,7 @@ public class WorkspaceNodeRegistryAuthFilter extends OncePerRequestFilter {
 
     private static final String PATH = "/api/fun-ai/admin/workspace-nodes/heartbeat";
     private static final String HDR = "X-WS-Node-Token";
+    private static final Logger log = LoggerFactory.getLogger(WorkspaceNodeRegistryAuthFilter.class);
 
     private final WorkspaceNodeRegistryProperties props;
 
@@ -43,6 +46,24 @@ public class WorkspaceNodeRegistryAuthFilter extends OncePerRequestFilter {
         if (props == null || !props.isEnabled()) {
             filterChain.doFilter(request, response);
             return;
+        }
+
+        // 诊断日志：用于确认 workspace-node 是直连 API 还是经由域名/LB 转发。
+        // 注意：这里不读取 request body / parameter map，避免影响 multipart/file upload 等场景。
+        try {
+            String remoteIp = request.getRemoteAddr();
+            String xff = request.getHeader("X-Forwarded-For");
+            String xri = request.getHeader("X-Real-IP");
+            String host = request.getHeader("Host");
+            String ua = request.getHeader("User-Agent");
+            log.info("workspace-node heartbeat incoming: remoteAddr={}, xff={}, xri={}, host={}, ua={}, contentLength={}",
+                    remoteIp,
+                    (StringUtils.hasText(xff) ? xff : "-"),
+                    (StringUtils.hasText(xri) ? xri : "-"),
+                    (StringUtils.hasText(host) ? host : "-"),
+                    (StringUtils.hasText(ua) ? ua : "-"),
+                    request.getContentLengthLong());
+        } catch (Exception ignore) {
         }
 
         // 可选 IP 白名单：为空则不校验
