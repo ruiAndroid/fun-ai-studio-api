@@ -244,14 +244,14 @@ Runner 不需要 push，建议：
   - 推荐额外写入审计：userId/appId、操作者、commitSha、message、时间、IP 等（可先落 API 日志，后续再落库）
   - 默认禁止 force push（只允许快进 push）
 
-### 阶段 C（回退/恢复版本：restore）
+### 阶段 C（回退/恢复版本：reset）
 
-- **`restore`（推荐的"恢复"语义）**：将代码恢复到指定 commit 的状态，生成新 commit 并 push
+- **`reset`（推荐的“回退到指定版本”语义）**：将代码 reset 到指定 commit 的状态，生成新 commit 并 push
   - ⚠️ **警告：此操作会直接覆盖当前所有文件，恢复到目标版本的状态。目标版本之后的所有改动将丢失！**
   - 前端调用时需二次确认，避免误操作
 - **`reset-hard`（谨慎开放）**：仅管理员/内部使用；默认不要给普通用户 UI 暴露
 
-> 注意：restore 会覆盖文件并生成新 commit，历史仍可追溯，但目标版本之后的改动将丢失。
+> 注意：reset 会覆盖文件并生成新 commit，历史仍可追溯，但目标版本之后的改动将丢失。
 
 ---
 
@@ -313,7 +313,7 @@ Runner 不需要 push，建议：
 - 默认禁止 force push
 - 若 push 失败（远端有更新）：提示用户先 pull/解决冲突
 
-### 6.2.6 `POST /workspace/git/restore`（⚠️ 谨慎操作）
+### 6.2.6 `GET/POST /workspace/git/reset`（⚠️ 谨慎操作）
 
 请求字段建议：
 

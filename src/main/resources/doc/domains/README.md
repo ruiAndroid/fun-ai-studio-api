@@ -21,9 +21,7 @@
 - [Workspace：容器级（ensure/status/heartbeat）](./workspace/container.md)
 - [Workspace：文件域（文件 CRUD、zip 导入导出）](./workspace/files.md)
 - [Workspace：运行态（start/stop/status）](./workspace/run.md)
-- [Workspace：internal（nginx auth_request 查询端口）](./workspace/internal.md)
 - [Workspace：npm 缓存（Verdaccio 代理仓库）](./workspace/npm-cache.md)
-- [Workspace：容器内 Mongo（可选）](./workspace/mongo.md)
 - [Workspace：Mongo Explorer（Web，只读）](./workspace/mongo-explorer.md)
 - [Workspace：Git 集成（Workspace ↔ Gitea）](./workspace/git.md)
 

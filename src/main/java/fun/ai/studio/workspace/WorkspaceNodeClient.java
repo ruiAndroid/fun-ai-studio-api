@@ -269,9 +269,16 @@ public class WorkspaceNodeClient {
      * 恢复到某个版本状态（git checkout + commit + push）
      */
     public WorkspaceGitRestoreResponse gitRestore(Long userId, Long appId, String commitSha) {
-        String path = "/api/fun-ai/workspace/git/restore";
+        String path = "/api/fun-ai/workspace/git/reset";
         String query = query(Map.of("userId", String.valueOf(userId), "appId", String.valueOf(appId), "commitSha", commitSha == null ? "" : commitSha));
         return requestJson("POST", path, query, new byte[0], new TypeReference<Result<WorkspaceGitRestoreResponse>>() {});
+    }
+
+    /**
+     * reset 到某个版本状态（兼容前端 reset 语义；服务端实现为 checkout + commit + push）
+     */
+    public WorkspaceGitRestoreResponse gitReset(Long userId, Long appId, String commitSha) {
+        return gitRestore(userId, appId, commitSha);
     }
 
     private boolean containsPackageJson(List<FunAiWorkspaceFileNode> nodes) {

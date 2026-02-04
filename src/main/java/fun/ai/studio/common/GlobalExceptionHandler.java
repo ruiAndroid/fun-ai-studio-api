@@ -5,6 +5,8 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.MultipartException;
 
@@ -45,6 +47,15 @@ public class GlobalExceptionHandler {
     public Result<?> handleUploadTooLarge(Exception e) {
         // Spring 默认会抛该异常；这里返回更清晰的提示（并用 413 语义化表示“请求实体过大”）
         return Result.error(413, "上传文件过大：请压缩后重试，或联系管理员提高上传上限（当前建议 <= 200MB）。");
+    }
+
+    /**
+     * 路由不存在/静态资源不存在：不要被兜底成 500（否则前端误以为“系统错误”）。
+     */
+    @ExceptionHandler({NoResourceFoundException.class, NoHandlerFoundException.class})
+    public Result<?> handleNotFound(Exception e) {
+        String msg = (e == null || e.getMessage() == null) ? "Not Found" : e.getMessage();
+        return Result.error(404, msg);
     }
 
     @ExceptionHandler(Exception.class)

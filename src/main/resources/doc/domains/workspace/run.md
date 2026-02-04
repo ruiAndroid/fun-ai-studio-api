@@ -110,15 +110,5 @@
 - `exitCode`：退出码（BUILD/INSTALL 常用）
 - `logPath`：`/workspace/run/dev.log`
 
-## 与 Mongo（可选）的关系
-
-当启用 workspace mongo 时，DEV/START 过程会设置环境变量：
-
-- `MONGO_URL=mongodb://127.0.0.1:27017/{dbNamePrefix}{appId}`
-- `MONGODB_URI` 同值（兼容）
-
-Node 项目只需读取 `process.env.MONGO_URL`/`process.env.MONGODB_URI` 建立连接。
-
-更完整的说明见：`mongo.md`
 
 
