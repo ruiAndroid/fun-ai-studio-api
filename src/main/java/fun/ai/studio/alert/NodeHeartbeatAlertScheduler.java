@@ -156,6 +156,25 @@ public class NodeHeartbeatAlertScheduler {
             return;
         }
 
+        // 根据事件类型动态生成标题：断联/恢复等直接体现在标题里，便于收件箱快速筛选
+        int down = 0;
+        int recovered = 0;
+        int repeat = 0;
+        int stale = 0;
+        for (String e : events) {
+            if (e == null) continue;
+            if (e.startsWith("[下线/心跳超时]")) down++;
+            else if (e.startsWith("[恢复]")) recovered++;
+            else if (e.startsWith("[持续异常重复告警]")) repeat++;
+            else if (e.startsWith("[异常]")) stale++;
+        }
+        StringBuilder subj = new StringBuilder("节点心跳告警");
+        if (down > 0) subj.append("【断联×").append(down).append("】");
+        if (recovered > 0) subj.append("【恢复×").append(recovered).append("】");
+        if (repeat > 0) subj.append("【持续异常×").append(repeat).append("】");
+        // 仅初次异常且没有 down（例如 lastHeartbeatAt=null 的初始化场景）：也在标题里标记一下
+        if (down == 0 && repeat == 0 && stale > 0) subj.append("【异常×").append(stale).append("】");
+
         StringBuilder body = new StringBuilder();
         body.append("时间：").append(Instant.ofEpochMilli(now)).append("\n\n");
         body.append("事件：\n");
@@ -165,7 +184,7 @@ public class NodeHeartbeatAlertScheduler {
             for (String d : unhealthySnapshot) body.append("- ").append(d).append("\n");
         }
 
-        mail.send("节点心跳告警", body.toString());
+        mail.send(subj.toString(), body.toString());
     }
 
     private void handleState(String key,
