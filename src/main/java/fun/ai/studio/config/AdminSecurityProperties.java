@@ -12,7 +12,7 @@ import java.util.List;
  * <p>示例：</p>
  * <pre>
  * funai.admin.enabled=true
- * funai.admin.allowed-ips=172.17.5.80,127.0.0.1
+ * funai.admin.allowed-ips=172.17.5.80,127.0.0.1,172.17.0.0/16
  * funai.admin.token=CHANGE_ME_STRONG_ADMIN_TOKEN
  * </pre>
  */

@@ -10,6 +10,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.net.InetAddress;
 import java.util.List;
 
 /**
@@ -85,9 +86,43 @@ public class AdminAuthFilter extends OncePerRequestFilter {
         if (allowed == null || allowed.isEmpty()) return false;
         for (String a : allowed) {
             if (!StringUtils.hasText(a)) continue;
-            if (ip.equals(a.trim())) return true;
+            String rule = a.trim();
+            if (rule.equals("*") || rule.equals("0.0.0.0/0") || rule.equals("::/0")) return true;
+            if (rule.contains("/")) {
+                if (cidrMatch(ip, rule)) return true;
+                continue;
+            }
+            if (ip.equals(rule)) return true;
         }
         return false;
+    }
+
+    private boolean cidrMatch(String ip, String cidr) {
+        String[] parts = cidr.split("/", 2);
+        if (parts.length != 2) return false;
+        try {
+            InetAddress addr = InetAddress.getByName(ip);
+            InetAddress net = InetAddress.getByName(parts[0]);
+            int prefix = Integer.parseInt(parts[1]);
+            byte[] addrBytes = addr.getAddress();
+            byte[] netBytes = net.getAddress();
+            if (addrBytes.length != netBytes.length) return false;
+            if (prefix <= 0) return true;
+            int maxBits = addrBytes.length * 8;
+            if (prefix > maxBits) return false;
+            int fullBytes = prefix / 8;
+            int remaining = prefix % 8;
+            for (int i = 0; i < fullBytes; i++) {
+                if (addrBytes[i] != netBytes[i]) return false;
+            }
+            if (remaining == 0) return true;
+            int mask = 0xFF << (8 - remaining);
+            int addrByte = addrBytes[fullBytes] & 0xFF;
+            int netByte = netBytes[fullBytes] & 0xFF;
+            return (addrByte & mask) == (netByte & mask);
+        } catch (Exception ignore) {
+            return false;
+        }
     }
 
     private String clientIp(HttpServletRequest request) {
