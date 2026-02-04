@@ -24,7 +24,7 @@ public class FunAiOpenEditorResponse {
     private boolean hasPackageJson;
 
     /**
-     * 当前运行状态：若 hasPackageJson=true 会自动触发 startDev
+     * 当前运行状态（仅观测/展示；open-editor 不会自动触发 startDev）
      */
     private FunAiWorkspaceRunStatusResponse runStatus;
 

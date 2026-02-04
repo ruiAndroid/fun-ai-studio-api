@@ -98,7 +98,7 @@ docker version
 - `docker version` 里 **Server** 版本 >= 20.10.10
 - `docker ps` 能正常返回（daemon 运行中）
 
-> 若你不想在 103 装真实 Docker：建议改用 `registry:2`（podman 原生支持），见 `self-hosted-registry-103.md`。
+> 若你不想在 103 装真实 Docker：可以先用 **Docker Registry v2（`registry:2`）** 跑通镜像推拉（podman 原生支持），见下方“附录：Registry v2 最小落地”。
 
 #### 3.1.5 常见安装失败：`containerd.io` 与 `podman/runc` 冲突
 
@@ -364,5 +364,35 @@ Runner(101) 环境变量建议：
 
 - 用 443 + 正式证书（Let’s Encrypt / 企业证书）
 - 再把 insecure registry 配置去掉
+
+---
+
+## 附录：Registry v2 最小落地（不装 Docker / 先跑通）
+
+如果 103 当前只有 `podman-docker` 仿真层，Harbor 官方安装会很痛苦。此时可以先用 `registry:2` 跑通“101 push、102 pull”，后续再单独迁移到 Harbor。
+
+### A.1 端口与目录
+
+- Registry：`5000/tcp`（**仅内网**）
+- 数据目录：`/data/funai/registry`
+
+### A.2 103 上启动（docker/podman 均可）
+
+```bash
+mkdir -p /data/funai/registry/data
+
+docker rm -f funai-registry 2>/dev/null || true
+docker run -d --name funai-registry --restart=always \
+  -p 5000:5000 \
+  -v /data/funai/registry/data:/var/lib/registry \
+  registry:2
+```
+
+> 如果你们需要认证（推荐）：请改成 `htpasswd` 方式（之前的 `self-hosted-registry-103.md` 已合并删除，避免目录里出现两套“镜像站方案”文档）。
+
+### A.3 101/102 配置 insecure registry（HTTP）
+
+- 101（Docker）：`/etc/docker/daemon.json` 增加 `insecure-registries: ["172.21.138.103:5000"]` 后重启 docker
+- 102（Podman）：`/etc/containers/registries.conf` 增加 `location="172.21.138.103:5000", insecure=true`
 
 
