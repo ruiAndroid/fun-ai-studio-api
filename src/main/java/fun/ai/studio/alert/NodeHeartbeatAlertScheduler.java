@@ -89,13 +89,13 @@ public class NodeHeartbeatAlertScheduler {
                 long lastMs = toEpochMs(n.getLastHeartbeatAt());
                 boolean healthy = lastMs > 0 && (now - lastMs) <= staleMs;
 
-                String detail = "workspace node"
+                String detail = "Workspace 节点"
                         + " id=" + safe(n.getId())
                         + " name=" + safe(n.getName())
-                        + " api=" + safe(n.getApiBaseUrl())
+                        + " apiBaseUrl=" + safe(n.getApiBaseUrl())
                         + " lastHeartbeatAt=" + (lastMs <= 0 ? "null" : Instant.ofEpochMilli(lastMs))
-                        + " ageSec=" + (lastMs <= 0 ? "?" : String.valueOf((now - lastMs) / 1000))
-                        + " staleThresholdSec=" + (staleMs / 1000);
+                        + " 距今秒数=" + (lastMs <= 0 ? "?" : String.valueOf((now - lastMs) / 1000))
+                        + " stale阈值秒=" + (staleMs / 1000);
 
                 handleState(key, healthy, detail, now, repeatMs, events, unhealthySnapshot);
             }
@@ -134,13 +134,13 @@ public class NodeHeartbeatAlertScheduler {
                             boolean staleByHealth = healthStr != null && "STALE".equalsIgnoreCase(healthStr.trim());
                             boolean healthy = !staleByHealth && lastMs > 0 && (now - lastMs) <= staleMs;
 
-                            String detail = "runtime node"
+                            String detail = "Runtime 节点"
                                     + " nodeId=" + safe(m.get("nodeId"))
                                     + " name=" + safe(m.get("name"))
                                     + " agentBaseUrl=" + safe(m.get("agentBaseUrl"))
                                     + " lastHeartbeatAt=" + (lastMs <= 0 ? "null" : Instant.ofEpochMilli(lastMs))
-                                    + " ageSec=" + (lastMs <= 0 ? "?" : String.valueOf((now - lastMs) / 1000))
-                                    + " staleThresholdSec=" + (staleMs / 1000)
+                                    + " 距今秒数=" + (lastMs <= 0 ? "?" : String.valueOf((now - lastMs) / 1000))
+                                    + " stale阈值秒=" + (staleMs / 1000)
                                     + (healthStr == null ? "" : (" health=" + healthStr));
 
                             handleState(key, healthy, detail, now, repeatMs, events, unhealthySnapshot);
@@ -157,15 +157,15 @@ public class NodeHeartbeatAlertScheduler {
         }
 
         StringBuilder body = new StringBuilder();
-        body.append("Time: ").append(Instant.ofEpochMilli(now)).append("\n\n");
-        body.append("Events:\n");
+        body.append("时间：").append(Instant.ofEpochMilli(now)).append("\n\n");
+        body.append("事件：\n");
         for (String e : events) body.append("- ").append(e).append("\n");
         if (!unhealthySnapshot.isEmpty()) {
-            body.append("\nCurrent unhealthy snapshot:\n");
+            body.append("\n当前异常节点快照：\n");
             for (String d : unhealthySnapshot) body.append("- ").append(d).append("\n");
         }
 
-        mail.send("Node heartbeat alert", body.toString());
+        mail.send("节点心跳告警", body.toString());
     }
 
     private void handleState(String key,
@@ -185,7 +185,7 @@ public class NodeHeartbeatAlertScheduler {
         if (prev == null) {
             lastHealthy.put(key, healthy);
             if (!healthy) {
-                events.add("[STALE] " + detail);
+                events.add("[异常] " + detail);
                 lastAlertAtMs.put(key, nowMs);
             }
             return;
@@ -193,7 +193,7 @@ public class NodeHeartbeatAlertScheduler {
 
         if (prevHealthy && !healthy) {
             lastHealthy.put(key, false);
-            events.add("[DOWN] " + detail);
+            events.add("[下线/心跳超时] " + detail);
             lastAlertAtMs.put(key, nowMs);
             return;
         }
@@ -201,7 +201,7 @@ public class NodeHeartbeatAlertScheduler {
         if (!prevHealthy && healthy) {
             lastHealthy.put(key, true);
             if (alertProps != null && alertProps.isSendRecovery()) {
-                events.add("[RECOVERED] " + detail);
+                events.add("[恢复] " + detail);
             }
             lastAlertAtMs.remove(key);
             return;
@@ -211,7 +211,7 @@ public class NodeHeartbeatAlertScheduler {
         if (!healthy) {
             Long lastAt = lastAlertAtMs.get(key);
             if (lastAt == null || (nowMs - lastAt) >= repeatMs) {
-                events.add("[STALE-REPEAT] " + detail);
+                events.add("[持续异常重复告警] " + detail);
                 lastAlertAtMs.put(key, nowMs);
             }
         }
