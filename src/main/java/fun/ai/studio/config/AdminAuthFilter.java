@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.net.InetAddress;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * /api/fun-ai/admin/** 管理接口鉴权：
@@ -62,19 +63,22 @@ public class AdminAuthFilter extends OncePerRequestFilter {
         String remoteIp = request.getRemoteAddr();
         String forwardedIp = clientIp(request);
         if (!isAllowedIp(remoteIp, props.getAllowedIps()) && !isAllowedIp(forwardedIp, props.getAllowedIps())) {
-            deny(response, 403, "admin forbidden: ip not allowed");
+            denyAsJson(response, 403,
+                    "admin forbidden: ip not allowed"
+                            + " (remoteIp=" + safe(remoteIp)
+                            + ", forwardedIp=" + safe(forwardedIp) + ")");
             return;
         }
 
         String expected = props.getToken();
         if (!StringUtils.hasText(expected) || "CHANGE_ME_STRONG_ADMIN_TOKEN".equals(expected)) {
-            deny(response, 500, "admin token not configured");
+            denyAsJson(response, 500, "admin token not configured");
             return;
         }
 
         String got = request.getHeader(HDR);
         if (!expected.equals(got)) {
-            deny(response, 401, "admin unauthorized");
+            denyAsJson(response, 401, "admin unauthorized");
             return;
         }
 
@@ -137,11 +141,43 @@ public class AdminAuthFilter extends OncePerRequestFilter {
         return request.getRemoteAddr();
     }
 
-    private void deny(HttpServletResponse resp, int code, String msg) throws IOException {
+    /**
+     * nodes-admin.html 会直接读取 response.text() 并 JSON.parse，
+     * 因此这里必须返回 JSON（即使 HTTP status 是 401/403）。
+     */
+    private void denyAsJson(HttpServletResponse resp, int code, String msg) throws IOException {
         resp.setStatus(code);
-        resp.setContentType(MediaType.TEXT_PLAIN_VALUE);
+        resp.setContentType(MediaType.APPLICATION_JSON_VALUE);
         resp.setCharacterEncoding(StandardCharsets.UTF_8.name());
-        resp.getWriter().write(msg == null ? "" : msg);
+        resp.getWriter().write(toJson(code, msg));
+    }
+
+    private String toJson(int code, String msg) {
+        int c = code <= 0 ? 500 : code;
+        String m = msg == null ? "" : msg;
+        return "{\"code\":" + c + ",\"message\":\"" + escapeJson(m) + "\",\"data\":null}";
+    }
+
+    private String escapeJson(String s) {
+        if (s == null) return "";
+        StringBuilder sb = new StringBuilder(s.length() + 16);
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            switch (ch) {
+                case '\\': sb.append("\\\\"); break;
+                case '"': sb.append("\\\""); break;
+                case '\n': sb.append("\\n"); break;
+                case '\r': sb.append("\\r"); break;
+                case '\t': sb.append("\\t"); break;
+                default: sb.append(ch);
+            }
+        }
+        return sb.toString();
+    }
+
+    private String safe(String s) {
+        if (!StringUtils.hasText(s)) return "";
+        return s.trim().toLowerCase(Locale.ROOT);
     }
 }
 
