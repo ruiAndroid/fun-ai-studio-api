@@ -9,7 +9,7 @@
 | 文档 | 说明 |
 |------|------|
 | [安全组/防火墙放行矩阵](./domains/server/security-groups.md) | 7 台服务器端口与 IP 规则 |
-| [最小可落地监控方案](./domains/server/monitoring-minimal.md) | Prometheus + Grafana |
+| [标准监控方案（systemd）](./domains/server/monitoring-standard.md) | Prometheus + Alertmanager + Grafana |
 | [Workspace 节点联调说明](./domains/server/workspace-node.md) | 开发节点部署与调试 |
 | [Workspace 4 节点扩容](./domains/server/workspace-4nodes-rollout.md) | Workspace 横向扩展 |
 | [Deploy/Runner/Runtime 扩容](./domains/server/scaling-deploy-runtime.md) | 发布能力横向扩展 |

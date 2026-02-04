@@ -416,7 +416,7 @@ flowchart LR
 
 **运维相关**：
 - [安全组矩阵](../server/security-groups.md)
-- [监控方案](../server/monitoring-minimal.md)
+- [监控方案（标准）](../server/monitoring-standard.md)
 - [运行态 Mongo](../deploy/runtime-mongo.md)
 
 **扩容相关**：
