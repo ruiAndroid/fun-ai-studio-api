@@ -1,7 +1,9 @@
 package fun.ai.studio.config;
 
 import fun.ai.studio.common.Result;
+import fun.ai.studio.common.WorkspaceNodeCapacityException;
 import fun.ai.studio.service.FunAiAppService;
+import fun.ai.studio.service.WorkspaceNodeRunCapacityService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -64,16 +66,19 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
     private final WorkspaceNodeProxyProperties props;
     private final fun.ai.studio.workspace.WorkspaceNodeResolver nodeResolver;
     private final FunAiAppService funAiAppService;
+    private final WorkspaceNodeRunCapacityService capacityService;
     private final HttpClient httpClient;
     private final SecureRandom random = new SecureRandom();
     private static final Logger log = LoggerFactory.getLogger(WorkspaceNodeProxyFilter.class);
 
     public WorkspaceNodeProxyFilter(WorkspaceNodeProxyProperties props,
                                     fun.ai.studio.workspace.WorkspaceNodeResolver nodeResolver,
-                                    FunAiAppService funAiAppService) {
+                                    FunAiAppService funAiAppService,
+                                    WorkspaceNodeRunCapacityService capacityService) {
         this.props = props;
         this.nodeResolver = nodeResolver;
         this.funAiAppService = funAiAppService;
+        this.capacityService = capacityService;
         HttpClient.Builder b = HttpClient.newBuilder();
         if (props != null && props.getConnectTimeoutMs() > 0) {
             b.connectTimeout(Duration.ofMillis(props.getConnectTimeoutMs()));
@@ -127,6 +132,18 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
         if (appId != null) {
             if (funAiAppService == null || funAiAppService.getAppByIdAndUserId(appId, userId) == null) {
                 denyAsResult(response, 404, "应用不存在或已删除");
+                return;
+            }
+        }
+
+        if (shouldCheckRunCapacity(path) && capacityService != null) {
+            try {
+                capacityService.assertCanStart(userId);
+            } catch (WorkspaceNodeCapacityException e) {
+                denyAsResult(response, 503, e.getMessage());
+                return;
+            } catch (IllegalArgumentException e) {
+                denyAsResult(response, 503, e.getMessage());
                 return;
             }
         }
@@ -235,6 +252,14 @@ public class WorkspaceNodeProxyFilter extends OncePerRequestFilter {
         if (!(uri.contains("/files/upload-zip") || uri.contains("/files/upload-file"))) return false;
         String ct = request.getContentType();
         return ct != null && ct.toLowerCase(Locale.ROOT).startsWith("multipart/form-data");
+    }
+
+    private boolean shouldCheckRunCapacity(String path) {
+        if (path == null) return false;
+        return path.startsWith("/api/fun-ai/workspace/run/start")
+                || path.startsWith("/api/fun-ai/workspace/run/preview")
+                || path.startsWith("/api/fun-ai/workspace/run/build")
+                || path.startsWith("/api/fun-ai/workspace/run/install");
     }
 
     /**

@@ -281,6 +281,15 @@ public class WorkspaceNodeClient {
         return gitRestore(userId, appId, commitSha);
     }
 
+    /**
+     * 查询当前节点的运行态占用数量（RUNNING/STARTING/BUILDING/INSTALLING）。
+     */
+    public Map<String, Object> getRunBusyCount(Long userId) {
+        String path = "/api/fun-ai/workspace/internal/run/busy-count";
+        String query = query(Map.of("userId", String.valueOf(userId)));
+        return requestJson("GET", path, query, null, new TypeReference<Result<Map<String, Object>>>() {});
+    }
+
     private boolean containsPackageJson(List<FunAiWorkspaceFileNode> nodes) {
         for (FunAiWorkspaceFileNode n : nodes) {
             if (n == null) continue;

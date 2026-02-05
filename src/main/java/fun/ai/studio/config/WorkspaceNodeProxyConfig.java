@@ -18,10 +18,11 @@ public class WorkspaceNodeProxyConfig {
     public FilterRegistrationBean<WorkspaceNodeProxyFilter> workspaceNodeProxyFilterRegistration(
             WorkspaceNodeProxyProperties props,
             fun.ai.studio.workspace.WorkspaceNodeResolver resolver,
-            fun.ai.studio.service.FunAiAppService funAiAppService
+            fun.ai.studio.service.FunAiAppService funAiAppService,
+            fun.ai.studio.service.WorkspaceNodeRunCapacityService capacityService
     ) {
         FilterRegistrationBean<WorkspaceNodeProxyFilter> reg = new FilterRegistrationBean<>();
-        reg.setFilter(new WorkspaceNodeProxyFilter(props, resolver, funAiAppService));
+        reg.setFilter(new WorkspaceNodeProxyFilter(props, resolver, funAiAppService, capacityService));
         reg.addUrlPatterns("/api/fun-ai/workspace/*");
         // 确保在 Spring Security 之后执行（Security filter chain 通常 order 更小）
         reg.setOrder(Ordered.LOWEST_PRECEDENCE - 100);

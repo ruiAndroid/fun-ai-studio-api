@@ -1,8 +1,10 @@
 package fun.ai.studio.controller.workspace.run;
 
 import fun.ai.studio.common.Result;
+import fun.ai.studio.common.WorkspaceNodeCapacityException;
 import fun.ai.studio.entity.response.FunAiWorkspaceRunStatusResponse;
 import fun.ai.studio.service.FunAiWorkspaceService;
+import fun.ai.studio.service.WorkspaceNodeRunCapacityService;
 import fun.ai.studio.workspace.WorkspaceActivityTracker;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -26,10 +28,14 @@ public class FunAiWorkspaceRunController {
 
     private final FunAiWorkspaceService workspaceService;
     private final WorkspaceActivityTracker activityTracker;
+    private final WorkspaceNodeRunCapacityService capacityService;
 
-    public FunAiWorkspaceRunController(FunAiWorkspaceService workspaceService, WorkspaceActivityTracker activityTracker) {
+    public FunAiWorkspaceRunController(FunAiWorkspaceService workspaceService,
+                                       WorkspaceActivityTracker activityTracker,
+                                       WorkspaceNodeRunCapacityService capacityService) {
         this.workspaceService = workspaceService;
         this.activityTracker = activityTracker;
+        this.capacityService = capacityService;
     }
 
     @PostMapping("/start")
@@ -40,7 +46,12 @@ public class FunAiWorkspaceRunController {
     ) {
         try {
             activityTracker.touch(userId);
+            if (capacityService != null) {
+                capacityService.assertCanStart(userId);
+            }
             return Result.success(workspaceService.startDev(userId, appId));
+        } catch (WorkspaceNodeCapacityException e) {
+            return Result.error(503, e.getMessage());
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
         } catch (Exception e) {
@@ -57,7 +68,12 @@ public class FunAiWorkspaceRunController {
     ) {
         try {
             activityTracker.touch(userId);
+            if (capacityService != null) {
+                capacityService.assertCanStart(userId);
+            }
             return Result.success(workspaceService.startBuild(userId, appId));
+        } catch (WorkspaceNodeCapacityException e) {
+            return Result.error(503, e.getMessage());
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
         } catch (Exception e) {
@@ -74,7 +90,12 @@ public class FunAiWorkspaceRunController {
     ) {
         try {
             activityTracker.touch(userId);
+            if (capacityService != null) {
+                capacityService.assertCanStart(userId);
+            }
             return Result.success(workspaceService.startPreview(userId, appId));
+        } catch (WorkspaceNodeCapacityException e) {
+            return Result.error(503, e.getMessage());
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
         } catch (Exception e) {
@@ -91,7 +112,12 @@ public class FunAiWorkspaceRunController {
     ) {
         try {
             activityTracker.touch(userId);
+            if (capacityService != null) {
+                capacityService.assertCanStart(userId);
+            }
             return Result.success(workspaceService.startInstall(userId, appId));
+        } catch (WorkspaceNodeCapacityException e) {
+            return Result.error(503, e.getMessage());
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
         } catch (Exception e) {
