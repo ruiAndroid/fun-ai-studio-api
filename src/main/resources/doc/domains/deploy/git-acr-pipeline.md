@@ -92,11 +92,16 @@ payload 至少包含：
 - `appId`（必填）
 - `repoSshUrl`（必填，例如 `ssh://git@172.21.138.103:2222/funai/u{userId}-app{appId}.git`）
 - `gitRef`（可选：branch/tag/commitSha；默认 `main`）
-- `dockerfilePath`（可选，默认 `Dockerfile`）
+- `dockerfilePath`（可选，默认 `Dockerfile`；后续如需支持子目录可再放开）
 - `buildContext`（可选，默认 repo root）
-- `imageRepo`（可选：Harbor repo，如 `172.21.138.103/funaistudio/apps/app-{appId}`）
-- `imageTag`（可选：建议用 `commitSha` 或 `buildNumber`）
+- `acrRegistry`（必填：镜像仓库地址；现网为 Harbor(103)，例如 `172.21.138.103`）
+- `acrNamespace`（必填：镜像 namespace/project；现网为 `funaistudio`）
+- `imageTag`（可选：建议用 `commitSha` 或 `buildNumber`；默认 `latest`）
 - `containerPort`（可选，默认 3000；由 Dockerfile 标准约定）
+
+Runner 的镜像命名约定（当前实现）：
+
+- `image = {acrRegistry}/{acrNamespace}/u{userId}-app{appId}:{imageTag}`
 
 ---
 
@@ -105,12 +110,12 @@ payload 至少包含：
 建议：
 
 - **project**：`funaistudio`（专门存用户应用制品）
-- **repo**：`apps/app-{appId}`（每个 app 一个仓库，便于清理/审计）
+- **repo**：`u{userId}-app{appId}`（当前 Runner 实现；每个 app 一个仓库，便于清理/审计）
 - **tag**：`{gitSha}`（推荐，可追溯/可回滚）
 
 示例：
 
-- `172.21.138.103/funaistudio/apps/app-20002:acde123`
+- `172.21.138.103/funaistudio/u10001-app20002:acde123`
 
 ---
 

@@ -193,7 +193,9 @@ Note over Deploy: 选址时优先选磁盘充裕节点
   - runtime-agent Header：`X-Runtime-Token: <token>`
   - runtime-agent 环境变量：`RUNTIME_AGENT_TOKEN`
 - **API -> Deploy 内部调用（预留）**：
-  - API 配置：`deploy-proxy.shared-secret`（当前为预留字段，待 Deploy 增加 internal auth 后启用）
+  - API 配置：`deploy-proxy.shared-secret`
+  - 行为：API 调 Deploy 时会在 Header 带 `X-DEPLOY-SECRET: <shared-secret>`（见 `DeployClient`）
+  - Deploy 侧建议：对 `X-DEPLOY-SECRET` 做校验 + IP allowlist，避免控制面被误调用
 
 ---
 

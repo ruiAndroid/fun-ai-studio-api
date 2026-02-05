@@ -76,12 +76,12 @@ podman login 172.21.138.103 -u <runtimeHarborUserOrRobot>
 ### 2.2 你们的推荐镜像组织方式（便于清理）
 
 - project：`funaistudio`（用户应用制品专用）
-- repo：`apps/app-{appId}`（每 app 一个仓库）
+- repo：`u{userId}-app{appId}`（当前 Runner 实现；每 app 一个仓库）
 - tag：`{gitSha}`（可追溯/可回滚）
 
 示例：
 
-- `.../funaistudio/apps/app-20000254:acde123`
+- `.../funaistudio/u10001-app20000254:acde123`
 
 ### 2.3 保留规则（N=3）
 
@@ -96,7 +96,7 @@ podman login 172.21.138.103 -u <runtimeHarborUserOrRobot>
 
 在 Harbor UI 中对 project 配置 retention policy，例如：
 
-- repo 匹配：`apps/app-*`
+ - repo 匹配：`u*-app*`
 - 保留最近：`3` 个 tag（或按推送时间保留 + 上限 3）
 
 优点：零代码、最贴近 Harbor 运维方式。

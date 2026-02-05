@@ -14,8 +14,8 @@
 
 1) **仓库根目录存在 `Dockerfile`**
 2) **容器监听端口契约**（二选一，建议全平台统一为 A）
-   - **方案 A（推荐）**：容器永远监听 `8080`
-   - 方案 B：容器读取 `PORT` 环境变量并监听（Runtime-Agent 需要注入 `PORT`）
+   - **方案 A（推荐）**：容器永远监听 `3000`（平台默认 `containerPort=3000`）
+   - 方案 B（不推荐）**：容器读取 `PORT` 环境变量并监听（注意：当前 runtime-agent **不会**自动注入 `PORT`，因此仅适用于“镜像内部自带固定 PORT=3000”的情况）
 3) **启动后必须提供 HTTP 服务**（至少 `/` 返回 200）
 
 建议额外提供：
@@ -38,10 +38,10 @@ repo-root/
 
 `deploy/app.yaml`（可选）用于声明：
 
-- `port: 8080`（若采用方案 A 可省略）
+- `port: 3000`（若采用方案 A 可省略）
 - `healthPath: /internal/health`
 
-> 第一阶段可以不做 `app.yaml`，先用“统一端口 8080 + 默认 healthPath”跑通闭环。
+> 第一阶段可以不做 `app.yaml`，先用“统一端口 3000 + 默认 healthPath”跑通闭环。
 
 ---
 
@@ -51,13 +51,13 @@ repo-root/
 
 ### 3.1 统一约定（强制）
 
-- **容器监听端口**：`8080`
+- **容器监听端口**：`3000`（平台默认 `containerPort=3000`，并且该值会写入 Traefik 路由 label）
 - **启动命令**：`npm start`
 - **健康检查（建议）**：`GET /internal/health` 返回 200
 
 ### 3.2 Dockerfile（推荐：多阶段 + 生产依赖最小化）
 
-适用：Express/Nest/Next(standalone)/自研 Node Server（只要最终 `npm start` 能启动并监听 `8080`）。
+适用：Express/Nest/Next(standalone)/自研 Node Server（只要最终 `npm start` 能启动并监听 `3000`）。
 
 ```dockerfile
 FROM node:20-bookworm-slim AS deps
@@ -78,7 +78,7 @@ RUN if node -e "const p=require('./package.json');const s=(p&&p.scripts)||{};pro
 FROM node:20-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production
-ENV PORT=8080
+ENV PORT=3000
 
 # 生产依赖：如果你的项目把 build 产物输出到 dist/，保留 dist/ 与 package*.json 即可
 COPY --from=build /app/package*.json /app/
@@ -86,11 +86,11 @@ COPY --from=build /app/node_modules /app/node_modules
 COPY --from=build /app/dist /app/dist
 # 如果你的项目是 SSR/全栈且需要更多文件（例如 .next/、public/、server.js），按需追加 COPY
 
-EXPOSE 8080
+EXPOSE 3000
 CMD ["npm","start"]
 ```
 
-应用侧要求：`npm start` 启动后监听 `process.env.PORT || 8080`。
+应用侧要求：`npm start` 启动后监听 `process.env.PORT || 3000`。
 
 ---
 
@@ -125,7 +125,7 @@ dist
 
 ### 4.1 模板：前端（Vite/React/Vue/静态站）
 
-特点：构建静态资源，运行时用 Nginx 提供服务，端口固定 `8080`。
+特点：构建静态资源，运行时用 Nginx 提供服务，端口固定 `3000`（对齐平台默认 containerPort）。
 
 `Dockerfile`：
 
@@ -142,9 +142,9 @@ RUN npm run build
 FROM nginx:1.25-alpine
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# Nginx 默认 80，这里统一映射到 8080（容器内监听 8080）
-RUN sed -i 's/listen       80;/listen       8080;/' /etc/nginx/conf.d/default.conf
-EXPOSE 8080
+# Nginx 默认 80，这里统一映射到 3000（容器内监听 3000）
+RUN sed -i 's/listen       80;/listen       3000;/' /etc/nginx/conf.d/default.conf
+EXPOSE 3000
 
 CMD ["nginx", "-g", "daemon off;"]
 ```
@@ -161,7 +161,7 @@ dist
 
 ### 4.2 模板：Node 服务（Express/Nest/Koa）
 
-特点：容器内进程直接监听 `8080`；支持 `PORT` 但默认 8080。
+特点：容器内进程直接监听 `3000`；支持 `PORT` 但默认 3000。
 
 `Dockerfile`：
 
@@ -174,20 +174,20 @@ RUN npm ci
 FROM node:20-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production
-ENV PORT=8080
+ENV PORT=3000
 
 COPY --from=deps /app/node_modules /app/node_modules
 COPY . .
 
-EXPOSE 8080
+EXPOSE 3000
 CMD ["npm", "start"]
 ```
 
-应用侧要求：`npm start` 启动后监听 `process.env.PORT || 8080`。
+应用侧要求：`npm start` 启动后监听 `process.env.PORT || 3000`。
 
 ### 4.3 模板：Java Spring Boot
 
-特点：多阶段构建 jar，运行时只需要 JRE；监听 `8080`。
+特点：多阶段构建 jar，运行时只需要 JRE；监听 `3000`（或读取 `PORT`）。
 
 `Dockerfile`：
 
@@ -201,8 +201,8 @@ RUN mvn -DskipTests clean package
 FROM eclipse-temurin:17-jre
 WORKDIR /app
 COPY --from=build /app/target/*.jar /app/app.jar
-EXPOSE 8080
-ENTRYPOINT ["java","-jar","/app/app.jar"]
+EXPOSE 3000
+ENTRYPOINT ["java","-jar","/app/app.jar","--server.port=3000"]
 ```
 
 ---
@@ -212,7 +212,7 @@ ENTRYPOINT ["java","-jar","/app/app.jar"]
 Runner 默认构建参数（第一阶段建议固定）：
 
 - `docker build -t <image> -f ./Dockerfile .`
-- 镜像 tag：`<acr>/<namespace>/apps/app-<appId>:<commitSha>`
+- 镜像 tag：`<registry>/<namespace>/u<userId>-app<appId>:<commitSha>`
 
 > 后续如需 monorepo 或子目录 Dockerfile，可在 payload 增加 `dockerfilePath` / `buildContext`。
 

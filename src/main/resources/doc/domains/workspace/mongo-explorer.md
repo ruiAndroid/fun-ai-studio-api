@@ -1,4 +1,4 @@
-# Workspace：Mongo Explorer（Web，只读）
+# Workspace：Mongo Explorer
 
 > 双机部署提示：Mongo Explorer 的页面通常仍由 API 服务器（小机）对外提供，但其调用的 workspace/mongo 相关 API 在双机模式下会被转发到 Workspace 开发服务器（大机）容器节点（workspace-node）执行。
 

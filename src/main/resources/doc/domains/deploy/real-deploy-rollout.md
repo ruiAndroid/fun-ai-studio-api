@@ -137,7 +137,7 @@ Deploy 控制面的主数据落库（MySQL 在 91）：
 
 - `appId`（必填）
 - **阶段 1（最小闭环）**：`image`（必填，镜像全名，Runner 直接部署无需构建）
-- **阶段 2（引入构建：内网 Git）**：`repoSshUrl`、`gitRef`、`dockerfilePath`、`buildContext`、`imageRepo`
+- **阶段 2（引入构建：内网 Git）**：`repoSshUrl`、`gitRef`、`dockerfilePath`、`buildContext`、`acrRegistry`、`acrNamespace`、`imageTag`
 
 > 建议：阶段 1 先用“预构建镜像”，把链路跑通；再接入从 git 拉源码构建。
 
