@@ -173,6 +173,9 @@ Type=simple
 User=funai
 WorkingDirectory=/opt/funai/deploy
 Environment="JAVA_OPTS=-Xms256m -Xmx512m"
+# 建议：显式指定 Tomcat 工作目录，避免内嵌 Tomcat 每次启动在 /tmp 下生成 tomcat.* 临时目录并堆积
+# - 对应 fun-ai-studio-deploy application-prod.properties：server.tomcat.basedir=${FUNAI_TOMCAT_BASEDIR:/data/funai/tomcat-deploy}
+Environment="FUNAI_TOMCAT_BASEDIR=/data/funai/tomcat-deploy"
 ExecStart=/usr/bin/java $JAVA_OPTS -jar /opt/funai/deploy/app.jar --spring.profiles.active=prod --spring.config.location=/opt/funai/deploy/config/
 Restart=always
 RestartSec=3
