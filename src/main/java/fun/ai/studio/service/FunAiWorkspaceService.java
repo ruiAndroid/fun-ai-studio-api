@@ -111,7 +111,7 @@ public interface FunAiWorkspaceService {
     /**
      * 给 idle 回收任务使用：不要因为 stopRun 而拉起容器。
      */
-    void stopRunForIdle(Long userId);
+    boolean stopRunForIdle(Long userId);
 
     /**
      * 给 idle 回收任务使用：不要拉起容器。
