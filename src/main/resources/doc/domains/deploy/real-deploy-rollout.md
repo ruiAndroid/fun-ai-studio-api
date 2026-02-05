@@ -176,7 +176,7 @@ docker push 172.21.138.103/funaistudio/demo-nginx:alpine
 ```
 
 > 建议为“用户应用制品”单独使用一个 project（你现网已新建：`funaistudio`），避免与基础镜像/运维镜像混放。
-> 如果你们后续要统一端口 3000/8080，请选择对应镜像或自行构建 demo 镜像。
+> 端口口径：API 服务对外端口是 `8080`；用户应用容器默认 `containerPort=3000`（见 `doc/domains/deploy/README.md` 的“关键口径”）。
 
 **步骤 B：调用 API 创建部署 Job（用户点击“部署”的等价操作）**
 

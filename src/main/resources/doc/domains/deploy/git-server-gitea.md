@@ -172,43 +172,25 @@ ss -lntp | egrep ':3000|:2222' || true
 
 这通常意味着该机器无法直连 Docker Hub（网络策略/出口限制/跨境链路不稳定）。
 
-### 3.5.1 推荐方案：用阿里云 ACR 做“内网镜像中转”（最稳）
+### 3.5.1 推荐方案：镜像中转（内网更稳）
 
-思路：在一台能联网的机器上把镜像推到 ACR，然后 103 从 ACR 拉取（国内链路更稳定）。
-
-#### 如何确定你的 `<acrRegistry>` / `<namespace>`？
-
-你只需要找到任意一个你们当前正在使用的 ACR 镜像全名，就能拆出来：
-
-- 形式通常是：`<acrRegistry>/<namespace>/<image>:<tag>`
-- 例如（示例）：
-  - `crpi-xxxxx.cn-hangzhou.personal.cr.aliyuncs.com/funai/gitea:1.22.4`
-  - 那么：
-    - `<acrRegistry>` = `crpi-xxxxx.cn-hangzhou.personal.cr.aliyuncs.com`
-    - `<namespace>` = `funai`（示例；以你 ACR 里实际存在的命名空间为准，比如你现网已有 `funshion`）
-
-你也可以在阿里云控制台里查看：
-
-- 容器镜像服务 ACR → 实例 → **访问凭证/登录地址（Login Server）**
-- 命名空间（Namespace）就是你推镜像时登录地址后面的第一段路径
+如果 103 无法直连 Docker Hub：推荐用“镜像中转”把 `gitea/gitea:*` 先推到一个你们 **103 可达** 的 registry（例如 ACR/公司镜像站/临时 `registry:2`），然后 103 再从该 registry 拉取。
 
 在“能联网的机器”（例如你本机 Windows，或任意可拉到 Docker Hub 的机器）：
 
 ```bash
 docker pull gitea/gitea:1.22.4
 
-# 下面用你的 ACR 替换：<acrRegistry>/<namespace>/gitea:1.22.4
-# 示例（你截图里的 login server；namespace 建议用“制品专用”的 `funaistudio`）：
-# crpi-39dn3ekytub82xl9.cn-hangzhou.personal.cr.aliyuncs.com/funaistudio/gitea:1.22.4
-docker tag gitea/gitea:1.22.4 <acrRegistry>/<namespace>/gitea:1.22.4
-docker login <acrRegistry>
-docker push <acrRegistry>/<namespace>/gitea:1.22.4
+# 用你的 registry 替换：<registry>/<namespace>/gitea:1.22.4
+docker tag gitea/gitea:1.22.4 <registry>/<namespace>/gitea:1.22.4
+docker login <registry>
+docker push <registry>/<namespace>/gitea:1.22.4
 ```
 
 在 103 上：
 
 ```bash
-docker pull <acrRegistry>/<namespace>/gitea:1.22.4
+docker pull <registry>/<namespace>/gitea:1.22.4
 
 docker rm -f gitea 2>/dev/null || true
 docker run -d --name gitea \
@@ -216,7 +198,7 @@ docker run -d --name gitea \
   -p 2222:22 \
   -v /data/funai/gitea/data:/data \
   -v /data/funai/gitea/config:/etc/gitea \
-  <acrRegistry>/<namespace>/gitea:1.22.4
+  <registry>/<namespace>/gitea:1.22.4
 ```
 
 ### 3.5.2 备选方案：离线导入

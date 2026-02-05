@@ -2,17 +2,20 @@
 
 本域文档描述：用户点击“部署”时，**用户/前端只访问 API 服务**，API 再去调用 `fun-ai-studio-deploy`（部署控制面）创建 Job，Runner 轮询领取并执行部署动作。
 
-推荐阅读顺序（主线必读）：
+推荐阅读顺序（**3 篇主线必读**）：
 
-- [Deploy：整体架构与互联矩阵](./architecture.md)
+- [整体架构与互联矩阵（Deploy / Runner / Runtime）](./architecture.md)
 - [真实部署闭环落地计划（现网 6 台）](./real-deploy-rollout.md)
-- [标准流水线：Git 作为源码真相源 + Harbor（103）作为唯一制品](./git-acr-pipeline.md)
-- [必做自动化：Gitea 仓库创建 + 授权 + Runner 拉代码](./gitea-automation.md)
-- [运行态数据库（Mongo）方案 A：独立 Mongo（推荐）](./runtime-mongo.md)
-- [Harbor 运维规范：免交互登录 + 制品保留策略（N=3）](./acr-auth-and-retention.md)
-- [Dockerfile 规范（统一构建/部署契约）](./dockerfile-standards.md)
-- [方案 C：自建 Git（内网）——在 103 部署 Gitea（SSH 拉代码）](./git-server-gitea.md)
-- [Harbor 自建镜像站（103）](./harbor-103.md)
+- [标准流水线（Git + Harbor Registry）](./git-acr-pipeline.md)
+
+附录（按需阅读）：
+
+- **Git 自动化**： [Gitea 仓库创建 + 授权 + Runner 拉代码](./gitea-automation.md)
+- **构建契约**： [Dockerfile 规范（统一构建/部署契约）](./dockerfile-standards.md)
+- **镜像仓库落地**： [Harbor 自建镜像站（103）](./harbor-103.md)
+- **Harbor 运维**： [免交互登录 + 制品保留策略（N=3）](./acr-auth-and-retention.md)（文件名历史原因保留 `acr-` 前缀）
+- **运行态数据库**： [运行态 Mongo（推荐）](./runtime-mongo.md)
+- **Git 服务器落地**： [103 上部署 Gitea（SSH 拉代码）](./git-server-gitea.md)
 
 ---
 
@@ -24,11 +27,11 @@
 - Runner 未显式传入时默认：`containerPort=3000`
 - runtime-agent 模型默认：`containerPort=3000`
 
-> 备注：runtime-agent **不会**自动注入 `PORT` 环境变量；`containerPort` 主要用于写入网关（Traefik）路由 label。因此镜像内应用必须真实监听该端口。
+> 备注：runtime-agent **不会**自动注入 `PORT` 环境变量；`containerPort` 主要用于写入网关（Traefik）路由 label。**因此镜像内应用必须真实监听该端口**。
 
 ### 0.2 镜像命名（当前 Runner 实现）
 
-当 payload 未指定 `image`（需要 Runner 构建）时，Runner 使用：
+当 payload 未指定 `image`（需要 Runner 构建）时，Runner 使用（字段名是历史命名，语义是“registry 地址/namespace”）：
 
 - `acrRegistry`（现网为 Harbor(103) 地址，例如 `172.21.138.103`）
 - `acrNamespace`（现网为 `funaistudio`）
@@ -37,6 +40,11 @@
 最终镜像为：
 
 - `image = {acrRegistry}/{acrNamespace}/u{userId}-app{appId}:{imageTag}`
+
+### 0.3 两种 Job 模式（阶段 1 / 阶段 2）
+
+- **阶段 1（镜像直部署）**：payload 传 `image` + `containerPort`
+- **阶段 2（Git 构建）**：payload 不传 `image`，由 Runner 使用 `repoSshUrl/gitRef` 拉代码构建，并用 `acrRegistry/acrNamespace/imageTag` 推送镜像
 
 ---
 

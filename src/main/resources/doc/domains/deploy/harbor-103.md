@@ -3,7 +3,7 @@
 你给的约束：
 
 - 103 只有 **内网**稳定使用；可以有公网 IP 方便运维访问 Gitea
-- 不想再折腾阿里云 ACR 的限制
+ - 不想再折腾外部镜像仓库的限制（配额/网络/凭证）
 - 你们的“docker”很多时候实际是 `podman-docker`
 
 结论建议：
@@ -171,7 +171,7 @@ docker ps
 
 5) **用 Docker 把 Gitea 拉起（复用原数据目录挂载）**
 
-> 如果 103 拉 Docker Hub 超时，可按 `git-server-gitea.md` 的 “ACR 中转” 或离线导入方式拿到镜像。
+> 如果 103 拉 Docker Hub 超时：推荐用“镜像中转”（把镜像先推到一个你们内网可达的 registry，例如 ACR/公司镜像站/临时 registry:2），或直接离线导入。`git-server-gitea.md` 里有更完整说明。
 
 ```bash
 docker rm -f gitea 2>/dev/null || true
@@ -337,7 +337,7 @@ podman pull 172.21.138.103/<project>/<image>:<tag>
 
 ## 6. 你们项目侧配置如何切换到 Harbor
 
-你们当前代码里使用的是 `acrRegistry/acrNamespace` 字段（命名是 ACR，但本质就是 registry）：
+你们当前代码里使用的是 `acrRegistry/acrNamespace` 字段（**历史命名**，语义就是 registry 地址/namespace）：
 
 - `acrRegistry`：改成 `172.21.138.103`（Harbor host）
 - `acrNamespace`：继续用 `funaistudio`（Harbor Project）
