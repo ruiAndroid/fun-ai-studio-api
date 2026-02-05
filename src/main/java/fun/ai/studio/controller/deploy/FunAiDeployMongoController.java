@@ -12,6 +12,11 @@ import fun.ai.studio.entity.response.deploy.mongo.DeployMongoDocResult;
 import fun.ai.studio.entity.response.deploy.mongo.DeployMongoFindResult;
 import fun.ai.studio.entity.response.deploy.mongo.DeployMongoInsertOneResult;
 import fun.ai.studio.entity.response.deploy.mongo.DeployMongoUpdateOneResult;
+import fun.ai.studio.entity.request.WorkspaceMongoCreateCollectionRequest;
+import fun.ai.studio.entity.request.WorkspaceMongoDeleteByIdRequest;
+import fun.ai.studio.entity.request.WorkspaceMongoFindRequest;
+import fun.ai.studio.entity.request.WorkspaceMongoInsertOneRequest;
+import fun.ai.studio.entity.request.WorkspaceMongoUpdateByIdRequest;
 import fun.ai.studio.service.FunAiUserService;
 import fun.ai.studio.service.FunAiAppService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -242,6 +247,10 @@ public class FunAiDeployMongoController {
 
     @PostMapping("/find")
     @Operation(summary = "查询文档（部署态）", description = "find（由 runtime-agent 执行）")
+    @io.swagger.v3.oas.annotations.parameters.RequestBody(
+            required = false,
+            content = @Content(schema = @Schema(implementation = WorkspaceMongoFindRequest.class))
+    )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "返回查询结果",
                     content = @Content(schema = @Schema(implementation = DeployMongoFindResult.class)))
@@ -300,6 +309,10 @@ public class FunAiDeployMongoController {
 
     @PostMapping("/insert-one")
     @Operation(summary = "插入一条文档（部署态）", description = "insertOne（由 runtime-agent 执行）")
+    @io.swagger.v3.oas.annotations.parameters.RequestBody(
+            required = false,
+            content = @Content(schema = @Schema(implementation = WorkspaceMongoInsertOneRequest.class))
+    )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "返回插入结果",
                     content = @Content(schema = @Schema(implementation = DeployMongoInsertOneResult.class)))
@@ -314,6 +327,10 @@ public class FunAiDeployMongoController {
 
     @PostMapping("/update-by-id")
     @Operation(summary = "按 _id 更新文档（部署态）", description = "updateById（由 runtime-agent 执行）")
+    @io.swagger.v3.oas.annotations.parameters.RequestBody(
+            required = false,
+            content = @Content(schema = @Schema(implementation = WorkspaceMongoUpdateByIdRequest.class))
+    )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "返回更新结果",
                     content = @Content(schema = @Schema(implementation = DeployMongoUpdateOneResult.class)))
@@ -328,6 +345,10 @@ public class FunAiDeployMongoController {
 
     @PostMapping("/delete-by-id")
     @Operation(summary = "按 _id 删除文档（部署态）", description = "deleteById（由 runtime-agent 执行）")
+    @io.swagger.v3.oas.annotations.parameters.RequestBody(
+            required = false,
+            content = @Content(schema = @Schema(implementation = WorkspaceMongoDeleteByIdRequest.class))
+    )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "返回删除结果",
                     content = @Content(schema = @Schema(implementation = DeployMongoDeleteOneResult.class)))
@@ -342,6 +363,10 @@ public class FunAiDeployMongoController {
 
     @PostMapping("/create-collection")
     @Operation(summary = "创建集合（部署态）", description = "createCollection（由 runtime-agent 执行）")
+    @io.swagger.v3.oas.annotations.parameters.RequestBody(
+            required = false,
+            content = @Content(schema = @Schema(implementation = WorkspaceMongoCreateCollectionRequest.class))
+    )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "返回创建结果",
                     content = @Content(schema = @Schema(implementation = DeployMongoCreateCollectionResult.class)))
