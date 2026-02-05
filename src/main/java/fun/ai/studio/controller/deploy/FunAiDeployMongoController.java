@@ -5,10 +5,21 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import fun.ai.studio.common.Result;
 import fun.ai.studio.deploy.DeployClient;
 import fun.ai.studio.entity.FunAiUser;
+import fun.ai.studio.entity.response.deploy.mongo.DeployMongoCollectionsResult;
+import fun.ai.studio.entity.response.deploy.mongo.DeployMongoCreateCollectionResult;
+import fun.ai.studio.entity.response.deploy.mongo.DeployMongoDeleteOneResult;
+import fun.ai.studio.entity.response.deploy.mongo.DeployMongoDocResult;
+import fun.ai.studio.entity.response.deploy.mongo.DeployMongoFindResult;
+import fun.ai.studio.entity.response.deploy.mongo.DeployMongoInsertOneResult;
+import fun.ai.studio.entity.response.deploy.mongo.DeployMongoUpdateOneResult;
 import fun.ai.studio.service.FunAiUserService;
 import fun.ai.studio.service.FunAiAppService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -207,6 +218,10 @@ public class FunAiDeployMongoController {
 
     @GetMapping("/collections")
     @Operation(summary = "列出集合（部署态）", description = "列出 db_u{userId}_a{appId} 的集合列表（由 runtime-agent 执行）")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "返回集合列表",
+                    content = @Content(schema = @Schema(implementation = DeployMongoCollectionsResult.class)))
+    })
     public Result<Object> collections(
             @Parameter(description = "用户ID（可选：不传则从登录态推断）", required = false) @RequestParam(required = false) Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId
@@ -227,6 +242,10 @@ public class FunAiDeployMongoController {
 
     @PostMapping("/find")
     @Operation(summary = "查询文档（部署态）", description = "find（由 runtime-agent 执行）")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "返回查询结果",
+                    content = @Content(schema = @Schema(implementation = DeployMongoFindResult.class)))
+    })
     public Result<Object> find(
             @Parameter(description = "用户ID（可选：不传则从登录态推断）", required = false) @RequestParam(required = false) Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
@@ -253,6 +272,10 @@ public class FunAiDeployMongoController {
 
     @GetMapping("/doc")
     @Operation(summary = "读取单条文档（部署态）", description = "按 _id 查询单条文档（由 runtime-agent 执行）")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "返回文档内容",
+                    content = @Content(schema = @Schema(implementation = DeployMongoDocResult.class)))
+    })
     public Result<Object> doc(
             @Parameter(description = "用户ID（可选：不传则从登录态推断）", required = false) @RequestParam(required = false) Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
@@ -277,6 +300,10 @@ public class FunAiDeployMongoController {
 
     @PostMapping("/insert-one")
     @Operation(summary = "插入一条文档（部署态）", description = "insertOne（由 runtime-agent 执行）")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "返回插入结果",
+                    content = @Content(schema = @Schema(implementation = DeployMongoInsertOneResult.class)))
+    })
     public Result<Object> insertOne(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
@@ -287,6 +314,10 @@ public class FunAiDeployMongoController {
 
     @PostMapping("/update-by-id")
     @Operation(summary = "按 _id 更新文档（部署态）", description = "updateById（由 runtime-agent 执行）")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "返回更新结果",
+                    content = @Content(schema = @Schema(implementation = DeployMongoUpdateOneResult.class)))
+    })
     public Result<Object> updateById(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
@@ -297,6 +328,10 @@ public class FunAiDeployMongoController {
 
     @PostMapping("/delete-by-id")
     @Operation(summary = "按 _id 删除文档（部署态）", description = "deleteById（由 runtime-agent 执行）")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "返回删除结果",
+                    content = @Content(schema = @Schema(implementation = DeployMongoDeleteOneResult.class)))
+    })
     public Result<Object> deleteById(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
@@ -307,6 +342,10 @@ public class FunAiDeployMongoController {
 
     @PostMapping("/create-collection")
     @Operation(summary = "创建集合（部署态）", description = "createCollection（由 runtime-agent 执行）")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "返回创建结果",
+                    content = @Content(schema = @Schema(implementation = DeployMongoCreateCollectionResult.class)))
+    })
     public Result<Object> createCollection(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
