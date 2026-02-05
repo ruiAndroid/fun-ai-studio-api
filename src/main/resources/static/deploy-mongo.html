@@ -20,9 +20,10 @@
       --danger:#ff8a8a;
       --ok:#9bf6b0;
       --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      --page-pad:clamp(8px,1.6vw,16px);
     }
     *{box-sizing:border-box}
-    body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial; margin:0; padding:16px; background:var(--bg); color:var(--txt)}
+    body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial; margin:0; padding:var(--page-pad); background:var(--bg); color:var(--txt)}
     a{color:var(--pri)}
     code{background:rgba(255,255,255,.08); padding:2px 6px; border-radius:8px}
 
@@ -53,7 +54,7 @@
 
     .topbar{
       display:flex; align-items:center; justify-content:space-between; gap:12px;
-      margin-bottom:12px;
+      margin-bottom:12px; flex-wrap:wrap;
     }
     .brand{display:flex; align-items:center; gap:10px; min-width:0}
     .title{font-size:16px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
@@ -62,6 +63,14 @@
 
     .grid{display:grid; grid-template-columns: 360px 1fr; gap:12px; align-items:start}
     @media (max-width: 1040px){ .grid{grid-template-columns:1fr} .statusline{max-width:unset} }
+    @media (max-width: 720px){
+      .kv{grid-template-columns:1fr}
+      .btn-row > button{min-width:0}
+      .statusline{white-space:normal}
+    }
+    @media (max-height: 720px){
+      .modal{max-height:92vh; margin:2vh auto 0}
+    }
 
     .cols{max-height:420px; overflow:auto}
     .col-item{
@@ -81,7 +90,7 @@
       border-radius:14px;
       padding:12px;
       overflow:auto;
-      max-height:520px;
+      max-height:min(520px, calc(100vh - 240px));
       font-family:var(--mono);
       line-height:1.55;
     }
@@ -199,7 +208,7 @@
         </div>
       </div>
       <div class="small" style="margin-bottom:8px; color:var(--muted2)">支持行级操作：编辑/删除（按 <code>_id</code>）</div>
-      <div id="tableBox" class="small" style="overflow:auto; border:1px solid var(--bd2); border-radius:14px; background:rgba(0,0,0,.16); max-height:calc(100vh - 280px)"></div>
+      <div id="tableBox" class="small" style="overflow:auto; border:1px solid var(--bd2); border-radius:14px; background:rgba(0,0,0,.16); max-height:calc(100vh - 260px)"></div>
       <!-- 隐藏的查询参数 -->
       <input type="hidden" id="collection" />
       <input type="hidden" id="filter" value="{}" />
