@@ -6,9 +6,16 @@ import fun.ai.studio.config.DeployGitProperties;
 import fun.ai.studio.deploy.DeployClient;
 import fun.ai.studio.entity.FunAiApp;
 import fun.ai.studio.entity.request.DeployJobCreateRequest;
+import fun.ai.studio.entity.response.deploy.DeployJobListResult;
+import fun.ai.studio.entity.response.deploy.DeployJobResult;
+import fun.ai.studio.entity.response.deploy.DeployStopResult;
 import fun.ai.studio.service.FunAiAppService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.*;
 
@@ -43,6 +50,10 @@ public class FunAiDeployController {
             description = "前端推荐：只传 userId/appId；请求体可不传或传 {}。\n\n" +
                     "后端会自动补齐：repoSshUrl/gitRef/basePath/containerPort/imageTag 等默认值，并调用 deploy 控制面创建 BUILD_AND_DEPLOY Job。"
     )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "返回创建的 Job",
+                    content = @Content(schema = @Schema(implementation = DeployJobResult.class)))
+    })
     public Result<Map<String, Object>> createDeployJob(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
@@ -168,6 +179,10 @@ public class FunAiDeployController {
 
     @GetMapping("/job/info")
     @Operation(summary = "查询 Job（通过 API 入口）")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "返回 Job 信息",
+                    content = @Content(schema = @Schema(implementation = DeployJobResult.class)))
+    })
     public Result<Map<String, Object>> getJob(@RequestParam String jobId) {
         Map<String, Object> job = deployClient.getJob(jobId);
         if (job != null) {
@@ -183,12 +198,20 @@ public class FunAiDeployController {
 
     @GetMapping("/job/list")
     @Operation(summary = "列表 Job（通过 API 入口）")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "返回 Job 列表",
+                    content = @Content(schema = @Schema(implementation = DeployJobListResult.class)))
+    })
     public Result<List<Map<String, Object>>> list(@RequestParam(defaultValue = "50") int limit) {
         return Result.success(deployClient.listJobs(limit));
     }
 
     @PostMapping("/job/cancel")
     @Operation(summary = "取消部署 Job（通过 API 入口）", description = "取消指定 jobId（用于解除 appId 部署互斥导致的卡住问题）。")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "返回取消后的 Job",
+                    content = @Content(schema = @Schema(implementation = DeployJobResult.class)))
+    })
     public Result<Map<String, Object>> cancel(@RequestParam String jobId) {
         if (jobId == null || jobId.trim().isEmpty()) {
             return Result.error("jobId 不能为空");
@@ -198,6 +221,10 @@ public class FunAiDeployController {
 
     @PostMapping("/app/stop")
     @Operation(summary = "下线已部署应用（通过 API 入口）", description = "API 转发到 Deploy 控制面 /deploy/apps/stop，再由控制面定位 runtime 节点并调用 runtime-agent stop。")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "返回下线结果",
+                    content = @Content(schema = @Schema(implementation = DeployStopResult.class)))
+    })
     public Result<Map<String, Object>> stopDeployedApp(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId
@@ -224,6 +251,10 @@ public class FunAiDeployController {
             summary = "查询应用部署历史（通过 API 入口）",
             description = "按 appId 查询部署 Job 历史（时间倒序），便于用户排查历史部署状态/错误。"
     )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "返回部署历史 Job 列表",
+                    content = @Content(schema = @Schema(implementation = DeployJobListResult.class)))
+    })
     public Result<List<Map<String, Object>>> listDeployHistory(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
