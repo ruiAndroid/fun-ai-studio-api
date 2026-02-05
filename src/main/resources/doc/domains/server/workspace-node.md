@@ -344,6 +344,9 @@ After=network.target
 Type=simple
 WorkingDirectory=/opt/fun-ai-studio
 Environment="JAVA_OPTS=-Xms256m -Xmx512m"
+# 建议：显式指定 Tomcat 工作目录，避免内嵌 Tomcat 每次启动在 /tmp 下生成 tomcat.* 临时目录并堆积
+# - 对应 application-prod.properties：server.tomcat.basedir=${FUNAI_TOMCAT_BASEDIR:/data/funai/tomcat}
+Environment="FUNAI_TOMCAT_BASEDIR=/data/funai/tomcat"
 ExecStart=/usr/bin/java $JAVA_OPTS -jar /opt/fun-ai-studio/app.jar --spring.profiles.active=prod --spring.config.location=/opt/fun-ai-studio/config/
 Restart=always
 RestartSec=3
