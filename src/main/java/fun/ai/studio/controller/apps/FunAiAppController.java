@@ -44,12 +44,6 @@ import java.util.concurrent.TimeUnit;
 @RestController
 @RequestMapping("/api/fun-ai/app")
 @Tag(name = "Fun AI 应用管理", description = "AI应用的增删改查接口")
-@CrossOrigin(origins = {
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://172.17.5.80:5173",
-        "http://172.17.5.80:8080"
-}, allowCredentials = "true")
 public class FunAiAppController {
 
     private static final Logger logger = LoggerFactory.getLogger(FunAiAppController.class);

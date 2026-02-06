@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpMethod;
 import jakarta.servlet.DispatcherType;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -37,6 +38,9 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
+                // CORS: must be enabled in Spring Security so preflight OPTIONS gets proper headers instead of 401/403 without ACAO
+                .cors(cors -> {
+                })
                 .formLogin(form -> form.disable())
                 .httpBasic(basic -> basic.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -45,6 +49,8 @@ public class SecurityConfig {
                         .accessDeniedHandler(accessDeniedHandler())
                 )
                 .authorizeHttpRequests(auth -> auth
+                        // Preflight requests must pass without JWT
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         // 避免 async dispatch（SSE/Streaming）二次进入 Security 导致 response 已提交仍抛 AccessDeniedException 刷屏
                         .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                         // 确保 Swagger UI 相关路径都被允许（放在最前面，优先级最高）
