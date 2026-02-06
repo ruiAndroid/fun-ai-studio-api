@@ -14,7 +14,9 @@ import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -33,6 +35,9 @@ public class AuthController {
 
     @Autowired
     private PasswordEncoder passwordEncoder;
+
+    @Value("${funai.auth.invite.enabled:true}")
+    private boolean inviteEnabled;
 
     @PostMapping("/login")
     @Operation(summary = "风行AI平台用户登录", description = "风行AI用户登录并获取JWT Token")
@@ -98,9 +103,16 @@ public class AuthController {
             user.setAvatar(Const.USER_DEFAULT_AVATAR);
             user.setAppCount(0);
 
-
-            // 注册用户
-            FunAiUser registeredUser = funAiUserService.register(user);
+            // 注册用户（可选：邀请码模式）
+            FunAiUser registeredUser;
+            if (inviteEnabled) {
+                if (!StringUtils.hasText(registerRequest.getInviteCode())) {
+                    return Result.error("邀请码不能为空");
+                }
+                registeredUser = funAiUserService.registerWithInviteCode(user, registerRequest.getInviteCode());
+            } else {
+                registeredUser = funAiUserService.register(user);
+            }
             return Result.success("注册成功", registeredUser);
         } catch (Exception e) {
             return Result.error("注册失败: " + e.getMessage());

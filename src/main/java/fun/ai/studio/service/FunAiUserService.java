@@ -21,6 +21,16 @@ public interface FunAiUserService extends IService<FunAiUser> {
      * @return 注册后的用户实体
      */
     FunAiUser register(FunAiUser user);
+
+    /**
+     * 注册用户（消耗邀请码，一次性）
+     *
+     * @param user 用户实体
+     * @param inviteCode 邀请码
+     * @return 注册后的用户实体
+     * @throws IllegalArgumentException 邀请码无效/已使用等
+     */
+    FunAiUser registerWithInviteCode(FunAiUser user, String inviteCode) throws IllegalArgumentException;
     
     /**
      * 根据用户名获取用户ID

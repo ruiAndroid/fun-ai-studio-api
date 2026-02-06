@@ -5,9 +5,12 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import fun.ai.studio.entity.FunAiUser;
 import fun.ai.studio.mapper.FunAiUserMapper;
+import fun.ai.studio.service.FunAiInviteCodeService;
 import fun.ai.studio.service.FunAiUserService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 
@@ -15,9 +18,12 @@ import java.time.LocalDateTime;
 public class FunAiUserServiceImpl extends ServiceImpl<FunAiUserMapper, FunAiUser> implements FunAiUserService {
 
     private final PasswordEncoder passwordEncoder;
+    private final FunAiInviteCodeService inviteCodeService;
 
-    public FunAiUserServiceImpl(PasswordEncoder passwordEncoder) {
+    public FunAiUserServiceImpl(PasswordEncoder passwordEncoder,
+                                FunAiInviteCodeService inviteCodeService) {
         this.passwordEncoder = passwordEncoder;
+        this.inviteCodeService = inviteCodeService;
     }
 
     @Override
@@ -46,6 +52,38 @@ public class FunAiUserServiceImpl extends ServiceImpl<FunAiUserMapper, FunAiUser
             throw new RuntimeException("用户注册失败");
         }
         return user;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public FunAiUser registerWithInviteCode(FunAiUser user, String inviteCode) throws IllegalArgumentException {
+        if (user == null) {
+            throw new IllegalArgumentException("用户信息不能为空");
+        }
+        if (!StringUtils.hasText(inviteCode)) {
+            throw new IllegalArgumentException("邀请码不能为空");
+        }
+        if (inviteCodeService == null) {
+            throw new IllegalStateException("邀请码服务不可用");
+        }
+
+        // 先创建用户（拿到 userId），再原子消耗邀请码；任何一步失败都会回滚
+        FunAiUser created = register(user);
+        Long userId = created == null ? null : created.getId();
+        if (userId == null) {
+            throw new IllegalStateException("用户注册失败（未生成 userId）");
+        }
+
+        try {
+            inviteCodeService.consume(inviteCode, userId);
+        } catch (IllegalArgumentException e) {
+            // 邀请码无效/已使用：回滚
+            throw e;
+        } catch (Exception e) {
+            // 例如表不存在/SQL 错误
+            throw new IllegalArgumentException("邀请码系统异常，请联系管理员：" + e.getMessage());
+        }
+        return created;
     }
 
     @Override

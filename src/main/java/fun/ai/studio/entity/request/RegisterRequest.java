@@ -9,4 +9,8 @@ public class RegisterRequest {
     private String phone;
     private String avatar;
     private String email;
+    /**
+     * 邀请码（当 funai.auth.invite.enabled=true 时必填）
+     */
+    private String inviteCode;
 }
