@@ -86,6 +86,12 @@ Base：`/api/fun-ai/deploy`
 
 - `GET /api/fun-ai/deploy/job/list?limit=50`
 
+### 3.4 查询当前用户已部署的应用
+
+- `GET /api/fun-ai/deploy/app/list?userId={userId}`
+- 可选：`&appId={appId}`（只查询单个应用）
+- 行为：返回 appStatus in (DEPLOYING, READY, FAILED) 的应用列表（best-effort 填充 deployAccessUrl，仅 READY 才有值）
+
 ## 4. API -> Deploy 控制面配置
 
 配置项（见 `application*.properties`）：

@@ -9,6 +9,7 @@ import fun.ai.studio.entity.request.DeployJobCreateRequest;
 import fun.ai.studio.entity.response.deploy.DeployJobListResult;
 import fun.ai.studio.entity.response.deploy.DeployJobResult;
 import fun.ai.studio.entity.response.deploy.DeployStopResult;
+import fun.ai.studio.enums.FunAiAppStatus;
 import fun.ai.studio.service.FunAiAppService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -17,11 +18,13 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/fun-ai/deploy")
@@ -42,6 +45,52 @@ public class FunAiDeployController {
         this.funAiAppService = funAiAppService;
         this.deployGitProperties = deployGitProperties;
         this.deployAcrProperties = deployAcrProperties;
+    }
+
+    private void bestEffortFillDeployAccessUrl(List<FunAiApp> apps) {
+        if (apps == null || apps.isEmpty()) return;
+        try {
+            if (deployClient == null || !deployClient.isEnabled()) return;
+            // 每用户 app 上限 20，这里拿 200 条足够覆盖活跃 job
+            List<Map<String, Object>> jobs = deployClient.listJobs(200);
+            if (jobs == null || jobs.isEmpty()) return;
+
+            Map<Long, String> appPreview = new HashMap<>();
+            for (Map<String, Object> j : jobs) {
+                if (j == null) continue;
+                Object payloadObj = j.get("payload");
+                if (!(payloadObj instanceof Map)) continue;
+                Map<?, ?> payload = (Map<?, ?>) payloadObj;
+                Object appIdObj = payload.get("appId");
+                if (appIdObj == null) continue;
+                Long appId;
+                try {
+                    appId = Long.valueOf(String.valueOf(appIdObj));
+                } catch (Exception ignore) {
+                    continue;
+                }
+                Object status = j.get("status");
+                if (status == null || !"SUCCEEDED".equals(String.valueOf(status))) continue;
+                Object deployObj = j.get("deployUrl");
+                String deployUrl = deployObj == null ? null : String.valueOf(deployObj);
+                if (deployUrl == null || deployUrl.isBlank()) continue;
+                appPreview.put(appId, deployUrl);
+            }
+
+            for (FunAiApp a : apps) {
+                if (a == null || a.getId() == null) continue;
+                String preview = appPreview.get(a.getId());
+                // 约定：只有 READY 才给出“部署态访问地址”。下线（UPLOADED=1）后，不应继续展示旧的 deployUrl。
+                if (StringUtils.hasText(preview)
+                        && a.getAppStatus() != null
+                        && a.getAppStatus() == FunAiAppStatus.READY.code()) {
+                    a.setDeployAccessUrl(preview);
+                    // 兼容：老前端仍读 accessUrl
+                    a.setAccessUrl(preview);
+                }
+            }
+        } catch (Exception ignore) {
+        }
     }
 
     @PostMapping("/job/create")
@@ -244,6 +293,51 @@ public class FunAiDeployController {
         } catch (Exception ignore) {
         }
         return Result.success(resp);
+    }
+
+    @GetMapping("/app/list")
+    @Operation(
+            summary = "查询用户已部署的应用",
+            description = "与其他接口保持一致：userId/appId 通过 query params 传入。\n\n" +
+                    "- 当不传 appId：返回该 userId 下部署态相关应用列表（appStatus in [DEPLOYING, READY, FAILED]）\n" +
+                    "- 当传 appId：只返回该应用（若不属于该用户则报错；若不是部署态相关状态则返回空列表）\n\n" +
+                    "说明：接口会 best-effort 填充 deployAccessUrl（仅 READY 才返回）。"
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "返回应用列表",
+                    content = @Content(schema = @Schema(implementation = FunAiApp.class)))
+    })
+    public Result<List<FunAiApp>> listDeployedApps(
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "应用ID（可选：不传则返回用户下所有部署态相关应用）", required = false) @RequestParam(required = false) Long appId
+    ) {
+        if (userId == null) {
+            return Result.error("userId 不能为空");
+        }
+
+        List<FunAiApp> apps;
+        if (appId != null) {
+            FunAiApp app = funAiAppService.getAppByIdAndUserId(appId, userId);
+            if (app == null) {
+                return Result.error("应用不存在或无权限操作");
+            }
+            apps = List.of(app);
+        } else {
+            apps = funAiAppService.getAppsByUserId(userId);
+            if (apps == null || apps.isEmpty()) {
+                return Result.success(List.of());
+            }
+        }
+
+        List<FunAiApp> deployed = apps.stream()
+                .filter(a -> a != null && a.getAppStatus() != null)
+                .filter(a -> a.getAppStatus() == FunAiAppStatus.DEPLOYING.code()
+                        || a.getAppStatus() == FunAiAppStatus.READY.code()
+                        || a.getAppStatus() == FunAiAppStatus.FAILED.code())
+                .collect(Collectors.toList());
+
+        bestEffortFillDeployAccessUrl(deployed);
+        return Result.success(deployed);
     }
 
     @GetMapping("/job/history")
