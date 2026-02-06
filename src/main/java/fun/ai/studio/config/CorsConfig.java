@@ -22,7 +22,7 @@ public class CorsConfig {
         // 这里默认放行：本地开发 + 现网前端域名
         String patterns = allowedOriginPatterns;
         if (patterns == null || patterns.isBlank()) {
-            patterns = "http://localhost:5173,http://127.0.0.1:5173,https://funar.funshion.com,https://*.funshion.com";
+            patterns = "http://localhost:5173,http://127.0.0.1:5173,http://172.17.9.149:5172,https://funar.funshion.com,https://*.funshion.com";
         }
         Arrays.stream(patterns.split(","))
                 .map(String::trim)
