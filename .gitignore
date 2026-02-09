@@ -60,3 +60,9 @@ rebel-*.xml
 # OS generated files
 ehthumbs.db
 Desktop.ini
+
+#软链接
+fun-ai-studio-deploy
+fun-ai-studio-runner
+fun-ai-studio-runtime
+fun-ai-studio-workspace
