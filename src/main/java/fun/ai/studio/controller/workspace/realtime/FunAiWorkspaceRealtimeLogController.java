@@ -60,7 +60,7 @@ public class FunAiWorkspaceRealtimeLogController {
         this.httpClient = b.build();
     }
 
-    @GetMapping(path = "/log", produces = MediaType.TEXT_PLAIN_VALUE)
+    @GetMapping(path = "/log", produces = {MediaType.TEXT_PLAIN_VALUE, MediaType.APPLICATION_JSON_VALUE})
     @Operation(
             summary = "获取运行日志文件（非实时）",
             description = "直接返回对应日志文件内容（不做 SSE 增量推送）。优先按 type+appId 选择最新的日志文件；type 取 BUILD/INSTALL/PREVIEW。"
@@ -109,7 +109,16 @@ public class FunAiWorkspaceRealtimeLogController {
         HttpHeaders headers = new HttpHeaders();
         headers.add(HttpHeaders.CACHE_CONTROL, "no-cache");
         headers.add("X-Accel-Buffering", "no");
-        headers.setContentType(MediaType.TEXT_PLAIN);
+        String ct = resp.headers().firstValue(HttpHeaders.CONTENT_TYPE).orElse(null);
+        if (ct != null && !ct.isBlank()) {
+            try {
+                headers.setContentType(MediaType.parseMediaType(ct));
+            } catch (Exception ignore) {
+                headers.setContentType(MediaType.TEXT_PLAIN);
+            }
+        } else {
+            headers.setContentType(MediaType.TEXT_PLAIN);
+        }
         resp.headers().firstValue(HttpHeaders.CONTENT_DISPOSITION).ifPresent(v -> headers.add(HttpHeaders.CONTENT_DISPOSITION, v));
 
         StreamingResponseBody body = out -> {
