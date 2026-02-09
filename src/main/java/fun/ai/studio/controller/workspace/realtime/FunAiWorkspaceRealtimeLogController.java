@@ -7,6 +7,10 @@ import fun.ai.studio.service.FunAiAppService;
 import fun.ai.studio.workspace.WorkspaceNodeResolver;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -64,6 +68,10 @@ public class FunAiWorkspaceRealtimeLogController {
             summary = "获取运行日志文件（非实时）",
             description = "统一返回 JSON。type=PREVIEW/INSTALL 时返回 {log}；type=BUILD 时返回 {isFinish,log}，仅在 isFinish=true 时返回完整日志。"
     )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "返回日志内容",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = LogResponse.class)))
+    })
     public ResponseEntity<byte[]> getLog(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
@@ -194,6 +202,15 @@ public class FunAiWorkspaceRealtimeLogController {
         StringBuilder sb = new StringBuilder(b.length * 2);
         for (byte x : b) sb.append(String.format("%02x", x));
         return sb.toString();
+    }
+
+    @Schema(name = "RealtimeLogResponse", description = "realtime/log 返回 JSON")
+    public static class LogResponse {
+        @Schema(description = "构建是否已结束（仅 type=BUILD 返回）", example = "true")
+        public Boolean isFinish;
+
+        @Schema(description = "日志内容（文本）", example = "[build] npm run build\\n...")
+        public String log;
     }
 }
 
