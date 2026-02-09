@@ -128,12 +128,12 @@ public class GiteaRepoAutomationService {
                     """;
             // 关键：Runner(101) 可能无法访问 DockerHub，因此 Dockerfile 的基础镜像建议使用 ACR 镜像
             // 约定：将 node:20-alpine 推送到 ACR：<acrRegistry>/<acrNamespace>/base-node:20-alpine
-            String baseImage = "base-node:latest";
+            String baseImage = "base-node:latest-curl1";
             try {
                 if (acrProps != null && acrProps.isEnabled()
                         && StringUtils.hasText(acrProps.getRegistry())
                         && StringUtils.hasText(acrProps.getNamespace())) {
-                    baseImage = acrProps.getRegistry().trim() + "/" + acrProps.getNamespace().trim() + "/base-node:latest";
+                    baseImage = acrProps.getRegistry().trim() + "/" + acrProps.getNamespace().trim() + "/base-node:latest-curl1";
                 }
             } catch (Exception ignore) {
             }
