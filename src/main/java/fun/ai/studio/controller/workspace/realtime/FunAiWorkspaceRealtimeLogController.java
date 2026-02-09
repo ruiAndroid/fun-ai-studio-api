@@ -16,7 +16,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.io.InputStream;
 import java.net.URI;
@@ -60,12 +59,12 @@ public class FunAiWorkspaceRealtimeLogController {
         this.httpClient = b.build();
     }
 
-    @GetMapping(path = "/log", produces = {MediaType.TEXT_PLAIN_VALUE, MediaType.APPLICATION_JSON_VALUE})
+    @GetMapping(path = "/log", produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(
             summary = "获取运行日志文件（非实时）",
             description = "直接返回对应日志文件内容（不做 SSE 增量推送）。优先按 type+appId 选择最新的日志文件；type 取 BUILD/INSTALL/PREVIEW。"
     )
-    public ResponseEntity<StreamingResponseBody> getLog(
+    public ResponseEntity<byte[]> getLog(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
             @Parameter(description = "日志类型（BUILD/INSTALL/PREVIEW），默认 PREVIEW") @RequestParam(required = false) String type,
@@ -106,6 +105,13 @@ public class FunAiWorkspaceRealtimeLogController {
             throw new IllegalArgumentException(raw);
         }
 
+        byte[] bytes;
+        try (InputStream in = resp.body()) {
+            bytes = in.readAllBytes();
+        } catch (Exception e) {
+            throw new RuntimeException("workspace-node response read failed: " + e.getMessage(), e);
+        }
+
         HttpHeaders headers = new HttpHeaders();
         headers.add(HttpHeaders.CACHE_CONTROL, "no-cache");
         headers.add("X-Accel-Buffering", "no");
@@ -114,24 +120,12 @@ public class FunAiWorkspaceRealtimeLogController {
             try {
                 headers.setContentType(MediaType.parseMediaType(ct));
             } catch (Exception ignore) {
-                headers.setContentType(MediaType.TEXT_PLAIN);
+                headers.setContentType(MediaType.APPLICATION_JSON);
             }
         } else {
-            headers.setContentType(MediaType.TEXT_PLAIN);
+            headers.setContentType(MediaType.APPLICATION_JSON);
         }
-        resp.headers().firstValue(HttpHeaders.CONTENT_DISPOSITION).ifPresent(v -> headers.add(HttpHeaders.CONTENT_DISPOSITION, v));
-
-        StreamingResponseBody body = out -> {
-            try (InputStream in = resp.body()) {
-                byte[] buf = new byte[64 * 1024];
-                int n;
-                while ((n = in.read(buf)) > 0) {
-                    out.write(buf, 0, n);
-                    out.flush();
-                }
-            }
-        };
-        return ResponseEntity.ok().headers(headers).body(body);
+        return ResponseEntity.ok().headers(headers).body(bytes);
     }
 
     private HttpResponse<InputStream> requestStream(String method, String baseUrl, String path, String query) {
