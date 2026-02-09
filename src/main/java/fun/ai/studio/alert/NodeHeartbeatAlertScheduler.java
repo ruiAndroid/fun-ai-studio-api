@@ -60,7 +60,7 @@ public class NodeHeartbeatAlertScheduler {
         this.adminProps = adminProps;
     }
 
-    @Scheduled(cron = "${funai.alert.heartbeat.cron:0 */1 * * * ?}")
+    @Scheduled(cron = "${funai.alert.heartbeat.cron:0 */5 * * * ?}")
     @SchedulerLock(name = "nodeHeartbeatAlert", lockAtLeastFor = "PT20S", lockAtMostFor = "PT3M")
     public void check() {
         if (alertProps == null || !alertProps.isEnabled()) return;

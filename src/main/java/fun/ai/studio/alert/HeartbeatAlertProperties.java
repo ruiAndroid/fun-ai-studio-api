@@ -15,9 +15,9 @@ public class HeartbeatAlertProperties {
     private boolean enabled = true;
 
     /**
-     * 检查频率（cron），默认每分钟一次
+     * 检查频率（cron），默认每 5 分钟一次
      */
-    private String cron = "0 */1 * * * ?";
+    private String cron = "0 */5 * * * ?";
 
     /**
      * runtime 节点 stale 阈值（秒）
