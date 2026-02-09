@@ -115,6 +115,8 @@ public class FunAiWorkspaceRealtimeLogController {
         HttpHeaders headers = new HttpHeaders();
         headers.add(HttpHeaders.CACHE_CONTROL, "no-cache");
         headers.add("X-Accel-Buffering", "no");
+        headers.add("X-WS-Upstream", baseUrl);
+        headers.add("X-WS-Log-Proxy", "api");
         String ct = resp.headers().firstValue(HttpHeaders.CONTENT_TYPE).orElse(null);
         if (ct != null && !ct.isBlank()) {
             try {
