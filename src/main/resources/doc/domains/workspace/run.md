@@ -98,6 +98,16 @@
       - `isFinish=true` 表示构建已结束，此时返回完整日志
       - `isFinish=false` 且 `tailBytes=0` 时返回空字符串（避免前端拼接不完整日志）
 
+示例：
+
+- `type=PREVIEW`
+  - `{"log":"[preview] start at 2026-02-09T15:08:22+08:00\n..."}`
+- `type=INSTALL`
+  - `{"log":"[install] npm install (include dev)\n..."}`
+- `type=BUILD`
+  - `{"isFinish":false,"log":""}`
+  - `{"isFinish":true,"log":"[build] npm run build\n..."}`
+
 说明：
 
 - `type=DEV/START`：会做“进程存活 + 端口就绪”判定，`RUNNING` 时返回 `previewUrl`

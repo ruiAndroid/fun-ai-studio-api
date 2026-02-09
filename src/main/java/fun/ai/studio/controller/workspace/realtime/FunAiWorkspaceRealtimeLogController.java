@@ -62,13 +62,13 @@ public class FunAiWorkspaceRealtimeLogController {
     @GetMapping(path = "/log", produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(
             summary = "获取运行日志文件（非实时）",
-            description = "直接返回对应日志文件内容（不做 SSE 增量推送）。优先按 type+appId 选择最新的日志文件；type 取 BUILD/INSTALL/PREVIEW。"
+            description = "统一返回 JSON。type=PREVIEW/INSTALL 时返回 {log}；type=BUILD 时返回 {isFinish,log}，仅在 isFinish=true 时返回完整日志。"
     )
     public ResponseEntity<byte[]> getLog(
             @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId,
             @Parameter(description = "日志类型（BUILD/INSTALL/PREVIEW），默认 PREVIEW") @RequestParam(required = false) String type,
-            @Parameter(description = "可选：仅返回末尾 N 字节（用于大日志快速查看），默认 0=返回全量") @RequestParam(defaultValue = "0") long tailBytes
+            @Parameter(description = "可选：仅返回末尾 N 字节（用于大日志快速查看）。type=BUILD 且 isFinish=false 时，tailBytes=0 返回空字符串") @RequestParam(defaultValue = "0") long tailBytes
     ) {
         if (userId == null || appId == null) {
             throw new IllegalArgumentException("userId/appId 不能为空");
