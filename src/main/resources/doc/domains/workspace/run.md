@@ -92,9 +92,11 @@
 
 - `GET /api/fun-ai/workspace/realtime/log?userId=...&appId=...&type=BUILD|INSTALL|PREVIEW&tailBytes=0`
   - `tailBytes`: 可选，仅返回末尾 N 字节（大日志快速查看）
-  - `type=BUILD` 时返回 JSON：`{ "isFinish": boolean, "log": string }`
-    - `isFinish=true` 表示构建已结束，此时返回完整日志
-    - `isFinish=false` 且 `tailBytes=0` 时返回空字符串（避免前端拼接不完整日志）
+  - 接口统一返回 JSON：
+    - `type=PREVIEW/INSTALL`：`{ "log": string }`
+    - `type=BUILD`：`{ "isFinish": boolean, "log": string }`
+      - `isFinish=true` 表示构建已结束，此时返回完整日志
+      - `isFinish=false` 且 `tailBytes=0` 时返回空字符串（避免前端拼接不完整日志）
 
 说明：
 
