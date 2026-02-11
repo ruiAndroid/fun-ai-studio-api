@@ -86,13 +86,23 @@ public class WorkspaceNodeClient {
     }
 
     public FunAiWorkspaceRunStatusResponse getRunStatus(Long userId) {
-        String path = "/api/fun-ai/workspace/run/status";
-        String query = query(Map.of("userId", String.valueOf(userId)));
         long timeoutMs = 0;
         try {
             if (props != null && props.getRunStatusTimeoutMs() > 0) timeoutMs = props.getRunStatusTimeoutMs();
         } catch (Exception ignore) {
         }
+        return getRunStatus(userId, timeoutMs);
+    }
+
+    /**
+     * 获取运行态（允许调用方覆盖超时）。
+     *
+     * <p>说明：list/info 等聚合接口为了稳定延迟，通常使用较小的 timeout；
+     * open-editor 属于交互入口，建议给更宽松的 timeout 或在超时时降级返回。</p>
+     */
+    public FunAiWorkspaceRunStatusResponse getRunStatus(Long userId, long timeoutMs) {
+        String path = "/api/fun-ai/workspace/run/status";
+        String query = query(Map.of("userId", String.valueOf(userId)));
         return requestJson("GET", path, query, null, new TypeReference<Result<FunAiWorkspaceRunStatusResponse>>() {}, timeoutMs);
     }
 

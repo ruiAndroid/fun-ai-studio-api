@@ -343,8 +343,31 @@ public class FunAiAppController {
             // 双机模式：open-editor 需要的“目录/是否有 package.json/运行态”都从 Workspace 开发服务器（大机）获取
             if (remoteEnabled) {
                 dir = workspaceNodeClient.ensureDir(userId, appId);
-                hasPkg = workspaceNodeClient.hasPackageJson(userId, appId);
-                runStatus = workspaceNodeClient.getRunStatus(userId);
+                // 观测性信息（best-effort）：失败/超时不应导致 open-editor 整体失败
+                hasPkg = false;
+                String warnMsg = null;
+                try {
+                    hasPkg = workspaceNodeClient.hasPackageJson(userId, appId);
+                } catch (Exception e) {
+                    warnMsg = "workspace 文件探测超时/失败（package.json 未能检测）：请稍后重试";
+                    logger.warn("open editor: workspace-node hasPackageJson failed: userId={}, appId={}, err={}",
+                            userId, appId, e.getMessage());
+                }
+
+                runStatus = null;
+                try {
+                    // open-editor 允许更宽松的超时：避免 workspace-node 偶发抖动导致用户无法进入编辑器
+                    runStatus = workspaceNodeClient.getRunStatus(userId, 5000);
+                } catch (Exception e) {
+                    if (warnMsg == null) warnMsg = "workspace 运行态获取超时/失败：请稍后重试";
+                    logger.warn("open editor: workspace-node getRunStatus failed: userId={}, appId={}, err={}",
+                            userId, appId, e.getMessage());
+                }
+
+                // 把告警提示带给前端（不阻塞进入编辑器）
+                if (warnMsg != null && !warnMsg.isBlank()) {
+                    app.setWorkspaceLastError(warnMsg);
+                }
             } else {
                 // 单机 fallback：本机 ensure + 本机磁盘探测
                 dir = funAiWorkspaceService.ensureAppDir(userId, appId);
