@@ -20,6 +20,7 @@ import fun.ai.studio.workspace.WorkspaceNodeClient;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -538,7 +539,7 @@ public class FunAiAppController {
      */
     @PostMapping("/update-basic")
     @Operation(summary = "修改应用基础信息", description = "允许修改 appName/appDescription/appType，其中 appName 需同一用户下唯一")
-    public Result<FunAiApp> updateBasicInfo(@RequestBody UpdateFunAiAppBasicInfoRequest req) {
+    public Result<FunAiApp> updateBasicInfo(@Valid @RequestBody UpdateFunAiAppBasicInfoRequest req) {
         try {
             FunAiApp updated = funAiAppService.updateBasicInfo(
                     req.getUserId(),

@@ -39,6 +39,31 @@ App 域负责：
 - **最近一次部署失败原因**：`last_deploy_error`
 - **凭证**：`app_key` / `app_secret`（其中 secret 不对外返回）
 
+### 1.1 字段长度约束（重要）
+
+如果你在服务端日志里看到类似异常：
+
+- `Data truncation: Data too long for column 'app_description'`
+
+说明数据库里 `fun_ai_app.app_description` 列的类型/长度不足（常见为 `VARCHAR(255)`），但前端/调用方传入了更长的描述。
+
+**建议处理方式：**
+
+1) **立刻止血（接口层限制长度）**：本项目已在 `update-basic` 链路加入长度限制（配置项 `funai.app.limits.max-app-description-length`，默认 255），避免直接打出 500。
+
+2) **根治（扩容 DB 列）**：在 MySQL 上执行以下 SQL，将 `app_description` 扩为 `TEXT`（或按需改为更大的 `VARCHAR`）：
+
+```sql
+-- 先确认当前列类型
+SHOW FULL COLUMNS FROM fun_ai_app LIKE 'app_description';
+
+-- 扩容为 TEXT（推荐：不会再触发 VARCHAR 截断）
+ALTER TABLE fun_ai_app
+  MODIFY COLUMN app_description TEXT NULL;
+```
+
+> 执行扩容后，如需支持更长描述，请同步把 `funai.app.limits.max-app-description-length` 提高（并建议前端也做同样限制）。
+
 ### 2) appStatus 枚举口径
 
 `appStatus`（`fun.ai.studio.enums.FunAiAppStatus`）：

@@ -44,6 +44,14 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
     @Value("${funai.app.limits.max-apps-per-user:20}")
     private int maxAppsPerUser;
 
+    /**
+     * 应用描述最大长度（默认 255）。
+     * 背景：部分环境 fun_ai_app.app_description 为 VARCHAR(255)，超长会触发 MySQL DataTruncation 并导致 500。
+     * 如你们已将列扩容为 TEXT，可通过配置提高该值（同时建议前端也做限制）。
+     */
+    @Value("${funai.app.limits.max-app-description-length:255}")
+    private int maxAppDescriptionLength;
+
     @Override
     public List<FunAiApp> getAppsByUserId(Long userId) {
         QueryWrapper<FunAiApp> queryWrapper = new QueryWrapper<>();
@@ -128,6 +136,11 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
 
         // 3) 其他字段更新（允许置空：如果你不想允许置空，可以改成 hasText 才更新）
         if (appDescription != null) {
+            // 防御：避免 DB 列长度不足导致 DataTruncation 500
+            int maxLen = Math.max(1, maxAppDescriptionLength);
+            if (appDescription.length() > maxLen) {
+                throw new IllegalArgumentException("应用描述过长，最大允许 " + maxLen + " 个字符");
+            }
             existingApp.setAppDescription(appDescription);
         }
         if (appType != null) {

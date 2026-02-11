@@ -18,6 +18,7 @@
 
 - **宿主机资源**：CPU/内存/磁盘/网络/load/inode
 - **关键服务存活**（HTTP 探活）：
+  - Agent：`88:80`（建议提供 `/internal/health`；通常由 `91` 入口通过 `/fun-agent/**` 转发）
   - Deploy：`7002`（`/internal/health`）
   - runtime-agent：`7005`（`/internal/health`）
   - Runner：无对外端口（建议用 systemd/日志监控）
@@ -39,6 +40,8 @@
 
 - **node_exporter**：`:9100`
 - **Podman textfile 指标（可选）**：仍走 node_exporter 的 textfile 目录（无需额外端口）
+
+> 若你们现网包含 **Agent Node（88）**：同样按“其他服务器”安装 `node_exporter`，并在 Prometheus 配置里追加 `172.21.138.88:9100` 即可。
 
 ---
 
@@ -271,6 +274,7 @@ scrape_configs:
     static_configs:
       - targets:
           - "172.21.138.91:9100"   # API(91)
+          - "172.21.138.88:9100"   # Agent(88)
           - "172.21.138.87:9100"   # workspace-dev(87)
           - "172.21.138.100:9100"  # Deploy(100)
           - "172.21.138.101:9100"  # Runner(101)
@@ -286,6 +290,9 @@ scrape_configs:
       module: [http_2xx]
     static_configs:
       - targets:
+          # Agent（优先探“91 入口 → Nginx 转发 → 88”的整条链路）
+          # 前提：91 上 Nginx 已配置 /fun-agent/** 反代到 88（见 doc/domains/server/small-nginx-workspace-split.conf.example）
+          - http://127.0.0.1/fun-agent/internal/health
           - http://172.21.138.100:7002/internal/health   # Deploy
           - http://172.21.138.102:7005/internal/health   # runtime-agent
     relabel_configs:
