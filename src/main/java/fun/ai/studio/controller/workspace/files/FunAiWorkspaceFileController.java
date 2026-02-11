@@ -281,6 +281,27 @@ public class FunAiWorkspaceFileController {
             return ResponseEntity.internalServerError().build();
         }
     }
+
+    @GetMapping("/download-dist")
+    @Operation(summary = "下载 dist（zip）", description = "将 {hostRoot}/{userId}/apps/{appId}/dist 打包为 dist.zip 并下载；若 dist 不存在或为空则返回友好提示。双机模式下该请求由 API 代理转发到 workspace-node 执行。")
+    public ResponseEntity<?> downloadDistZip(
+            @Parameter(description = "用户ID", required = true) @RequestParam Long userId,
+            @Parameter(description = "应用ID", required = true) @RequestParam Long appId
+    ) {
+        try {
+            activityTracker.touch(userId);
+            // 双机模式：会被 WorkspaceNodeProxyFilter 转发到 workspace-node（87）执行真实打包逻辑。
+            // 单机模式：API 工程未内置 dist 打包实现（避免在入口机做重 IO/CPU），请改为在 workspace-node 执行。
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Result.error("download-dist should be handled by workspace-node"));
+        } catch (Exception e) {
+            log.error("download dist zip failed: userId={}, appId={}, error={}", userId, appId, e.getMessage(), e);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Result.error("download dist zip failed: " + e.getMessage()));
+        }
+    }
 }
 
 
