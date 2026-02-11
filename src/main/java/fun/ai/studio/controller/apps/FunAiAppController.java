@@ -322,6 +322,8 @@ public class FunAiAppController {
             @Parameter(description = "应用ID", required = true) @RequestParam Long appId
     ) {
         try {
+            String trace = Long.toHexString(ThreadLocalRandom.current().nextLong());
+            long t0 = System.nanoTime();
             if (userId == null || appId == null) {
                 return Result.error("userId/appId 不能为空");
             }
@@ -342,12 +344,19 @@ public class FunAiAppController {
 
             // 双机模式：open-editor 需要的“目录/是否有 package.json/运行态”都从 Workspace 开发服务器（大机）获取
             if (remoteEnabled) {
+                long tEnsure0 = System.nanoTime();
                 dir = workspaceNodeClient.ensureDir(userId, appId);
+                long ensureMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - tEnsure0);
                 // 观测性信息（best-effort）：失败/超时不应导致 open-editor 整体失败
                 hasPkg = false;
                 String warnMsg = null;
                 try {
+                    long tPkg0 = System.nanoTime();
                     hasPkg = workspaceNodeClient.hasPackageJson(userId, appId);
+                    long pkgMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - tPkg0);
+                    if (pkgMs > 500) {
+                        logger.info("[{}] open editor slow: hasPackageJson ms={}, userId={}, appId={}", trace, pkgMs, userId, appId);
+                    }
                 } catch (Exception e) {
                     warnMsg = "workspace 文件探测超时/失败（package.json 未能检测）：请稍后重试";
                     logger.warn("open editor: workspace-node hasPackageJson failed: userId={}, appId={}, err={}",
@@ -357,7 +366,12 @@ public class FunAiAppController {
                 runStatus = null;
                 try {
                     // open-editor 允许更宽松的超时：避免 workspace-node 偶发抖动导致用户无法进入编辑器
+                    long tRun0 = System.nanoTime();
                     runStatus = workspaceNodeClient.getRunStatus(userId, 5000);
+                    long runMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - tRun0);
+                    if (runMs > 800) {
+                        logger.info("[{}] open editor slow: runStatus ms={}, userId={}, appId={}", trace, runMs, userId, appId);
+                    }
                 } catch (Exception e) {
                     if (warnMsg == null) warnMsg = "workspace 运行态获取超时/失败：请稍后重试";
                     logger.warn("open editor: workspace-node getRunStatus failed: userId={}, appId={}, err={}",
@@ -367,6 +381,9 @@ public class FunAiAppController {
                 // 把告警提示带给前端（不阻塞进入编辑器）
                 if (warnMsg != null && !warnMsg.isBlank()) {
                     app.setWorkspaceLastError(warnMsg);
+                }
+                if (ensureMs > 500) {
+                    logger.info("[{}] open editor slow: ensureDir ms={}, userId={}, appId={}", trace, ensureMs, userId, appId);
                 }
             } else {
                 // 单机 fallback：本机 ensure + 本机磁盘探测
@@ -400,6 +417,10 @@ public class FunAiAppController {
             resp.setMessage(hasPkg
                     ? "已检测到 package.json：请点击“构建/预览”按钮触发 npm run build / npm run start；当前不会自动启动"
                     : "未检测到 package.json：请先上传 zip 或在编辑器中新建项目文件");
+            long totalMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t0);
+            if (totalMs > 1500) {
+                logger.info("[{}] open editor total ms={}, userId={}, appId={}, remoteEnabled={}", trace, totalMs, userId, appId, remoteEnabled);
+            }
             return Result.success(resp);
         } catch (IllegalArgumentException e) {
             logger.warn("open editor failed: userId={}, appId={}, error={}", userId, appId, e.getMessage());

@@ -34,6 +34,7 @@ import org.springframework.util.StringUtils;
 
 import java.net.URI;
 import java.net.URLEncoder;
+import java.net.http.HttpTimeoutException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -382,8 +383,16 @@ public class WorkspaceNodeClient {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("workspace-node request interrupted");
+        } catch (HttpTimeoutException e) {
+            // 补充关键信息，便于排查“为什么 2s 内就超时”：open-editor 可能串行调多个接口，总耗时会累加。
+            throw new RuntimeException("workspace-node request timed out: method=" + m
+                    + ", url=" + uri
+                    + ", timeoutMs=" + timeoutMs, e);
         } catch (Exception e) {
-            throw new RuntimeException("workspace-node request failed: " + e.getMessage(), e);
+            throw new RuntimeException("workspace-node request failed: method=" + m
+                    + ", url=" + uri
+                    + ", timeoutMs=" + timeoutMs
+                    + ", err=" + e.getMessage(), e);
         }
 
         Result<T> r;
