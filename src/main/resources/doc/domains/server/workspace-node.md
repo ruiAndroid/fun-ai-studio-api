@@ -449,6 +449,7 @@ curl -s -X POST "http://127.0.0.1:7001/api/fun-ai/workspace/run/stop?userId=<uid
 
 ```bash
 rm -rf /data/funai/workspaces/<uid>/apps/<appId>
+rm -rf /data/funai/workspaces/<uid>/.npm-cache/<appId>
 ```
 
 3) 可选：删除用户容器（下次 ensure 会重建；数据目录仍在宿主机）：
@@ -461,7 +462,7 @@ curl -s -X POST "http://127.0.0.1:7001/api/fun-ai/workspace/container/remove?use
 
 现象：某个 `ws-u-{userId}` 容器占用磁盘达到数 GB/十几 GB，且用户删除项目后占用不下降。
 
-根因（常见）：`npm install` 默认写 `~/.npm`（`_cacache/_npx`），这是容器可写层的一部分，不会随 `apps/{appId}` 的删除而自然回收。
+根因（常见）：`npm install` 默认写 `~/.npm`（`_cacache/_npx`），这是容器可写层的一部分，不会随 `apps/{appId}` 的删除而自然回收；历史版本也可能把 cache 放在项目目录内（`{APP_DIR}/.npm-cache`），进而触发 Vite/Chokidar watcher 的 ENOSPC。
 
 ### 10.1 宿主机快速定位“哪个容器占用大”
 
@@ -482,6 +483,7 @@ uid=10000021
 name="ws-u-$uid"
 
 docker exec "$name" bash -lc 'du -sh ~/.npm 2>/dev/null || true; du -sh ~/.npm/_cacache ~/.npm/_npx 2>/dev/null || true'
+docker exec "$name" bash -lc 'du -sh /workspace/.npm-cache 2>/dev/null || true; du -sh /workspace/.npm-cache/* 2>/dev/null || true'
 ```
 
 ### 10.3 安全清理（推荐：只删 npm cache，不动项目代码）
@@ -493,6 +495,13 @@ name="ws-u-$uid"
 # 清理 npm 的大头缓存
 docker exec "$name" bash -lc 'rm -rf ~/.npm/_cacache ~/.npm/_npx 2>/dev/null || true'
 docker exec "$name" bash -lc 'du -sh ~/.npm 2>/dev/null || true'
+
+# APP 模式（推荐）：按 appId 清理 workspace 根目录下的 cache
+appId=20000794
+docker exec "$name" bash -lc "rm -rf /workspace/.npm-cache/$appId/_cacache /workspace/.npm-cache/$appId/_npx 2>/dev/null || true; du -sh /workspace/.npm-cache/$appId 2>/dev/null || true"
+
+# 旧项目遗留：删除项目目录内的 .npm-cache（避免 dev watcher ENOSPC）
+docker exec "$name" bash -lc "rm -rf /workspace/apps/$appId/.npm-cache 2>/dev/null || true"
 ```
 
 ### 10.4 更彻底的回收：删除用户容器（不会删宿主机 workspaces 代码目录）
@@ -507,7 +516,7 @@ curl -s -X POST "http://127.0.0.1:7001/api/fun-ai/workspace/container/remove?use
 
 平台侧已支持把 npm cache 从 `~/.npm` 迁移到可控目录并限额：
 
-- `funai.workspace.npmCacheMode=APP`（缓存落到 `{APP_DIR}/.npm-cache`，删项目即可回收）
+- `funai.workspace.npmCacheMode=APP`（缓存落到 `/workspace/.npm-cache/{appId}`，不进入项目目录；删除应用时平台一并清理；自动迁移旧的 `{APP_DIR}/.npm-cache`）
 - `funai.workspace.npmCacheMaxMb=2048`（超过阈值自动清理）
 
 

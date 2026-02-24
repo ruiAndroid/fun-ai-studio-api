@@ -21,7 +21,7 @@
 
 为解决这个问题，平台侧增加了 `funai.workspace.npmCacheMode` 策略（推荐 `APP`）：
 
-- `APP`（推荐）：将 npm cache 放到应用目录内：`{APP_DIR}/.npm-cache`，这样删除项目目录即可回收
+- `APP`（推荐）：将 npm cache 放到 workspace 根目录下按 appId 隔离的目录：`/workspace/.npm-cache/{appId}`（宿主机：`{hostRoot}/{userId}/.npm-cache/{appId}`），避免进入项目目录从而触发 Vite/Chokidar watcher 的 ENOSPC；删除应用时平台一并清理
 - `CONTAINER`：保持默认行为（`~/.npm`），不推荐
 - `DISABLED`：将 cache 放到临时目录并在受控任务结束后删除（最省磁盘；有 Verdaccio 时影响较小）
 
@@ -30,6 +30,13 @@
 - `funai.workspace.npmCacheMaxMb=2048`
 
 > 注意：这个策略只影响平台“受控任务”（build/install/preview/dev）。用户在终端里手工执行 npm 仍可能产生其它缓存（可通过运维命令清理）。
+
+### 旧项目兼容（从 `{APP_DIR}/.npm-cache` 迁移）
+
+历史版本的 `APP` 模式会把 cache 放在项目目录内：`{APP_DIR}/.npm-cache`。升级后：
+
+- 平台在受控任务启动时会自动把旧目录迁移到 `/workspace/.npm-cache/{appId}`（若新目录已存在则直接清理旧目录）
+- 该目录是纯缓存，必要时也可以直接删除（下次 `npm install` 会重新生成）
 
 ## Verdaccio 代理仓库（统一部署在 103）
 
