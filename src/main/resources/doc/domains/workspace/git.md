@@ -299,6 +299,11 @@ Runner 不需要 push，建议：
 
 - `[{commitSha, author, email, message, time}]`
 
+说明：
+
+- 平台会默认过滤“仓库初始化模板提交”（例如 `init .gitignore` / `init Dockerfile` / `init .dockerignore` / `Initial commit`），避免前端误认为是用户提交。
+- 过滤规则：提交 message 命中上述初始化模板且 author 命中 `funai.workspace.git.initAuthors`（默认 `funshion`）。
+
 ### 6.2.5 `POST /workspace/git/commit-push`
 
 请求字段建议：
@@ -363,5 +368,3 @@ Runner 不需要 push，建议：
 - **不要自动同步 node_modules/dist**：全部走 `.gitignore`，否则仓库会爆炸
 - **不要强制 pull 覆盖用户未提交改动**：必须先 status 检查
 - **不要让部署依赖 workspace 目录**：否则跨机交付会很痛苦
-
-
