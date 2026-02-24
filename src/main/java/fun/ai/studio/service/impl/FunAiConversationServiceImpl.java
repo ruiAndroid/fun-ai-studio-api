@@ -155,11 +155,30 @@ public class FunAiConversationServiceImpl implements FunAiConversationService {
             new LambdaQueryWrapper<FunAiConversationMessage>()
                 .eq(FunAiConversationMessage::getConversationId, conversationId)
         );
-        
-        if (messageCount >= maxMessagesPerConversation) {
-            throw new IllegalArgumentException(
-                "该会话的消息数已达上限（" + maxMessagesPerConversation + "），请创建新会话"
-            );
+
+        // 超过上限：按 FIFO 删除最早的消息，为新消息腾位置（保持最多 maxMessagesPerConversation 条）
+        int max = Math.max(1, maxMessagesPerConversation);
+        if (messageCount >= max) {
+            long toRemove = (messageCount - max) + 1;
+            int removeN = (int) Math.min(Integer.MAX_VALUE, Math.max(0L, toRemove));
+            if (removeN > 0) {
+                List<FunAiConversationMessage> oldest = messageMapper.selectList(
+                        new LambdaQueryWrapper<FunAiConversationMessage>()
+                                .eq(FunAiConversationMessage::getConversationId, conversationId)
+                                .orderByAsc(FunAiConversationMessage::getSequence)
+                                .last("LIMIT " + removeN)
+                );
+                if (oldest != null && !oldest.isEmpty()) {
+                    List<Long> ids = oldest.stream()
+                            .filter(m -> m != null && m.getId() != null)
+                            .map(FunAiConversationMessage::getId)
+                            .toList();
+                    if (!ids.isEmpty()) {
+                        messageMapper.deleteBatchIds(ids);
+                        messageCount = Math.max(0, messageCount - ids.size());
+                    }
+                }
+            }
         }
         
         // 获取下一个序号
@@ -186,7 +205,7 @@ public class FunAiConversationServiceImpl implements FunAiConversationService {
         conversationMapper.update(null,
             new LambdaUpdateWrapper<FunAiConversation>()
                 .eq(FunAiConversation::getId, conversationId)
-                .set(FunAiConversation::getMessageCount, messageCount + 1)
+                .set(FunAiConversation::getMessageCount, Math.min(max, messageCount + 1))
                 .set(FunAiConversation::getLastMessageTime, LocalDateTime.now())
         );
         
