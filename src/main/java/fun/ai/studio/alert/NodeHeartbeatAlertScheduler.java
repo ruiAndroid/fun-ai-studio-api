@@ -45,6 +45,7 @@ public class NodeHeartbeatAlertScheduler {
     // in-memory state (ShedLock ensures single runner across instances)
     private final Map<String, Boolean> lastHealthy = new HashMap<>();
     private final Map<String, Long> lastAlertAtMs = new HashMap<>();
+    private final Map<String, Integer> consecutiveUnhealthy = new HashMap<>();
 
     public NodeHeartbeatAlertScheduler(HeartbeatAlertProperties alertProps,
                                        MailAlertService mail,
@@ -131,8 +132,8 @@ public class NodeHeartbeatAlertScheduler {
 
                             long lastMs = parseHeartbeatMs(m.get("lastHeartbeatAt"), m.get("lastHeartbeatAtMs"));
                             String healthStr = m.get("health") == null ? null : String.valueOf(m.get("health"));
-                            boolean staleByHealth = healthStr != null && "STALE".equalsIgnoreCase(healthStr.trim());
-                            boolean healthy = !staleByHealth && lastMs > 0 && (now - lastMs) <= staleMs;
+                            // Rely on heartbeat time only to avoid flapping when Deploy marks STALE around the threshold.
+                            boolean healthy = lastMs > 0 && (now - lastMs) <= staleMs;
 
                             String detail = "Runtime 节点"
                                     + " nodeId=" + safe(m.get("nodeId"))
@@ -194,6 +195,7 @@ public class NodeHeartbeatAlertScheduler {
                              long repeatMs,
                              List<String> events,
                              List<String> unhealthySnapshot) {
+        int threshold = Math.max(1, alertProps == null ? 1 : alertProps.getUnhealthyThreshold());
         Boolean prev = lastHealthy.get(key);
         boolean prevHealthy = prev == null || prev;
 
@@ -204,16 +206,31 @@ public class NodeHeartbeatAlertScheduler {
         if (prev == null) {
             lastHealthy.put(key, healthy);
             if (!healthy) {
+                consecutiveUnhealthy.put(key, 1);
+            } else {
+                consecutiveUnhealthy.remove(key);
+            }
+            if (!healthy && threshold <= 1) {
                 events.add("[异常] " + detail);
                 lastAlertAtMs.put(key, nowMs);
             }
             return;
         }
 
+        if (!healthy) {
+            int c = consecutiveUnhealthy.getOrDefault(key, 0) + 1;
+            consecutiveUnhealthy.put(key, c);
+        } else {
+            consecutiveUnhealthy.remove(key);
+        }
+
         if (prevHealthy && !healthy) {
             lastHealthy.put(key, false);
-            events.add("[下线/心跳超时] " + detail);
-            lastAlertAtMs.put(key, nowMs);
+            int c = consecutiveUnhealthy.getOrDefault(key, 1);
+            if (c >= threshold) {
+                events.add("[下线/心跳超时] " + detail);
+                lastAlertAtMs.put(key, nowMs);
+            }
             return;
         }
 
@@ -228,8 +245,17 @@ public class NodeHeartbeatAlertScheduler {
 
         // still unhealthy: repeat
         if (!healthy) {
+            int c = consecutiveUnhealthy.getOrDefault(key, 0);
+            if (c < threshold) {
+                return;
+            }
             Long lastAt = lastAlertAtMs.get(key);
-            if (lastAt == null || (nowMs - lastAt) >= repeatMs) {
+            if (lastAt == null) {
+                events.add("[下线/心跳超时] " + detail);
+                lastAlertAtMs.put(key, nowMs);
+                return;
+            }
+            if ((nowMs - lastAt) >= repeatMs) {
                 events.add("[持续异常重复告警] " + detail);
                 lastAlertAtMs.put(key, nowMs);
             }

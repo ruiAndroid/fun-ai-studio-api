@@ -34,6 +34,11 @@ public class HeartbeatAlertProperties {
      */
     private boolean sendRecovery = true;
 
+    /**
+     * 连续不健康次数阈值（达到后才触发告警）。最小为 1。
+     */
+    private int unhealthyThreshold = 1;
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -72,6 +77,14 @@ public class HeartbeatAlertProperties {
 
     public void setSendRecovery(boolean sendRecovery) {
         this.sendRecovery = sendRecovery;
+    }
+
+    public int getUnhealthyThreshold() {
+        return unhealthyThreshold;
+    }
+
+    public void setUnhealthyThreshold(int unhealthyThreshold) {
+        this.unhealthyThreshold = unhealthyThreshold;
     }
 }
 
