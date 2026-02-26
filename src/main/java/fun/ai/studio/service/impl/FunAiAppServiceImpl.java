@@ -3,6 +3,7 @@ package fun.ai.studio.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 
+import fun.ai.studio.common.Result;
 import fun.ai.studio.entity.FunAiApp;
 import fun.ai.studio.entity.FunAiUser;
 import fun.ai.studio.enums.FunAiAppStatus;
@@ -283,14 +284,18 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
     }
 
     @Override
-    public FunAiApp createAppWithValidation(Long userId) throws IllegalArgumentException {
-        // 0. 校验用户应用数量是否已达上限
+    public Result<FunAiApp> createAppWithValidation(Long userId) {
+        if (userId == null) {
+            return Result.error(400, "userId 不能为空");
+        }
+
+        // 0. 校验用户应用数量是否已达上限（预期业务失败不抛异常，避免污染日志）
         FunAiUser user = funAiUserService.getById(userId);
         if (user == null) {
-            logger.error("用户不存在: userId={}", userId);
-            throw new IllegalArgumentException("用户不存在");
+            logger.warn("创建应用失败: 用户不存在: userId={}", userId);
+            return Result.error(404, "用户不存在");
         }
-        
+
         // 检查 app_count，如果为 null 则视为 0
         Integer appCount = user.getAppCount();
         if (appCount == null) {
@@ -300,48 +305,53 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
         int maxApps = (maxAppsPerUser > 0 ? maxAppsPerUser : 20);
         if (appCount >= maxApps) {
             logger.warn("用户应用数量已达上限: userId={}, appCount={}, maxApps={}", userId, appCount, maxApps);
-            throw new IllegalArgumentException("已达项目数量上限（max=" + maxApps + "）");
+            return Result.error(400, "已达项目数量上限（max=" + maxApps + "）");
         }
-        
-        // 1. 查询用户实际的应用列表（用于生成应用名称）
-        List<FunAiApp> existingApps = getAppsByUserId(userId);
-        
-        // 2. 生成应用名称：找到下一个可用的"未命名应用X"
-        String appName = generateNextAppName(existingApps);
-        
-        // 3. 创建FunAiApp对象，设置默认值（仅创建 DB 记录；代码目录由 workspace 链路在 open-editor/ensure-dir 时创建）
-        FunAiApp app = new FunAiApp();
-        app.setUserId(userId);
-        app.setAppName(appName);
-        app.setAppDescription("这是一个默认应用");
-        app.setAppType("default");
-        app.setAppStatus(FunAiAppStatus.CREATED.code()); // 默认空壳
 
-        // 4. 保存到数据库（会自动生成id）
-        FunAiApp createdApp = createApp(app);
-
-        // 4.1 best-effort：创建 Git 仓库并授权 runner 只读（不阻塞 app 创建）
         try {
-            if (giteaRepoAutomationService != null) {
-                giteaRepoAutomationService.ensureRepoAndGrantRunner(userId, createdApp.getId());
+            // 1. 查询用户实际的应用列表（用于生成应用名称）
+            List<FunAiApp> existingApps = getAppsByUserId(userId);
+
+            // 2. 生成应用名称：找到下一个可用的"未命名应用X"
+            String appName = generateNextAppName(existingApps);
+
+            // 3. 创建FunAiApp对象，设置默认值（仅创建 DB 记录；代码目录由 workspace 链路在 open-editor/ensure-dir 时创建）
+            FunAiApp app = new FunAiApp();
+            app.setUserId(userId);
+            app.setAppName(appName);
+            app.setAppDescription("这是一个默认应用");
+            app.setAppType("default");
+            app.setAppStatus(FunAiAppStatus.CREATED.code()); // 默认空壳
+
+            // 4. 保存到数据库（会自动生成id）
+            FunAiApp createdApp = createApp(app);
+
+            // 4.1 best-effort：创建 Git 仓库并授权 runner 只读（不阻塞 app 创建）
+            try {
+                if (giteaRepoAutomationService != null) {
+                    giteaRepoAutomationService.ensureRepoAndGrantRunner(userId, createdApp.getId());
+                }
+            } catch (Exception e) {
+                logger.warn("gitea automation failed: userId={}, appId={}, err={}", userId, createdApp.getId(), e.getMessage());
             }
+
+            // 5. 更新用户的 app_count
+            try {
+                Integer newAppCount = appCount + 1;
+                user.setAppCount(newAppCount);
+                funAiUserService.updateById(user);
+                logger.info("更新用户应用数量: userId={}, newAppCount={}", userId, newAppCount);
+            } catch (Exception updateException) {
+                // 如果更新失败，记录日志但不影响创建结果
+                logger.error("更新用户应用数量失败: userId={}, error={}",
+                        userId, updateException.getMessage(), updateException);
+            }
+
+            return Result.success(createdApp);
         } catch (Exception e) {
-            logger.warn("gitea automation failed: userId={}, appId={}, err={}", userId, createdApp.getId(), e.getMessage());
+            logger.error("创建应用异常: userId={}, error={}", userId, e.getMessage(), e);
+            return Result.error(500, "创建应用失败: " + e.getMessage());
         }
-        
-        // 5. 更新用户的 app_count
-        try {
-            Integer newAppCount = appCount + 1;
-            user.setAppCount(newAppCount);
-            funAiUserService.updateById(user);
-            logger.info("更新用户应用数量: userId={}, newAppCount={}", userId, newAppCount);
-        } catch (Exception updateException) {
-            // 如果更新失败，记录日志但不影响创建结果
-            logger.error("更新用户应用数量失败: userId={}, error={}", 
-                userId, updateException.getMessage(), updateException);
-        }
-        
-        return createdApp;
     }
     /**
      * 生成下一个可用的应用名称

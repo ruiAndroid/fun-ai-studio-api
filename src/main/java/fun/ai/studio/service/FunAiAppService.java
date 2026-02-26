@@ -2,6 +2,7 @@ package fun.ai.studio.service;
 
 
 import com.baomidou.mybatisplus.extension.service.IService;
+import fun.ai.studio.common.Result;
 import fun.ai.studio.entity.FunAiApp;
 import java.util.List;
 
@@ -51,10 +52,9 @@ public interface FunAiAppService extends IService<FunAiApp> {
     /**
      * 创建应用（包含完整的业务逻辑：校验、创建文件夹、更新用户计数等）
      * @param userId 用户ID
-     * @return 创建后的应用信息
-     * @throws IllegalArgumentException 当用户不存在或应用数量已达上限时抛出
+     * @return 创建结果（code=200 成功；否则为业务错误/系统错误）
      */
-    FunAiApp createAppWithValidation(Long userId) throws IllegalArgumentException;
+    Result<FunAiApp> createAppWithValidation(Long userId);
 
     /**
      * 修改应用基础信息（appName/appDescription/appType）

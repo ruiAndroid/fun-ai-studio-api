@@ -269,9 +269,8 @@ public class FunAiAppController {
     @GetMapping(path="/create")
     public Result<FunAiApp> createApp(@Parameter(description = "用户ID", required = true) @RequestParam Long userId) {
         try {
-            FunAiApp createdApp = funAiAppService.createAppWithValidation(userId);
-            return Result.success(createdApp);
-        }catch (Exception e) {
+            return funAiAppService.createAppWithValidation(userId);
+        } catch (Exception e) {
             logger.error("创建应用失败: userId={}, error={}", userId, e.getMessage(), e);
             return Result.error("创建应用失败: " + e.getMessage());
         }
