@@ -1,7 +1,7 @@
 package fun.ai.studio.entity.response;
 
 /**
- * Workspace Git 恢复响应
+ * Workspace Git reset 响应
  */
 public class WorkspaceGitRestoreResponse {
     /**
@@ -9,7 +9,7 @@ public class WorkspaceGitRestoreResponse {
      */
     private String result;
     /**
-     * 恢复后的新 commit SHA（short）
+     * reset 后当前 HEAD commit SHA（short）
      */
     private String commitShort;
     /**

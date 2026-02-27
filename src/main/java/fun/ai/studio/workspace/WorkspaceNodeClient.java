@@ -22,7 +22,6 @@ import fun.ai.studio.entity.response.WorkspaceGitStatusResponse;
 import fun.ai.studio.entity.response.WorkspaceGitEnsureResponse;
 import fun.ai.studio.entity.response.WorkspaceGitLogResponse;
 import fun.ai.studio.entity.response.WorkspaceGitCommitPushResponse;
-import fun.ai.studio.entity.response.WorkspaceGitRevertResponse;
 import fun.ai.studio.entity.response.WorkspaceGitRestoreResponse;
 import fun.ai.studio.entity.request.WorkspaceGitCommitPushRequest;
 import fun.ai.studio.entity.response.WorkspaceMongoCreateCollectionResponse;
@@ -268,28 +267,12 @@ public class WorkspaceNodeClient {
     }
 
     /**
-     * 回退到某一次提交（git revert）
+     * reset 到某个版本状态（git reset --hard + git clean -fd + force-with-lease push）
      */
-    public WorkspaceGitRevertResponse gitRevert(Long userId, Long appId, String commitSha) {
-        String path = "/api/fun-ai/workspace/git/revert";
-        String query = query(Map.of("userId", String.valueOf(userId), "appId", String.valueOf(appId), "commitSha", commitSha == null ? "" : commitSha));
-        return requestJson("POST", path, query, new byte[0], new TypeReference<Result<WorkspaceGitRevertResponse>>() {});
-    }
-
-    /**
-     * 恢复到某个版本状态（git checkout + commit + push）
-     */
-    public WorkspaceGitRestoreResponse gitRestore(Long userId, Long appId, String commitSha) {
+    public WorkspaceGitRestoreResponse gitReset(Long userId, Long appId, String commitSha) {
         String path = "/api/fun-ai/workspace/git/reset";
         String query = query(Map.of("userId", String.valueOf(userId), "appId", String.valueOf(appId), "commitSha", commitSha == null ? "" : commitSha));
         return requestJson("POST", path, query, new byte[0], new TypeReference<Result<WorkspaceGitRestoreResponse>>() {});
-    }
-
-    /**
-     * reset 到某个版本状态（兼容前端 reset 语义；服务端实现为 checkout + commit + push）
-     */
-    public WorkspaceGitRestoreResponse gitReset(Long userId, Long appId, String commitSha) {
-        return gitRestore(userId, appId, commitSha);
     }
 
     /**
@@ -304,7 +287,7 @@ public class WorkspaceNodeClient {
     private boolean containsPackageJson(List<FunAiWorkspaceFileNode> nodes) {
         for (FunAiWorkspaceFileNode n : nodes) {
             if (n == null) continue;
-            if ("package.json".equals(n.getName())) return true;
+            if ("package.json".equals(n.getName())) return true; 
             if (n.getChildren() != null && !n.getChildren().isEmpty()) {
                 if (containsPackageJson(n.getChildren())) return true;
             }

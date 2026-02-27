@@ -149,8 +149,8 @@ public class FunAiWorkspaceGitController {
     @RequestMapping(value = "/reset", method = {RequestMethod.POST})
     @Operation(
             summary = "reset 到某个版本（⚠️ 谨慎操作）",
-            description = "将代码 reset 到指定 commit 的状态，并自动 commit + push。\n\n"
-                    + "⚠️ **警告：此操作会直接覆盖当前所有文件，reset 到目标版本的状态。目标版本之后的所有改动将丢失！请谨慎操作！**\n\n"
+            description = "将代码 reset 到指定 commit 的状态（git reset --hard），并强制推送到远端（force-with-lease）。\n\n"
+                    + "⚠️ **警告：此操作会直接覆盖当前所有文件，丢弃未提交改动，并可能改写远端分支历史！请谨慎操作！**\n\n"
                     + "返回 result 字段：\n"
                     + "- SUCCESS：reset + push 成功\n"
                     + "- PUSH_FAILED：reset 成功但 push 失败\n"

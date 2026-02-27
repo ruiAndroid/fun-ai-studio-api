@@ -329,14 +329,15 @@ Runner 不需要 push，建议：
 
 行为：
 
-- `git checkout <commitSha> -- .`（恢复所有文件到目标版本）
-- `git add -A && git commit`（生成新 commit）
-- `git push`（推送到远端）
+- `git fetch --all --prune`（确保目标 commit 可解析）
+- `git reset --hard <commitSha>`（强制覆盖工作区与暂存区）
+- `git clean -fd`（清理未跟踪文件/目录）
+- `git push --force-with-lease origin HEAD`（强制推送到远端）
 
 返回：
 
 - **result**：SUCCESS / PUSH_FAILED / FAILED
-- **commitShort**：恢复后的新 commit SHA
+- **commitShort**：reset 后当前 HEAD commit SHA（short）
 - **targetCommit**：恢复到的目标 commit SHA
 - **branch**：当前分支
 - **message**：提示信息
