@@ -135,15 +135,15 @@ public interface FunAiWorkspaceService {
     void cleanupWorkspaceOnAppDeleted(Long userId, Long appId);
 
     /**
-     * 在 workspace 容器内执行 curl 命令进行 API 测试
+     * 在 workspace 容器内执行简单命令进行 API 测试（例：curl / npx tsc）
      * 
      * @param userId 用户 ID
      * @param appId 应用 ID
-     * @param curlCommand 完整的 curl 命令
+     * @param command 完整命令行
      * @param timeoutSeconds 超时时间（秒）
      * @return API 测试响应
      */
-    FunAiWorkspaceApiTestResponse executeCurlCommand(Long userId, Long appId, String curlCommand, Integer timeoutSeconds);
+    FunAiWorkspaceApiTestResponse executeCurlCommand(Long userId, Long appId, String command, Integer timeoutSeconds);
 }
 
 

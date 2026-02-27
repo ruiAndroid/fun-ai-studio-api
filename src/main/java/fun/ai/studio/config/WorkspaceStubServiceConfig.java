@@ -114,7 +114,7 @@ public class WorkspaceStubServiceConfig {
             public void cleanupWorkspaceOnAppDeleted(Long userId, Long appId) { throw disabled(); }
 
             @Override
-            public FunAiWorkspaceApiTestResponse executeCurlCommand(Long userId, Long appId, String curlCommand, Integer timeoutSeconds) { throw disabled(); }
+            public FunAiWorkspaceApiTestResponse executeCurlCommand(Long userId, Long appId, String command, Integer timeoutSeconds) { throw disabled(); }
         };
     }
 }
