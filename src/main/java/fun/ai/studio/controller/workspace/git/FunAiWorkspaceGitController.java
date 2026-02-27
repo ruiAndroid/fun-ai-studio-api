@@ -146,7 +146,7 @@ public class FunAiWorkspaceGitController {
         }
     }
 
-    @RequestMapping(value = "/reset", method = {RequestMethod.GET, RequestMethod.POST})
+    @RequestMapping(value = "/reset", method = {RequestMethod.POST})
     @Operation(
             summary = "reset 到某个版本（⚠️ 谨慎操作）",
             description = "将代码 reset 到指定 commit 的状态，并自动 commit + push。\n\n"
