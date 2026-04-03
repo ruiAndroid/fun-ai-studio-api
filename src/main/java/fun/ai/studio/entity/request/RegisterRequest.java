@@ -10,7 +10,7 @@ public class RegisterRequest {
     private String avatar;
     private String email;
     /**
-     * 邀请码（当 funai.auth.invite.enabled=true 时必填）
+     * 邮箱验证码
      */
-    private String inviteCode;
+    private String code;
 }

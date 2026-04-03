@@ -92,4 +92,27 @@ public class FunAiUserServiceImpl extends ServiceImpl<FunAiUserMapper, FunAiUser
         return user != null ? user.getId() : null;
     }
 
+    @Override
+    public FunAiUser findByUsernameOrEmail(String identifier) {
+        if (identifier == null || identifier.isBlank()) {
+            return null;
+        }
+        QueryWrapper<FunAiUser> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("user_name", identifier)
+                .or()
+                .eq("email", identifier)
+                .last("limit 1");
+        return getBaseMapper().selectOne(queryWrapper);
+    }
+
+    @Override
+    public FunAiUser findByEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return null;
+        }
+        QueryWrapper<FunAiUser> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("email", email).last("limit 1");
+        return getBaseMapper().selectOne(queryWrapper);
+    }
+
 }

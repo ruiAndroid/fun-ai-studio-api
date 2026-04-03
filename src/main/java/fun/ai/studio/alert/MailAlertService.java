@@ -67,7 +67,48 @@ public class MailAlertService {
             mailSender.send(msg);
             log.info("mail alert sent: to={}, subject={}", to, subj);
         } catch (Exception e) {
-            log.warn("mail alert send failed: subject={}, err={}", subj, e.getMessage(), e);
+            log.warn("mail send failed: subject={}, err={}", subj, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 发送邮件到指定邮箱
+     * @param to 收件人邮箱
+     * @param subject 邮件主题
+     * @param body 邮件正文
+     */
+    public void sendTo(String to, String subject, String body) {
+        if (!isEnabled()) {
+            log.debug("mail alert disabled, skip: subject={}", subject);
+            return;
+        }
+        if (mailSender == null) {
+            log.warn("JavaMailSender not available, skip email alert");
+            return;
+        }
+        if (!StringUtils.hasText(to)) {
+            log.warn("recipient is empty, skip");
+            return;
+        }
+        String from = props.getFrom();
+        if (!StringUtils.hasText(from)) {
+            log.warn("mail alert enabled but from is empty, skip");
+            return;
+        }
+        String subj = (props.getSubjectPrefix() == null ? "" : props.getSubjectPrefix().trim()) + " " + (subject == null ? "" : subject);
+        String text = body == null ? "" : body;
+
+        try {
+            MimeMessage msg = mailSender.createMimeMessage();
+            MimeMessageHelper h = new MimeMessageHelper(msg, false, StandardCharsets.UTF_8.name());
+            h.setFrom(new InternetAddress(from.trim()));
+            h.setTo(to.trim());
+            h.setSubject(subj.trim());
+            h.setText(text, false);
+            mailSender.send(msg);
+            log.info("mail sent: to={}, subject={}", to, subj);
+        } catch (Exception e) {
+            log.warn("mail send failed: subject={}, err={}", subj, e.getMessage(), e);
         }
     }
 }
