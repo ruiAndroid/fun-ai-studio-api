@@ -22,7 +22,7 @@ public class VerificationCodeServiceImpl implements VerificationCodeService {
     private static final Logger logger = LoggerFactory.getLogger(VerificationCodeServiceImpl.class);
 
     private static final int CODE_LENGTH = 6;
-    private static final int VALID_MINUTES = 10;
+    private static final int VALID_MINUTES = 1;
     private static final int RATE_LIMIT_MINUTES = 5;
     private static final int MAX_ERROR_COUNT = 3;
 
@@ -176,6 +176,62 @@ public class VerificationCodeServiceImpl implements VerificationCodeService {
         logger.info("verifyRegisterCode: success for username={}", username);
     }
 
+    @Override
+    public String sendLoginCode(String email) {
+        // 1. 检查邮箱是否已绑定用户
+        FunAiUser user = funAiUserService.findByEmail(email);
+        if (user == null) {
+            throw new IllegalArgumentException("该邮箱未绑定用户");
+        }
+
+        // 2. 检查发送频率
+        checkRateLimit(email, VerificationCode.TYPE_LOGIN);
+
+        // 3. 生成验证码
+        String code = generateCode();
+        LocalDateTime expiredTime = LocalDateTime.now().plusMinutes(VALID_MINUTES);
+
+        // 4. 保存验证码
+        VerificationCode verificationCode = new VerificationCode();
+        verificationCode.setUserId(user.getId());
+        verificationCode.setEmail(email);
+        verificationCode.setCode(code);
+        verificationCode.setType(VerificationCode.TYPE_LOGIN);
+        verificationCode.setExpiredTime(expiredTime);
+        verificationCode.setUsed(false);
+        verificationCode.setErrorCount(0);
+        verificationCodeMapper.insert(verificationCode);
+
+        // 5. 发送邮件
+        String subject = "登录验证码";
+        String body = buildLoginEmailBody(user.getUserName(), code, VALID_MINUTES);
+        mailAlertService.sendTo(email, subject, body);
+
+        logger.info("sendLoginCode: userId={}, emailMasked={}", user.getId(), EmailUtils.maskEmail(email));
+
+        return EmailUtils.maskEmail(email);
+    }
+
+    @Override
+    public FunAiUser verifyLoginCode(String email, String code) {
+        VerificationCode verificationCode = verificationCodeMapper.findValidCodeByEmail(email, VerificationCode.TYPE_LOGIN);
+        if (verificationCode == null) {
+            throw new IllegalArgumentException("验证码不存在或已过期");
+        }
+
+        verifyCode(verificationCode, code);
+        verificationCodeMapper.markAsUsed(verificationCode.getId());
+
+        // 使用验证码中保存的userId直接查询，避免重复按邮箱查询
+        FunAiUser user = funAiUserService.getById(verificationCode.getUserId());
+        if (user == null) {
+            throw new IllegalArgumentException("用户不存在");
+        }
+
+        logger.info("verifyLoginCode: success for userId={}", user.getId());
+        return user;
+    }
+
     /**
      * 构建注册验证码邮件正文
      */
@@ -183,6 +239,19 @@ public class VerificationCodeServiceImpl implements VerificationCodeService {
         return "【Fun AI Studio】注册验证码\n\n" +
                "尊敬的用户 " + userName + " 您好！\n\n" +
                "您正在申请注册，请在" + validMinutes + "分钟内完成验证。\n\n" +
+               "您的验证码是：" + code + "\n\n" +
+               "如果这不是您的操作，请忽略此邮件。\n\n" +
+               "--\n" +
+               "Fun AI Studio";
+    }
+
+    /**
+     * 构建登录验证码邮件正文
+     */
+    private String buildLoginEmailBody(String userName, String code, int validMinutes) {
+        return "【Fun AI Studio】登录验证码\n\n" +
+               "尊敬的用户 " + userName + " 您好！\n\n" +
+               "您正在申请登录，请在" + validMinutes + "分钟内完成验证。\n\n" +
                "您的验证码是：" + code + "\n\n" +
                "如果这不是您的操作，请忽略此邮件。\n\n" +
                "--\n" +

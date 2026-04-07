@@ -8,6 +8,8 @@ import fun.ai.studio.entity.request.LoginRequest;
 import fun.ai.studio.entity.request.SendCombinedCodeRequest;
 import fun.ai.studio.entity.request.CombinedResetPasswordRequest;
 import fun.ai.studio.entity.request.SendRegisterCodeRequest;
+import fun.ai.studio.entity.request.SendLoginCodeRequest;
+import fun.ai.studio.entity.request.EmailLoginRequest;
 import fun.ai.studio.entity.response.EmailStatusResponse;
 import fun.ai.studio.entity.response.EmailMaskedResponse;
 import fun.ai.studio.service.FunAiUserService;
@@ -90,6 +92,45 @@ public class AuthController {
             return Result.error("登录失败，请稍后重试");
         }
     }
+
+    @PostMapping("/send-login-code")
+    @Operation(summary = "发送登录验证码", description = "向绑定邮箱发送登录验证码")
+    public Result<EmailMaskedResponse> sendLoginCode(@Valid @RequestBody SendLoginCodeRequest request) {
+        String emailMasked = verificationCodeService.sendLoginCode(request.getEmail());
+        return Result.success(new EmailMaskedResponse(emailMasked));
+    }
+
+    @PostMapping("/login/email")
+    @Operation(summary = "邮箱验证码登录", description = "使用邮箱和验证码登录")
+    public Result<FunAiUser> emailLogin(@Valid @RequestBody EmailLoginRequest request, HttpServletResponse response) {
+        try {
+            FunAiUser user = verificationCodeService.verifyLoginCode(request.getEmail(), request.getCode());
+
+            // 生成JWT Token
+            String token = jwtUtil.generateToken(user.getUserName());
+            logger.info("Email login success for userId={}, emailMasked={}", user.getId(), EmailUtils.maskEmail(request.getEmail()));
+
+            // 设置Authorization响应头
+            response.setHeader("Authorization", "Bearer " + token);
+            response.setHeader("Access-Control-Expose-Headers", "Authorization");
+
+            // 更新上次登录时间
+            user.setLastLoginTime(LocalDateTime.now());
+            funAiUserService.updateById(user);
+
+            return Result.success(user);
+        } catch (Exception e) {
+            String reason = e.getMessage();
+            if (reason == null || reason.isBlank()) {
+                reason = e.getClass().getName();
+            } else {
+                reason = e.getClass().getName() + ": " + reason;
+            }
+            logger.error("Email login failed for email: {}, reason: {}", EmailUtils.maskEmail(request.getEmail()), reason, e);
+            return Result.error("登录失败，请稍后重试");
+        }
+    }
+
     @PostMapping("/register")
     @Operation(summary = "风行ai平台用户注册", description = "风行ai平台注册新用户")
     public Result<FunAiUser> funAiRegister(@Valid @RequestBody RegisterRequest registerRequest) {

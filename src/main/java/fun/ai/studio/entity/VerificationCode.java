@@ -74,4 +74,5 @@ public class VerificationCode {
     public static final int TYPE_PASSWORD_RESET = 1;
     public static final int TYPE_BIND_EMAIL = 2;
     public static final int TYPE_REGISTER = 3;
+    public static final int TYPE_LOGIN = 4;
 }

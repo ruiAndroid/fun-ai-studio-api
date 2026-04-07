@@ -1,5 +1,7 @@
 package fun.ai.studio.service;
 
+import fun.ai.studio.entity.FunAiUser;
+
 /**
  * 验证码服务接口
  */
@@ -37,4 +39,19 @@ public interface VerificationCodeService {
      * @param code 验证码
      */
     void verifyRegisterCode(String username, String email, String code);
+
+    /**
+     * 发送登录验证码
+     * @param email 邮箱地址
+     * @return 脱敏后的邮箱地址
+     */
+    String sendLoginCode(String email);
+
+    /**
+     * 验证登录验证码并返回用户
+     * @param email 邮箱地址
+     * @param code 验证码
+     * @return 用户对象
+     */
+    FunAiUser verifyLoginCode(String email, String code);
 }
