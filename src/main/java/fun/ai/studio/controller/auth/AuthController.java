@@ -64,9 +64,9 @@ public class AuthController {
                 return Result.error("用户名或密码错误");
             }
 
-            // 生成JWT Token
-            String token = jwtUtil.generateToken(loginRequest.getUserName());
-            logger.info("Generated JWT Token for fun ai user {}: length={}", loginRequest.getUserName(), token.length());
+            // 生成JWT Token（统一使用数据库中的user_name，而非登录输入值）
+            String token = jwtUtil.generateToken(user.getUserName());
+            logger.info("Generated JWT Token for fun ai user {}: length={}", user.getUserName(), token.length());
 
             // 设置Authorization响应头
             response.setHeader("Authorization", "Bearer " + token);
