@@ -22,7 +22,7 @@ public class VerificationCodeServiceImpl implements VerificationCodeService {
     private static final Logger logger = LoggerFactory.getLogger(VerificationCodeServiceImpl.class);
 
     private static final int CODE_LENGTH = 6;
-    private static final int VALID_MINUTES = 1;
+    private static final int VALID_MINUTES = 10;
     private static final int RATE_LIMIT_MINUTES = 5;
     private static final int MAX_ERROR_COUNT = 3;
 
