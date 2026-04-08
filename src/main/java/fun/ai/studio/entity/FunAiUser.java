@@ -55,6 +55,13 @@ public class FunAiUser {
     private String phone;
 
     /**
+     * 用户类型: 0-普通用户, 1-管理员用户
+     */
+    @TableField("user_type")
+    @Schema(description = "用户类型: 0-普通用户, 1-管理员用户")
+    private Integer userType;
+
+    /**
      * 已创建应用数量
      */
     @TableField("app_count")
