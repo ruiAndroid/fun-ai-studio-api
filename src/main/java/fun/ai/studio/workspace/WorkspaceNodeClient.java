@@ -287,7 +287,7 @@ public class WorkspaceNodeClient {
     private boolean containsPackageJson(List<FunAiWorkspaceFileNode> nodes) {
         for (FunAiWorkspaceFileNode n : nodes) {
             if (n == null) continue;
-            if ("package.json".equals(n.getName())) return true; 
+            if ("package.json".equals(n.getName())) return true;
             if (n.getChildren() != null && !n.getChildren().isEmpty()) {
                 if (containsPackageJson(n.getChildren())) return true;
             }

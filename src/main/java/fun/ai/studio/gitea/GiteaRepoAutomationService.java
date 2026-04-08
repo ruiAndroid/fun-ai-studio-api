@@ -125,6 +125,9 @@ public class GiteaRepoAutomationService {
                     
                     # Database
                     server/checkin.db
+                    
+                    #LocalStorage
+                    uploads/
                     """;
             // 关键：Runner(101) 可能无法访问 DockerHub，因此 Dockerfile 的基础镜像建议使用 ACR 镜像
             // 约定：将 node:20-alpine 推送到 ACR：<acrRegistry>/<acrNamespace>/base-node:20-alpine

@@ -38,6 +38,20 @@ public interface FunAiUserService extends IService<FunAiUser> {
      * @return 用户ID
      */
     Long getUserIdByUsername(String username);
-    
+
+    /**
+     * 根据用户名或邮箱查找用户
+     * @param identifier 用户名或邮箱
+     * @return 用户实体
+     */
+    FunAiUser findByUsernameOrEmail(String identifier);
+
+    /**
+     * 根据邮箱查找用户
+     * @param email 邮箱
+     * @return 用户实体
+     */
+    FunAiUser findByEmail(String email);
+
 
 }
