@@ -60,4 +60,11 @@ public interface FunAiUserService extends IService<FunAiUser> {
      */
     boolean isAdmin(Long userId);
 
+    /**
+     * 设置/更新用户的 API Key
+     * @param userId 用户ID
+     * @param apiKey API密钥
+     */
+    void setApiKey(Long userId, String apiKey);
+
 }

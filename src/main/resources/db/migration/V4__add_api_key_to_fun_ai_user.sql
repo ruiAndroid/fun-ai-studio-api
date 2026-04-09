@@ -1,0 +1,1 @@
+ALTER TABLE `fun_ai_user` ADD COLUMN `api_key` VARCHAR(128) DEFAULT NULL COMMENT '用户API密钥';

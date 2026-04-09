@@ -124,4 +124,18 @@ public class FunAiUserServiceImpl extends ServiceImpl<FunAiUserMapper, FunAiUser
         return user != null && user.getUserType() != null && user.getUserType() == 1;
     }
 
+    @Override
+    public void setApiKey(Long userId, String apiKey) {
+        if (userId == null) {
+            throw new IllegalArgumentException("用户ID不能为空");
+        }
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalArgumentException("API Key不能为空");
+        }
+        FunAiUser update = new FunAiUser();
+        update.setId(userId);
+        update.setApiKey(apiKey);
+        updateById(update);
+    }
+
 }

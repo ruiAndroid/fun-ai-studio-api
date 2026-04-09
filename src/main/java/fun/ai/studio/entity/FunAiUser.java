@@ -91,4 +91,11 @@ public class FunAiUser {
     @TableField(value = "update_time", fill = FieldFill.INSERT_UPDATE)
     @JsonIgnore
     private LocalDateTime updateTime;
+
+    /**
+     * API密钥
+     */
+    @TableField("api_key")
+    @Schema(description = "API密钥")
+    private String apiKey;
 }
