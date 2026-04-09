@@ -45,6 +45,8 @@ import java.util.Set;
  * 提供管理员下载任意用户应用 ZIP 包的功能。
  * 请求会被转发到目标用户所在的 workspace-node（大机）执行。
  * </p>
+ *
+ * @see WorkspaceNodeProxySigner 签名算法说明
  */
 @RestController
 @RequestMapping("/api/fun-ai/admin/workspace-files")
@@ -79,6 +81,21 @@ public class AdminWorkspaceFileController {
         this.httpClient = b.build();
     }
 
+    /**
+     * 管理员下载指定用户的应用 ZIP 包
+     *
+     * @param userId 目标用户ID
+     * @param appId 应用ID
+     * @param includeNodeModules 是否包含 node_modules 目录
+     * @param response HTTP 响应，用于直接输出 ZIP 流
+     *
+     * @流程说明
+     * 1. 验证当前登录用户为管理员（userType=1）
+     * 2. 校验目标应用确实属于指定用户（防止越权访问）
+     * 3. 根据 userId 解析用户所在的 workspace-node 地址
+     * 4. 构建带 HMAC-SHA256 签名的转发请求（防止伪造）
+     * 5. 将上游返回的 ZIP 流透传给客户端（边读边写，避免大文件内存压力）
+     */
     @GetMapping("/download-zip")
     @Operation(summary = "下载应用目录（zip）",
             description = "管理员下载指定用户的应用目录。验证当前用户是管理员后，转发请求到 workspace-node 执行打包下载。")
@@ -131,8 +148,12 @@ public class AdminWorkspaceFileController {
             return;
         }
 
+        // 生成签名所需的时间戳和随机数
+        // 时间戳用于防止重放攻击（请求过期），nonce 防止重放同一请求
         long ts = Instant.now().getEpochSecond();
         String nonce = randomNonce();
+
+        // 构造 Canonical String：HTTP_METHOD + PATH + QUERY + BODY + TIMESTAMP + NONCE
         String canonical;
         try {
             canonical = WorkspaceNodeProxySigner.canonical("GET", upstreamPath, query, "", ts, nonce);
@@ -142,6 +163,7 @@ public class AdminWorkspaceFileController {
             return;
         }
 
+        // 使用 HMAC-SHA256 生成签名，shared-secret 由 admin-controller 和 workspace-node 共享
         String sig;
         try {
             sig = WorkspaceNodeProxySigner.hmacSha256Base64(secret, canonical);
@@ -194,6 +216,7 @@ public class AdminWorkspaceFileController {
                         .toString());
         response.setContentType(MediaType.APPLICATION_OCTET_STREAM_VALUE);
 
+        // 将上游 ZIP 流透传给客户端（边读边写，避免大文件占用内存）
         try (InputStream in = upstreamResp.body()) {
             if (in != null) {
                 byte[] buffer = new byte[8192];
