@@ -115,4 +115,13 @@ public class FunAiUserServiceImpl extends ServiceImpl<FunAiUserMapper, FunAiUser
         return getBaseMapper().selectOne(queryWrapper);
     }
 
+    @Override
+    public boolean isAdmin(Long userId) {
+        if (userId == null) {
+            return false;
+        }
+        FunAiUser user = getById(userId);
+        return user != null && user.getUserType() != null && user.getUserType() == 1;
+    }
+
 }

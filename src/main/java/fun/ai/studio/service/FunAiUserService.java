@@ -53,5 +53,11 @@ public interface FunAiUserService extends IService<FunAiUser> {
      */
     FunAiUser findByEmail(String email);
 
+    /**
+     * 判断用户是否为管理员
+     * @param userId 用户ID
+     * @return 是否为管理员
+     */
+    boolean isAdmin(Long userId);
 
 }

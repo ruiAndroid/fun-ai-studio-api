@@ -50,7 +50,7 @@ import java.util.Set;
  */
 @RestController
 @RequestMapping("/api/fun-ai/admin/workspace-files")
-@Tag(name = "管理员工作空间文件", description = "管理员管理用户工作空间文件（需管理员权限）")
+@Tag(name = "管理员功能", description = "管理员工作空间文件管理和用户反馈管理（需管理员权限）")
 public class AdminWorkspaceFileController {
     private static final Logger log = LoggerFactory.getLogger(AdminWorkspaceFileController.class);
 

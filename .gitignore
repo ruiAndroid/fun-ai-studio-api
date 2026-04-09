@@ -70,3 +70,4 @@ fun-ai-studio-workspace
 # 其他
 CLAUDE.md
 .claude/
+.env

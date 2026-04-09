@@ -27,6 +27,8 @@ public class AdminAuthFilter extends OncePerRequestFilter {
     private static final String WS_NODE_HEARTBEAT = "/api/fun-ai/admin/workspace-nodes/heartbeat";
     // workspace-files 接口使用 JWT + userType 验证，跳过 AdminAuthFilter
     private static final String WORKSPACE_FILES_PREFIX = "/api/fun-ai/admin/workspace-files/";
+    // feedback 接口也使用 JWT + userType 验证，跳过 AdminAuthFilter
+    private static final String FEEDBACK_PREFIX = "/api/fun-ai/admin/feedback/";
     private static final String HDR = "X-Admin-Token";
 
     private final AdminSecurityProperties props;
@@ -42,6 +44,8 @@ public class AdminAuthFilter extends OncePerRequestFilter {
         if (!StringUtils.hasText(uri) || !uri.startsWith(PREFIX)) return true;
         // workspace-files 接口使用 JWT + userType 验证，跳过此 filter
         if (uri.startsWith(WORKSPACE_FILES_PREFIX)) return true;
+        // feedback 接口使用 JWT + userType 验证，跳过此 filter
+        if (uri.startsWith(FEEDBACK_PREFIX)) return true;
         return props != null && !props.isEnabled();
     }
 
