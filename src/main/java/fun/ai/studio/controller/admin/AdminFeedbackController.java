@@ -8,6 +8,7 @@ import fun.ai.studio.entity.response.FeedbackPageResponse;
 import fun.ai.studio.entity.response.FeedbackResponse;
 import fun.ai.studio.service.FeedbackService;
 import fun.ai.studio.service.FunAiUserService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -38,10 +39,12 @@ public class AdminFeedbackController {
 
     private final FeedbackService feedbackService;
     private final FunAiUserService funAiUserService;
+    private final ObjectMapper objectMapper;
 
-    public AdminFeedbackController(FeedbackService feedbackService, FunAiUserService funAiUserService) {
+    public AdminFeedbackController(FeedbackService feedbackService, FunAiUserService funAiUserService, ObjectMapper objectMapper) {
         this.feedbackService = feedbackService;
         this.funAiUserService = funAiUserService;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -156,7 +159,7 @@ public class AdminFeedbackController {
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");
         Result<?> result = Result.success(data);
-        response.getWriter().write(toJson(result));
+        response.getWriter().write(objectMapper.writeValueAsString(result));
     }
 
     private void writeSuccess(HttpServletResponse response, String message, Object data) throws Exception {
@@ -164,7 +167,7 @@ public class AdminFeedbackController {
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");
         Result<?> result = Result.success(message, data);
-        response.getWriter().write(toJson(result));
+        response.getWriter().write(objectMapper.writeValueAsString(result));
     }
 
     private void writeError(HttpServletResponse response, HttpStatus status, int code, String message) throws Exception {
@@ -172,39 +175,6 @@ public class AdminFeedbackController {
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");
         Result<?> error = Result.error(code, message);
-        response.getWriter().write(toJson(error));
-    }
-
-    private String toJson(Result<?> r) {
-        int c = r == null || r.getCode() == null ? 500 : r.getCode();
-        String m = r == null || r.getMessage() == null ? "" : r.getMessage();
-        Object d = r == null ? null : r.getData();
-        return "{\"code\":" + c + ",\"message\":\"" + escapeJson(m) + "\",\"data\":" + (d == null ? "null" : toJson(d)) + "}";
-    }
-
-    private String toJson(Object obj) {
-        if (obj == null) return "null";
-        if (obj instanceof String) return "\"" + escapeJson((String) obj) + "\"";
-        if (obj instanceof Number) return obj.toString();
-        if (obj instanceof Boolean) return obj.toString();
-        // 简单处理，其他对象直接 toString
-        return "\"" + escapeJson(obj.toString()) + "\"";
-    }
-
-    private String escapeJson(String s) {
-        if (s == null) return "";
-        StringBuilder sb = new StringBuilder(s.length() + 16);
-        for (int i = 0; i < s.length(); i++) {
-            char ch = s.charAt(i);
-            switch (ch) {
-                case '\\': sb.append("\\\\"); break;
-                case '"': sb.append("\\\""); break;
-                case '\n': sb.append("\\n"); break;
-                case '\r': sb.append("\\r"); break;
-                case '\t': sb.append("\\t"); break;
-                default: sb.append(ch);
-            }
-        }
-        return sb.toString();
+        response.getWriter().write(objectMapper.writeValueAsString(error));
     }
 }
