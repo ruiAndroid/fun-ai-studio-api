@@ -117,8 +117,10 @@ public class FeedbackServiceImpl extends ServiceImpl<FeedbackMapper, Feedback> i
                 .map(Feedback::getAppId)
                 .distinct()
                 .collect(Collectors.toList());
-        Map<Long, FunAiApp> appMap = funAiAppService.listByIds(appIds).stream()
-                .collect(Collectors.toMap(FunAiApp::getId, a -> a));
+        Map<Long, FunAiApp> appMap = appIds.isEmpty()
+                ? java.util.Collections.emptyMap()
+                : funAiAppService.listByIds(appIds).stream()
+                        .collect(Collectors.toMap(FunAiApp::getId, a -> a));
 
         List<FeedbackResponse> list = result.getRecords().stream()
                 .peek(f -> f.setApp(appMap.get(f.getAppId())))
@@ -143,15 +145,19 @@ public class FeedbackServiceImpl extends ServiceImpl<FeedbackMapper, Feedback> i
                 .map(Feedback::getUserId)
                 .distinct()
                 .collect(Collectors.toList());
-        Map<Long, FunAiUser> userMap = funAiUserService.listByIds(userIds).stream()
-                .collect(Collectors.toMap(FunAiUser::getId, u -> u));
+        Map<Long, FunAiUser> userMap = userIds.isEmpty()
+                ? java.util.Collections.emptyMap()
+                : funAiUserService.listByIds(userIds).stream()
+                        .collect(Collectors.toMap(FunAiUser::getId, u -> u));
 
         List<Long> appIds = result.getRecords().stream()
                 .map(Feedback::getAppId)
                 .distinct()
                 .collect(Collectors.toList());
-        Map<Long, FunAiApp> appMap = funAiAppService.listByIds(appIds).stream()
-                .collect(Collectors.toMap(FunAiApp::getId, a -> a));
+        Map<Long, FunAiApp> appMap = appIds.isEmpty()
+                ? java.util.Collections.emptyMap()
+                : funAiAppService.listByIds(appIds).stream()
+                        .collect(Collectors.toMap(FunAiApp::getId, a -> a));
 
         List<FeedbackResponse> list = result.getRecords().stream()
                 .peek(f -> {
