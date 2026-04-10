@@ -30,7 +30,7 @@ public class FeedbackController {
      * 用户提交反馈
      */
     @PostMapping("/create")
-    @Operation(summary = "提交反馈", description = "用户提交反馈，可上传最多9张图片")
+    @Operation(summary = "提交反馈", description = "用户提交反馈，可上传最多9张图片，图片使用multipart/form-data格式")
     public Result<FeedbackResponse> createFeedback(@Valid FeedbackCreateRequest request) {
         try {
             FeedbackResponse response = feedbackService.createFeedback(request);
