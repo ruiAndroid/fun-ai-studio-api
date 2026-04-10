@@ -112,6 +112,11 @@ public class FunAiDeployController {
         if (app == null) {
             return Result.error("应用不存在或无权限操作");
         }
+        try {
+            funAiAppService.validateAndNormalizeAppSlug(app.getAppSlug(), app.getId());
+        } catch (IllegalArgumentException e) {
+            return Result.error(400, "发布前请先填写合法且未占用的 appSlug：" + e.getMessage());
+        }
 
         // 规则 A：每用户运行中项目数 ≤ 3
         // - 运行中槽位：DEPLOYING + READY（避免“正在部署的第4个”成功后超限）
@@ -363,5 +368,4 @@ public class FunAiDeployController {
         return Result.success(history);
     }
 }
-
 

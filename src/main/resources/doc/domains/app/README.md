@@ -34,12 +34,39 @@ App 域负责：
 
 - **主键**：`id`
 - **归属**：`user_id`
-- **基础信息**：`app_name` / `app_description` / `app_type`
+- **基础信息**：`app_name` / `app_slug` / `app_description` / `app_type`
 - **状态**：`app_status`
 - **最近一次部署失败原因**：`last_deploy_error`
 - **凭证**：`app_key` / `app_secret`（其中 secret 不对外返回）
 
-### 1.1 字段长度约束（重要）
+### 1.1 `appName` 与 `appSlug` 的分工
+
+- `appName`：产品内展示名，面向创建者自己和控制台 UI，可中文、可重复（范围是“同一用户下不可重名”）
+- `appSlug`：公网访问名，面向浏览器地址栏和分享链接，只允许小写字母、数字、短横线
+- `appSlug` 由前端让用户人工填写，后端负责 `trim + lowercase`、格式校验、保留词拦截、全平台唯一校验
+- `appSlug` 发布前必填；发布后允许修改；旧 slug 不保留、不跳转，会立即释放给全平台重新使用
+
+示例：
+
+- `appName = AI 营销文案助手`
+- `appSlug = ai-copywriter`
+
+### 1.2 `appSlug` 校验规则
+
+- 长度：`3` 到 `40`
+- 格式：`^[a-z0-9]+(?:-[a-z0-9]+)*$`
+- 规范化：保存前统一 `trim + lowercase`
+- 唯一性：`fun_ai_app.app_slug` 全平台唯一
+- 保留词：`api`、`doc`、`docs`、`admin`、`login`、`register`、`runtime`、`preview`、`swagger-ui`、`assets`、`static`
+
+### 1.3 数据库兼容策略
+
+- 本次在 `fun_ai_app` 新增字段：`app_slug VARCHAR(40) NULL`
+- 同时新增唯一索引：`UNIQUE(app_slug)`
+- 仓库中提供了参考 SQL：`src/main/resources/db/migration/V5__add_app_slug_to_fun_ai_app.sql`
+- 由于当前项目未正式接入 Flyway/Liquibase，启动时会由 `AppSlugSchemaGuard` 做一次轻量 schema guard，自动补齐缺失列与唯一索引，避免代码先发布而数据库未改导致接口直接报错
+
+### 1.4 字段长度约束（重要）
 
 如果你在服务端日志里看到类似异常：
 
@@ -151,8 +178,29 @@ body：`UpdateFunAiAppBasicInfoRequest`
 - `userId`（必填）
 - `appId`（必填）
 - `appName`（同一用户下唯一）
+- `appSlug`（选填；若传空字符串则清空，若传值则会做规范化和唯一性校验）
 - `appDescription`
 - `appType`
+
+说明：
+
+- `update-basic` 阶段允许应用先不填 `appSlug`
+- 但一旦进入“发布”链路，后端会强制要求 `appSlug` 已存在且合法
+
+### 4.1 检查 `appSlug` 是否可用
+
+- `GET /api/fun-ai/app/slug/check?appSlug=...&excludeAppId=...`
+
+返回字段：
+
+- `normalizedSlug`：后端规范化后的 slug
+- `available`：是否可用
+- `reason`：不可用原因，如格式错误、保留词、已占用
+
+典型用途：
+
+- 前端在用户输入 `appSlug` 时实时校验
+- 编辑已有应用时传 `excludeAppId`，避免把当前应用自己的 slug 误判为冲突
 
 ### 5) 手动修正应用状态（兜底）
 
@@ -184,4 +232,25 @@ body：`UpdateFunAiAppBasicInfoRequest`
 - Workspace 侧 `ensureDir/ensureAppDir` 也会做归属校验（双保险）
 - Deploy 侧只用于“部署态访问地址”推导与“对账”，失败会降级（不会影响 list/info 主流程）
 
+---
+
+## 公网访问别名
+
+### 入口规则
+
+- 新增公开入口：`GET /{appSlug}`
+- 该入口由 API / 网关层解析，不改变 Runtime 的真实服务路径
+- 命中规则后，仍然是内部跳到 `/runtime/{appId}`
+
+### 解析行为
+
+- `appSlug` 不存在：返回 `404`
+- `appSlug` 存在但应用未 `READY`：返回建设中页面
+- `appSlug` 存在且应用已 `READY`：返回 `302 Location: /runtime/{appId}`
+
+### 产品规则
+
+- 本期不做旧 slug 到新 slug 的兼容跳转
+- `appId` 仍然是部署、容器、镜像、Mongo 等内部系统的真实标识
+- `appSlug` 只是公网别名，不参与 Runtime 内部命名
 

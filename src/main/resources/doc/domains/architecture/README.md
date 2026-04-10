@@ -39,6 +39,7 @@ flowchart TB
         R2["/preview/** 开发预览"]
         R3["/runtime/** 线上应用"]
         R4["/fun-agent/** Agent服务"]
+        R5["/{appSlug} 公网别名"]
     end
 
     subgraph Infra["内网 (8+ 台服务器)"]
@@ -81,11 +82,12 @@ flowchart TB
         end
     end
 
-    Browser --> R1 & R2 & R3 & R4
+    Browser --> R1 & R2 & R3 & R4 & R5
     R1 --> API
     R2 --> WsNode --> WsCtn
     R3 --> Traefik --> AppCtn
     R4 --> AgentService
+    R5 --> API
 
     API --> MySQL
     API -->|转发| AgentService
@@ -104,7 +106,7 @@ flowchart TB
     WsCtn -->|npm install| Verdaccio
 ```
 
-**一句话理解**：用户通过四条路径访问系统 —— 业务 API 走 91、开发预览走 87、线上应用走 102、Agent 服务走 88（统一由 91 入口转发）。
+**一句话理解**：用户通过五条路径访问系统 —— 业务 API 走 91、开发预览走 87、线上应用真实路径走 102、公网别名先走 91、Agent 服务走 88（统一由 91 入口转发）。
 
 ---
 
@@ -175,6 +177,8 @@ sequenceDiagram
     RT->>RT: 启动应用
     R->>D: 报告成功
 
+    U->>API: 访问 /{appSlug}
+    API-->>U: 302 /runtime/{appId}
     U->>RT: 访问 /runtime/{appId}/
     RT->>M: 应用读写数据
 ```
@@ -199,6 +203,11 @@ sequenceDiagram
 4. **粘性落点**
    - `appId` 固定部署到某台 Runtime 节点
    - 避免每次部署换机器导致的网络/存储问题
+
+5. **公网别名与内部主键分离**
+   - 用户分享的是 `/{appSlug}`
+   - 系统内部仍然用 `appId` 做部署、路由、容器命名和数据库命名
+   - 这样既能给用户一个可读链接，也不会破坏现有 Deploy / Runtime 体系
 
 ---
 

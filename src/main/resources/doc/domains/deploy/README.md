@@ -57,7 +57,14 @@
 
 - **控制面（Deploy 服务）**：决定做什么（创建任务、记录状态、审计、分配 Runner），不直接执行用户代码
 - **Runner（执行面）**：领取任务后执行构建/部署，并回传结果
-- **用户应用（Runtime 容器）**：最终对外提供服务的应用进程/容器（用户访问的 `https://{domain}/runtime/{appId}/...` 指向它）
+- **用户应用（Runtime 容器）**：最终对外提供服务的应用进程/容器（真实服务路径仍是 `https://{domain}/runtime/{appId}/...`）
+
+### 1.1 新增公网别名口径
+
+- 本期新增的公开入口是 `https://studio.fun.tv/{appSlug}`
+- 该入口不直接改变 Deploy / Runtime 的内部识别方式
+- API / 网关层会先根据 `appSlug` 找到应用，再做 `302` 到 `/runtime/{appId}`
+- 因此 Deploy 任务、Runner 构建、Runtime 容器命名、Mongo 库名、镜像名依旧全部使用 `appId`
 
 ## 2. 推荐调用链
 
@@ -76,7 +83,14 @@ Base：`/api/fun-ai/deploy`
 - body（可选）：扩展 payload（Map）
   - 阶段 1（镜像直部署）建议传：`{ "image": "...", "containerPort": 80 }`
   - 阶段 2（Git 构建）建议传：`{ "repoSshUrl": "...", "gitRef": "main" }`
-- 行为：API 会调用 deploy 控制面 `POST /deploy/jobs` 创建 `BUILD_AND_DEPLOY` Job
+- 行为：API 会先校验 `appSlug` 已填写、格式合法、未被占用，然后再调用 deploy 控制面 `POST /deploy/jobs` 创建 `BUILD_AND_DEPLOY` Job
+
+补充规则：
+
+- `appSlug` 在 `update-basic` 阶段可以为空
+- 进入发布前必须补齐 `appSlug`
+- 发布后修改 `appSlug` 不影响旧的 `/runtime/{appId}` 地址
+- 修改后旧 slug 立即失效，不做兼容跳转
 
 ### 3.2 查询 Job
 
@@ -99,5 +113,4 @@ Base：`/api/fun-ai/deploy`
 - `deploy-proxy.enabled`
 - `deploy-proxy.base-url`
 - `deploy-proxy.shared-secret`（**API -> Deploy 内部鉴权密钥**，Deploy 侧校验 Header：`X-DEPLOY-SECRET`）
-
 
