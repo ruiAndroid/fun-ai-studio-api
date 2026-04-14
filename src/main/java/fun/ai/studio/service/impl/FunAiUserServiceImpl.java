@@ -1,6 +1,7 @@
 package fun.ai.studio.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import fun.ai.studio.entity.FunAiUser;
@@ -129,13 +130,11 @@ public class FunAiUserServiceImpl extends ServiceImpl<FunAiUserMapper, FunAiUser
         if (userId == null) {
             throw new IllegalArgumentException("用户ID不能为空");
         }
-        if (apiKey == null || apiKey.isBlank()) {
-            throw new IllegalArgumentException("API Key不能为空");
-        }
-        FunAiUser update = new FunAiUser();
-        update.setId(userId);
-        update.setApiKey(apiKey);
-        updateById(update);
+        UpdateWrapper<FunAiUser> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("id", userId);
+        // 空字符串或 blank 字符串视为清空 API Key，强制更新为 null
+        updateWrapper.set("api_key", apiKey == null || apiKey.isBlank() ? null : apiKey);
+        update(updateWrapper);
     }
 
 }
