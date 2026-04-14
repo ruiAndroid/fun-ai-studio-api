@@ -10,6 +10,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -58,7 +59,7 @@ public class FunAiUserController {
 
     @PutMapping("/api-key")
     @Operation(summary = "设置/更新API Key", description = "接收用户提供的 API Key 并保存。")
-    public Result<Void> setApiKey(@Validated UpdateApiKeyRequest request) {
+    public Result<Void> setApiKey(@Validated @RequestBody UpdateApiKeyRequest request) {
         try {
             FunAiUser user = getCurrentUser();
             if (user == null) {
