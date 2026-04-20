@@ -72,4 +72,8 @@ public class Feedback {
     @TableField(exist = false)
     @Schema(description = "图片URL列表（非数据库字段）")
     private List<String> imageList;
+
+    @TableField("user_read")
+    @Schema(description = "用户是否已读回复：0-未读，1-已读")
+    private Integer userRead;
 }

@@ -1,6 +1,7 @@
 package fun.ai.studio.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -127,6 +128,32 @@ public class FeedbackServiceImpl extends ServiceImpl<FeedbackMapper, Feedback> i
                 .map(this::convertToResponse)
                 .collect(Collectors.toList());
 
+        // 构建 feedback ID -> 原始实体的映射，用于获取 userRead 状态
+        Map<Long, Feedback> feedbackMap = result.getRecords().stream()
+                .collect(Collectors.toMap(Feedback::getId, f -> f));
+
+        // 设置 hasNewReply 并收集需要标记已读的 ID
+        List<Long> needMarkReadIds = new ArrayList<>();
+        for (FeedbackResponse f : list) {
+            boolean hasReply = f.getStatus() != null && f.getStatus() >= 1
+                    && f.getReply() != null && !f.getReply().isEmpty();
+            Feedback original = feedbackMap.get(f.getId());
+            boolean unread = original == null || original.getUserRead() == null || original.getUserRead() == 0;
+            f.setHasNewReply(hasReply && unread);
+            if (Boolean.TRUE.equals(f.getHasNewReply())) {
+                needMarkReadIds.add(f.getId());
+            }
+        }
+
+        // 批量标记为已读
+        if (!needMarkReadIds.isEmpty()) {
+            UpdateWrapper<Feedback> uw = new UpdateWrapper<>();
+            uw.in("id", needMarkReadIds);
+            uw.eq("user_id", userId);
+            uw.set("user_read", 1);
+            update(uw);
+        }
+
         FeedbackPageResponse response = new FeedbackPageResponse();
         response.setTotal(result.getTotal());
         response.setPageNum(pageNum);
@@ -207,6 +234,7 @@ public class FeedbackServiceImpl extends ServiceImpl<FeedbackMapper, Feedback> i
         feedback.setReply(request.getReply());
         feedback.setReplyTime(LocalDateTime.now());
         feedback.setStatus(request.getStatus());
+        feedback.setUserRead(0);
 
         if (!updateById(feedback)) {
             throw new RuntimeException("回复保存失败");

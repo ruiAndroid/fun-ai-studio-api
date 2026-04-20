@@ -54,4 +54,7 @@ public class FeedbackResponse {
 
     @Schema(description = "更新时间")
     private LocalDateTime updateTime;
+
+    @Schema(description = "是否有未读的新回复")
+    private Boolean hasNewReply;
 }
