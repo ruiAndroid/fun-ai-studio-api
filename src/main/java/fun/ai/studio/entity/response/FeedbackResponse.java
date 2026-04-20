@@ -1,7 +1,5 @@
 package fun.ai.studio.entity.response;
 
-import fun.ai.studio.entity.FunAiApp;
-import fun.ai.studio.entity.FunAiUser;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
@@ -18,14 +16,20 @@ public class FeedbackResponse {
     @Schema(description = "用户ID")
     private Long userId;
 
-    @Schema(description = "用户信息")
-    private FunAiUser user;
+    @Schema(description = "用户名")
+    private String userName;
+
+    @Schema(description = "用户头像")
+    private String userAvatar;
 
     @Schema(description = "应用ID")
     private Long appId;
 
-    @Schema(description = "应用信息")
-    private FunAiApp app;
+    @Schema(description = "应用名称")
+    private String appName;
+
+    @Schema(description = "应用描述")
+    private String appDescription;
 
     @Schema(description = "反馈标题")
     private String title;
@@ -38,9 +42,6 @@ public class FeedbackResponse {
 
     @Schema(description = "处理状态：0-待处理，1-处理中，2-已处理")
     private Integer status;
-
-    @Schema(description = "状态描述")
-    private String statusDesc;
 
     @Schema(description = "管理员回复内容")
     private String reply;

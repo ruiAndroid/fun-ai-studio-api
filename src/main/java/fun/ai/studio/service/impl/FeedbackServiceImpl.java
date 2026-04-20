@@ -257,13 +257,18 @@ public class FeedbackServiceImpl extends ServiceImpl<FeedbackMapper, Feedback> i
         FeedbackResponse response = new FeedbackResponse();
         response.setId(feedback.getId());
         response.setUserId(feedback.getUserId());
-        response.setUser(feedback.getUser());
+        if (feedback.getUser() != null) {
+            response.setUserName(feedback.getUser().getUserName());
+            response.setUserAvatar(feedback.getUser().getAvatar());
+        }
         response.setAppId(feedback.getAppId());
-        response.setApp(feedback.getApp());
+        if (feedback.getApp() != null) {
+            response.setAppName(feedback.getApp().getAppName());
+            response.setAppDescription(feedback.getApp().getAppDescription());
+        }
         response.setTitle(feedback.getTitle());
         response.setContent(feedback.getContent());
         response.setStatus(feedback.getStatus());
-        response.setStatusDesc(getStatusDesc(feedback.getStatus()));
         response.setReply(feedback.getReply());
         response.setReplyTime(feedback.getReplyTime());
         response.setCreateTime(feedback.getCreateTime());
@@ -283,15 +288,5 @@ public class FeedbackServiceImpl extends ServiceImpl<FeedbackMapper, Feedback> i
         }
 
         return response;
-    }
-
-    private String getStatusDesc(Integer status) {
-        if (status == null) return "未知";
-        return switch (status) {
-            case 0 -> "待处理";
-            case 1 -> "处理中";
-            case 2 -> "已处理";
-            default -> "未知";
-        };
     }
 }
