@@ -134,6 +134,12 @@ public class WorkspaceProperties {
     private Integer pidsLimit;
 
     /**
+     * 容器时区配置（例如 "Asia/Shanghai", "UTC", "America/New_York"）
+     * 默认值：Asia/Shanghai
+     */
+    private String containerTimezone = "Asia/Shanghai";
+
+    /**
      * 无操作多少分钟后自动 stop run（默认 10 分钟）
      */
     private int idleStopRunMinutes = 10;
@@ -342,6 +348,14 @@ public class WorkspaceProperties {
 
     public void setPidsLimit(Integer pidsLimit) {
         this.pidsLimit = pidsLimit;
+    }
+
+    public String getContainerTimezone() {
+        return containerTimezone;
+    }
+
+    public void setContainerTimezone(String containerTimezone) {
+        this.containerTimezone = containerTimezone;
     }
 
     public int getIdleStopRunMinutes() {
