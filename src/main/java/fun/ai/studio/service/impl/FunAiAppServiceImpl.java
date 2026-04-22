@@ -3,6 +3,7 @@ package fun.ai.studio.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 
+import fun.ai.studio.app.AppSlugPolicy;
 import fun.ai.studio.common.Result;
 import fun.ai.studio.entity.FunAiApp;
 import fun.ai.studio.entity.FunAiUser;
@@ -71,6 +72,14 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
     }
 
     @Override
+    public FunAiApp getAppBySlug(String appSlug) {
+        if (!StringUtils.hasText(appSlug)) return null;
+        QueryWrapper<FunAiApp> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("app_slug", appSlug.trim().toLowerCase(Locale.ROOT)).last("limit 1");
+        return baseMapper.selectOne(queryWrapper);
+    }
+
+    @Override
     public FunAiApp createApp(FunAiApp app) {
         // 生成应用密钥
         if (!StringUtils.hasText(app.getAppKey())) {
@@ -102,7 +111,7 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
     }
 
     @Override
-    public FunAiApp updateBasicInfo(Long userId, Long appId, String appName, String appDescription, String appType)
+    public FunAiApp updateBasicInfo(Long userId, Long appId, String appName, String appSlug, String appDescription, String appType)
             throws IllegalArgumentException {
         if (userId == null || appId == null) {
             throw new IllegalArgumentException("userId/appId 不能为空");
@@ -135,6 +144,14 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
             existingApp.setAppName(trimmedName);
         }
 
+        if (appSlug != null) {
+            if (appSlug.isBlank()) {
+                existingApp.setAppSlug(null);
+            } else {
+                existingApp.setAppSlug(validateAndNormalizeAppSlug(appSlug, appId));
+            }
+        }
+
         // 3) 其他字段更新（允许置空：如果你不想允许置空，可以改成 hasText 才更新）
         if (appDescription != null) {
             // 防御：避免 DB 列长度不足导致 DataTruncation 500
@@ -150,6 +167,23 @@ public class FunAiAppServiceImpl extends ServiceImpl<FunAiAppMapper, FunAiApp> i
 
         updateById(existingApp);
         return existingApp;
+    }
+
+    @Override
+    public String validateAndNormalizeAppSlug(String rawSlug, Long excludeAppId) throws IllegalArgumentException {
+        String normalized = AppSlugPolicy.normalize(rawSlug);
+        String message = AppSlugPolicy.validationMessage(normalized);
+        if (message != null) {
+            throw new IllegalArgumentException(message);
+        }
+
+        QueryWrapper<FunAiApp> slugCheck = new QueryWrapper<>();
+        slugCheck.eq("app_slug", normalized).last("limit 1");
+        FunAiApp duplicate = baseMapper.selectOne(slugCheck);
+        if (duplicate != null && (excludeAppId == null || !excludeAppId.equals(duplicate.getId()))) {
+            throw new IllegalArgumentException("appSlug 已被占用，请更换");
+        }
+        return normalized;
     }
 
     @Override

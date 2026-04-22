@@ -27,6 +27,11 @@ public interface FunAiAppService extends IService<FunAiApp> {
     FunAiApp getAppByIdAndUserId(Long appId, Long userId);
 
     /**
+     * 根据 appSlug 查询应用（全平台唯一）。
+     */
+    FunAiApp getAppBySlug(String appSlug);
+
+    /**
      * 创建应用
      * @param app 应用信息
      * @return 创建后的应用信息
@@ -67,8 +72,13 @@ public interface FunAiAppService extends IService<FunAiApp> {
      * @return 更新后的应用信息
      * @throws IllegalArgumentException 当应用不存在、无权限或 appName 重名/非法时抛出
      */
-    FunAiApp updateBasicInfo(Long userId, Long appId, String appName, String appDescription, String appType)
+    FunAiApp updateBasicInfo(Long userId, Long appId, String appName, String appSlug, String appDescription, String appType)
             throws IllegalArgumentException;
+
+    /**
+     * 规范化并校验 appSlug；校验通过返回规范化结果。
+     */
+    String validateAndNormalizeAppSlug(String rawSlug, Long excludeAppId) throws IllegalArgumentException;
 
     /**
      * 统计用户“运行中占用槽位”的项目数量（用于限制同时在线/部署中的项目数）。

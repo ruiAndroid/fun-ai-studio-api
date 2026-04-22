@@ -1,11 +1,13 @@
 package fun.ai.studio.controller.apps;
 
 
+import fun.ai.studio.app.AppSlugPolicy;
 import fun.ai.studio.common.Result;
 import fun.ai.studio.config.FunAiAppDeleteProperties;
 import fun.ai.studio.entity.FunAiApp;
 import fun.ai.studio.entity.FunAiWorkspaceRun;
 import fun.ai.studio.entity.request.UpdateFunAiAppBasicInfoRequest;
+import fun.ai.studio.entity.response.AppSlugCheckResponse;
 import fun.ai.studio.entity.response.FunAiOpenEditorResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceProjectDirResponse;
 import fun.ai.studio.entity.response.FunAiWorkspaceRunStatusResponse;
@@ -581,13 +583,14 @@ public class FunAiAppController {
      * - appName：同一用户下不可重名
      */
     @PostMapping("/update-basic")
-    @Operation(summary = "修改应用基础信息", description = "允许修改 appName/appDescription/appType，其中 appName 需同一用户下唯一")
+    @Operation(summary = "修改应用基础信息", description = "允许修改 appName/appSlug/appDescription/appType，其中 appSlug 全平台唯一")
     public Result<FunAiApp> updateBasicInfo(@Valid @RequestBody UpdateFunAiAppBasicInfoRequest req) {
         try {
             FunAiApp updated = funAiAppService.updateBasicInfo(
                     req.getUserId(),
                     req.getAppId(),
                     req.getAppName(),
+                    req.getAppSlug(),
                     req.getAppDescription(),
                     req.getAppType()
             );
@@ -598,6 +601,21 @@ public class FunAiAppController {
         } catch (Exception e) {
             logger.error("修改应用基础信息失败: req={}, error={}", req, e.getMessage(), e);
             return Result.error("修改应用基础信息失败: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/slug/check")
+    @Operation(summary = "检查 appSlug 是否可用", description = "规范化并校验 appSlug 的格式、保留词和唯一性；供前端填写时实时检查")
+    public Result<AppSlugCheckResponse> checkAppSlug(
+            @Parameter(description = "候选 appSlug", required = true) @RequestParam String appSlug,
+            @Parameter(description = "排除当前应用ID（编辑场景可传）") @RequestParam(required = false) Long excludeAppId
+    ) {
+        String normalized = AppSlugPolicy.normalize(appSlug);
+        try {
+            String valid = funAiAppService.validateAndNormalizeAppSlug(appSlug, excludeAppId);
+            return Result.success(new AppSlugCheckResponse(valid, true, null));
+        } catch (IllegalArgumentException e) {
+            return Result.success(new AppSlugCheckResponse(normalized, false, e.getMessage()));
         }
     }
 

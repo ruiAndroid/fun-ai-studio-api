@@ -24,6 +24,10 @@ public class UpdateFunAiAppBasicInfoRequest {
     @Size(max = 255, message = "appName 过长（最大 255 字符）")
     private String appName;
 
+    @Schema(description = "应用公网访问名（全平台唯一，仅允许小写字母、数字和短横线）", example = "ai-writer")
+    @Size(max = 40, message = "appSlug 过长（最大 40 字符）")
+    private String appSlug;
+
     @Schema(description = "应用描述", example = "这是一个很棒的应用")
     // 更精确的限制由 service 层根据 funai.app.limits.max-app-description-length 控制（避免 DB 截断）
     @Size(max = 5000, message = "appDescription 过长（最大 5000 字符）")
@@ -33,5 +37,4 @@ public class UpdateFunAiAppBasicInfoRequest {
     @Size(max = 255, message = "appType 过长（最大 255 字符）")
     private String appType;
 }
-
 

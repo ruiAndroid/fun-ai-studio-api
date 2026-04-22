@@ -34,6 +34,10 @@ public class FunAiApp {
     @Schema(description = "应用名称")
     private String appName;
 
+    @TableField("app_slug")
+    @Schema(description = "应用公网访问名（全平台唯一，仅允许小写字母、数字和短横线）", example = "ai-writer")
+    private String appSlug;
+
     /**
      * 应用描述
      */

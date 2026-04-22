@@ -21,6 +21,7 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.RegexRequestMatcher;
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity(prePostEnabled = true)
@@ -57,6 +58,7 @@ public class SecurityConfig {
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/swagger-ui/index.html").permitAll()
                         .requestMatchers("/v3/api-docs/**").permitAll()
                         .requestMatchers("/webjars/**").permitAll()
+                        .requestMatchers(new RegexRequestMatcher("^/[a-z0-9]+(?:-[a-z0-9]+)*$", HttpMethod.GET.name())).permitAll()
                         // 管理接口：不走 JWT，由 AdminAuthFilter 做 IP + Token 鉴权
                         .requestMatchers("/api/fun-ai/admin/**").permitAll()
                         .requestMatchers(URL_WHITELIST).permitAll()
